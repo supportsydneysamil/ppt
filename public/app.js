@@ -199,7 +199,7 @@ function buildFilename(extension) {
   const ext = extension || "txt";
   const raw = `${bookLabel}_${chapter}_${range}_${langLabel}.${ext}`;
 
-  return raw.replace(/[^\w.-]+/g, "_");
+  return sanitizeFilename(raw);
 }
 
 function buildLanguageLabel() {
@@ -219,6 +219,18 @@ function getFilenameFromDisposition(value) {
   if (!value) {
     return "";
   }
+  const utfMatch = value.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utfMatch) {
+    try {
+      return decodeURIComponent(utfMatch[1]);
+    } catch (err) {
+      return "";
+    }
+  }
   const match = value.match(/filename=\"?([^\";]+)\"?/i);
   return match ? match[1] : "";
+}
+
+function sanitizeFilename(value) {
+  return value.replace(/[^\p{L}\p{N}._-]+/gu, "_");
 }

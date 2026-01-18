@@ -36,12 +36,17 @@ app.get("/api/pptx", async (req, res) => {
     const pptx = buildPptx(payload.lines);
     const buffer = await pptx.write({ outputType: "nodebuffer" });
     const filename = buildPptxFilename(req.query, payload);
+    const asciiFilename = sanitizeAsciiFilename(filename);
+    const encodedFilename = encodeURIComponent(filename);
 
     res.setHeader(
       "Content-Type",
       "application/vnd.openxmlformats-officedocument.presentationml.presentation"
     );
-    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`
+    );
     return res.send(buffer);
   } catch (err) {
     return res.status(err.statusCode || 502).json({ error: err.message });
@@ -185,7 +190,7 @@ function buildPptxFilename(query, payload) {
   const langLabel = langs.length === 2 ? "KO-EN" : langs[0]?.toUpperCase() || "LANG";
   const raw = `${book}_${chapter}_${range}_${langLabel}.pptx`;
 
-  return raw.replace(/[^\w.-]+/g, "_");
+  return sanitizeFilename(raw);
 }
 
 function buildPptx(linesByLang) {
@@ -226,16 +231,16 @@ function addSingleLanguageSlides(pptx, lines, safe, lang) {
 
   textBlocks.forEach((text) => {
     const slides = fitTextToSlides(text, safe, config);
-    slides.forEach((slideText) => {
+    slides.forEach((slideItem) => {
       const slide = pptx.addSlide();
       slide.background = { color: "000000" };
-      slide.addText(slideText, {
+      slide.addText(slideItem.text, {
         x: safe.x,
         y: safe.y,
         w: safe.w,
         h: safe.h,
         fontFace: config.fontFace,
-        fontSize: config.fontSize,
+        fontSize: slideItem.fontSize,
         bold: true,
         color: "FFFFFF",
         align: "left",
@@ -256,7 +261,7 @@ function addBothSlides(pptx, linesByLang, safe) {
     : enEntries.filter((e) => e.num !== null).map((e) => e.num);
 
   const topHeight = safe.h * 0.62;
-  const gap = safe.h * 0.06;
+  const gap = safe.h * 0.05;
   const bottomHeight = safe.h - topHeight - gap;
   const topBox = { x: safe.x, y: safe.y, w: safe.w, h: topHeight };
   const bottomBox = {
@@ -268,11 +273,7 @@ function addBothSlides(pptx, linesByLang, safe) {
 
   const enConfig = getLanguageConfig("en");
   const koConfig = getLanguageConfig("ko");
-  const enFixedFont = getFixedFontSize(
-    orderedNums.map((num) => enMap.get(num)).filter(Boolean),
-    bottomBox,
-    enConfig
-  );
+  const enConfigBoth = { ...enConfig, maxFontSize: 36 };
 
   orderedNums.forEach((num) => {
     const koText = koMap.get(num) || "";
@@ -298,18 +299,14 @@ function addBothSlides(pptx, linesByLang, safe) {
     }
 
     if (enText) {
-      const fittedEn = fitText(enText, bottomBox, {
-        ...enConfig,
-        maxFontSize: enFixedFont,
-        minFontSize: enFixedFont,
-      });
+      const fittedEn = fitText(enText, bottomBox, enConfigBoth);
       slide.addText(fittedEn.text, {
         x: bottomBox.x,
         y: bottomBox.y,
         w: bottomBox.w,
         h: bottomBox.h,
         fontFace: enConfig.fontFace,
-        fontSize: enFixedFont,
+        fontSize: fittedEn.fontSize,
         bold: true,
         color: "FFFFFF",
         align: "left",
@@ -324,9 +321,9 @@ function getLanguageConfig(lang) {
   if (lang === "en") {
     return {
       fontFace: "Calibri",
-      maxFontSize: 40,
+      maxFontSize: 60,
       minFontSize: 12,
-      lineSpacing: 1.18,
+      lineSpacing: 1.1,
       charWidth: 0.55,
       preserveText: true,
     };
@@ -359,7 +356,7 @@ function toEntries(lines) {
 function fitTextToSlides(text, box, config) {
   const fitted = fitText(text, box, config);
   if (fitted.fits) {
-    return [fitted.text];
+    return [{ text: fitted.text, fontSize: fitted.fontSize }];
   }
 
   const forced = fitText(text, box, { ...config, maxFontSize: config.minFontSize });
@@ -370,9 +367,14 @@ function fitTextToSlides(text, box, config) {
   const chunks = [];
   for (let i = 0; i < forced.lines.length; i += maxLines) {
     const slice = forced.lines.slice(i, i + maxLines);
-    chunks.push(config.preserveText ? slice.join(" ") : slice.join("\n"));
+    chunks.push({
+      text: config.preserveText ? slice.join(" ") : slice.join("\n"),
+      fontSize: config.minFontSize,
+    });
   }
-  return chunks.length ? chunks : [fitted.text];
+  return chunks.length
+    ? chunks
+    : [{ text: fitted.text, fontSize: fitted.fontSize }];
 }
 
 function fitText(text, box, config) {
@@ -485,6 +487,14 @@ function getFixedFontSize(texts, box, config) {
     }
   });
   return Math.max(size, config.minFontSize);
+}
+
+function sanitizeFilename(value) {
+  return value.replace(/[^\p{L}\p{N}._-]+/gu, "_");
+}
+
+function sanitizeAsciiFilename(value) {
+  return value.replace(/[^\w.-]+/g, "_");
 }
 
 function filterLines(items, startNum, endNum) {
