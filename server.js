@@ -200,8 +200,8 @@ function buildPptx(linesByLang) {
   const layout = {
     width: 13.333,
     height: 7.5,
-    marginX: 1.0,
-    marginY: 0.6,
+    marginX: 0.8,
+    marginY: 0.45,
   };
   const safe = {
     x: layout.marginX,
@@ -261,7 +261,7 @@ function addBothSlides(pptx, linesByLang, safe) {
     : enEntries.filter((e) => e.num !== null).map((e) => e.num);
 
   const topHeight = safe.h * 0.62;
-  const gap = safe.h * 0.05;
+  const gap = safe.h * 0.04;
   const bottomHeight = safe.h - topHeight - gap;
   const topBox = { x: safe.x, y: safe.y, w: safe.w, h: topHeight };
   const bottomBox = {
