@@ -3,13 +3,19 @@ const bookSelect = document.getElementById("book");
 const chapterInput = document.getElementById("chapter");
 const startInput = document.getElementById("startVerse");
 const endInput = document.getElementById("endVerse");
-const langKo = document.getElementById("langKo");
-const langEn = document.getElementById("langEn");
 const form = document.getElementById("verseForm");
 const outputText = document.getElementById("outputText");
 const source = document.getElementById("source");
 const downloadBtn = document.getElementById("downloadBtn");
 const downloadPptxBtn = document.getElementById("downloadPptxBtn");
+const resetBtn = document.getElementById("resetBtn");
+const koVersionSelect = document.getElementById("koVersionSelect");
+const enVersionSelect = document.getElementById("enVersionSelect");
+const uiThemeSelect = document.getElementById("uiThemeSelect");
+const pptxThemeSelect = document.getElementById("pptxThemeSelect");
+const pptxImageToggle = document.getElementById("pptxImageToggle");
+const pptxImageInput = document.getElementById("pptxImageInput");
+const settingsAccordion = document.getElementById("settingsAccordion");
 
 let dataCache = null;
 
@@ -59,10 +65,11 @@ function buildParams() {
   params.set("chapter", chapterInput.value.trim());
 
   const languages = [];
-  if (langKo.checked) {
+  if (koVersionSelect.value) {
     languages.push("ko");
+    params.set("koVersion", koVersionSelect.value);
   }
-  if (langEn.checked) {
+  if (enVersionSelect.value) {
     languages.push("en");
   }
   if (languages.length > 0) {
@@ -83,9 +90,10 @@ async function handleSubmit(event) {
   event.preventDefault();
   outputText.textContent = "불러오는 중...";
   source.textContent = "";
+  setDownloadState(false);
 
-  if (!langKo.checked && !langEn.checked) {
-    outputText.textContent = "언어를 하나 이상 선택하세요.";
+  if (!koVersionSelect.value && !enVersionSelect.value) {
+    outputText.textContent = "번역을 하나 이상 선택하세요.";
     return;
   }
 
@@ -101,6 +109,7 @@ async function handleSubmit(event) {
 
     outputText.textContent = formatOutput(payload.lines);
     source.textContent = formatSources(payload.sourceUrl);
+    setDownloadState(Boolean(outputText.textContent.trim()));
   } catch (err) {
     outputText.textContent = "네트워크 오류가 발생했습니다.";
   }
@@ -109,7 +118,7 @@ async function handleSubmit(event) {
 function formatOutput(linesByLang) {
   const sections = [];
   if (linesByLang.ko && linesByLang.ko.length) {
-    sections.push("[한글 (RNKSV)]");
+    sections.push(`[한글 (${getKoLabel()})]`);
     sections.push(linesByLang.ko.join("\n"));
   }
   if (linesByLang.en && linesByLang.en.length) {
@@ -133,14 +142,56 @@ function formatSources(sourceUrls) {
   return parts.join(" | ");
 }
 
+function getKoLabel() {
+  switch (koVersionSelect.value) {
+    case "개역한글":
+      return "KRV";
+    case "현대인의-성경":
+      return "KLB";
+    case "새번역":
+    default:
+      return "RNKSV";
+  }
+}
+
 testamentSelect.addEventListener("change", renderBooks);
 form.addEventListener("submit", handleSubmit);
 downloadBtn.addEventListener("click", handleDownload);
 downloadPptxBtn.addEventListener("click", handlePptxDownload);
+resetBtn.addEventListener("click", handleReset);
+pptxImageToggle.addEventListener("change", handleImageToggle);
+uiThemeSelect.addEventListener("change", handleThemeChange);
+pptxThemeSelect.addEventListener("change", handlePptxThemeChange);
+settingsAccordion.addEventListener("toggle", handleSettingsToggle);
 
 loadBooks().catch(() => {
   outputText.textContent = "도서 목록을 불러오지 못했습니다.";
 });
+setDownloadState(false);
+initTheme();
+initPptxTheme();
+handleSettingsToggle();
+
+function handleReset() {
+  if (!dataCache) {
+    return;
+  }
+  testamentSelect.value = dataCache.testaments[0]?.id || "";
+  renderBooks();
+  chapterInput.value = "";
+  startInput.value = "";
+  endInput.value = "";
+  koVersionSelect.value = "새번역";
+  enVersionSelect.value = "";
+  pptxThemeSelect.value = "dark";
+  localStorage.setItem("biblics-pptx-theme", "dark");
+  pptxImageToggle.checked = false;
+  pptxImageInput.value = "";
+  pptxImageInput.disabled = true;
+  outputText.textContent = "원하는 범위를 입력하고 실행하세요.";
+  source.textContent = "";
+  setDownloadState(false);
+}
 
 function handleDownload() {
   const content = outputText.textContent.trim();
@@ -165,8 +216,12 @@ async function handlePptxDownload() {
     : "불러오는 중...";
 
   try {
-    const params = buildParams();
-    const resp = await fetch(`/api/pptx?${params.toString()}`);
+    const payload = await buildPptxPayload();
+    const resp = await fetch("/api/pptx", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
     if (!resp.ok) {
       const payload = await resp.json();
       outputText.textContent = payload.error || "PPTX 생성에 실패했습니다.";
@@ -185,7 +240,8 @@ async function handlePptxDownload() {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   } catch (err) {
-    outputText.textContent = "PPTX 다운로드 중 오류가 발생했습니다.";
+    outputText.textContent =
+      err?.message || "PPTX 다운로드 중 오류가 발생했습니다.";
   }
 }
 
@@ -203,13 +259,13 @@ function buildFilename(extension) {
 }
 
 function buildLanguageLabel() {
-  if (langKo.checked && langEn.checked) {
+  if (koVersionSelect.value && enVersionSelect.value) {
     return "KO-EN";
   }
-  if (langKo.checked) {
+  if (koVersionSelect.value) {
     return "KO";
   }
-  if (langEn.checked) {
+  if (enVersionSelect.value) {
     return "EN";
   }
   return "LANG";
@@ -233,4 +289,77 @@ function getFilenameFromDisposition(value) {
 
 function sanitizeFilename(value) {
   return value.replace(/[^\p{L}\p{N}._-]+/gu, "_");
+}
+
+function setDownloadState(enabled) {
+  downloadBtn.disabled = !enabled;
+  downloadPptxBtn.disabled = !enabled;
+}
+
+function initTheme() {
+  const saved = localStorage.getItem("biblics-theme");
+  const theme = saved || uiThemeSelect.value || "dark";
+  uiThemeSelect.value = theme;
+  document.body.dataset.theme = theme;
+}
+
+function handleThemeChange() {
+  const theme = uiThemeSelect.value;
+  document.body.dataset.theme = theme;
+  localStorage.setItem("biblics-theme", theme);
+}
+
+function initPptxTheme() {
+  const saved = localStorage.getItem("biblics-pptx-theme");
+  const theme = saved || pptxThemeSelect.value || "dark";
+  pptxThemeSelect.value = theme;
+}
+
+function handlePptxThemeChange() {
+  localStorage.setItem("biblics-pptx-theme", pptxThemeSelect.value);
+}
+
+function handleImageToggle() {
+  pptxImageInput.disabled = !pptxImageToggle.checked;
+  if (!pptxImageToggle.checked) {
+    pptxImageInput.value = "";
+  }
+}
+
+function handleSettingsToggle() {
+  if (!settingsAccordion) {
+    return;
+  }
+  const chevron = settingsAccordion.querySelector(".chevron");
+  if (chevron) {
+    chevron.textContent = settingsAccordion.open ? "▴" : "▾";
+  }
+}
+
+async function buildPptxPayload() {
+  const params = buildParams();
+  const payload = Object.fromEntries(params.entries());
+  payload.themeId = pptxThemeSelect.value;
+  payload.useCustomImage = pptxImageToggle.checked;
+  payload.koVersion = koVersionSelect.value || "";
+  payload.enVersion = enVersionSelect.value || "";
+
+  if (pptxImageToggle.checked) {
+    const file = pptxImageInput.files?.[0];
+    if (!file) {
+      throw new Error("배경 이미지를 선택하세요.");
+    }
+    payload.customImageData = await readFileAsDataUrl(file);
+  }
+
+  return payload;
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("이미지 읽기에 실패했습니다."));
+    reader.readAsDataURL(file);
+  });
 }

@@ -8,13 +8,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3000;
 const BASE_URLS = {
-  ko: "https://biblics.com/ko/성경/새번역",
+  ko: "https://biblics.com/ko/성경",
   en: "https://biblics.com/en/bible/new-international-version",
 };
+
+const KO_TRANSLATIONS = new Set(["새번역", "개역한글", "현대인의-성경"]);
 
 const booksPath = path.join(__dirname, "data", "books.json");
 const booksData = JSON.parse(await fs.readFile(booksPath, "utf-8"));
 
+app.use(express.json({ limit: "12mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 
 app.get("/api/books", (req, res) => {
@@ -33,7 +36,8 @@ app.get("/api/verses", async (req, res) => {
 app.get("/api/pptx", async (req, res) => {
   try {
     const payload = await getVersePayload(req.query);
-    const pptx = buildPptx(payload.lines);
+    const theme = resolvePptxTheme(req.query);
+    const pptx = buildPptx(payload, theme);
     const buffer = await pptx.write({ outputType: "nodebuffer" });
     const filename = buildPptxFilename(req.query, payload);
     const asciiFilename = sanitizeAsciiFilename(filename);
@@ -53,19 +57,52 @@ app.get("/api/pptx", async (req, res) => {
   }
 });
 
-function buildUrl(language, testamentEntry, bookEntry, chapterNum) {
-  const testamentSlug =
-    language === "en" ? testamentEntry.slugEn : testamentEntry.slugKo;
-  const bookSlug = language === "en" ? bookEntry.slugEn : bookEntry.slugKo;
+app.post("/api/pptx", async (req, res) => {
+  try {
+    const payload = await getVersePayload(req.body);
+    const theme = resolvePptxTheme(req.body);
+    const pptx = buildPptx(payload, theme);
+    const buffer = await pptx.write({ outputType: "nodebuffer" });
+    const filename = buildPptxFilename(req.body, payload);
+    const asciiFilename = sanitizeAsciiFilename(filename);
+    const encodedFilename = encodeURIComponent(filename);
 
-  return `${BASE_URLS[language]}/${encodeURIComponent(
-    testamentSlug
-  )}/${encodeURIComponent(bookSlug)}/${chapterNum}`;
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    );
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`
+    );
+    return res.send(buffer);
+  } catch (err) {
+    return res.status(err.statusCode || 502).json({ error: err.message });
+  }
+});
+
+function buildUrl(
+  language,
+  testamentEntry,
+  bookEntry,
+  chapterNum,
+  koVersion
+) {
+  if (language === "en") {
+    return `${BASE_URLS.en}/${encodeURIComponent(
+      testamentEntry.slugEn
+    )}/${encodeURIComponent(bookEntry.slugEn)}/${chapterNum}`;
+  }
+
+  const version = koVersion || "새번역";
+  return `${BASE_URLS.ko}/${encodeURIComponent(version)}/${encodeURIComponent(
+    testamentEntry.slugKo
+  )}/${encodeURIComponent(bookEntry.slugKo)}/${chapterNum}`;
 }
 
 function normalizeLanguages(raw) {
   if (!raw) {
-    return ["ko"];
+    return [];
   }
 
   const languages = raw
@@ -78,8 +115,20 @@ function normalizeLanguages(raw) {
   );
 }
 
+function normalizeKoVersion(value) {
+  if (!value) {
+    return "새번역";
+  }
+  if (KO_TRANSLATIONS.has(value)) {
+    return value;
+  }
+  const err = new Error("invalid ko translation");
+  err.statusCode = 400;
+  throw err;
+}
+
 async function getVersePayload(query) {
-  const { testament, book, chapter, start, end, lang } = query;
+  const { testament, book, chapter, start, end, lang, koVersion } = query;
   if (!testament || !book || !chapter) {
     const err = new Error("testament, book, chapter are required");
     err.statusCode = 400;
@@ -133,11 +182,20 @@ async function getVersePayload(query) {
     err.statusCode = 400;
     throw err;
   }
+  const normalizedKoVersion = languages.includes("ko")
+    ? normalizeKoVersion(koVersion)
+    : null;
 
   try {
     const results = await Promise.all(
       languages.map(async (language) => {
-        const url = buildUrl(language, testamentEntry, bookEntry, chapterNum);
+        const url = buildUrl(
+          language,
+          testamentEntry,
+          bookEntry,
+          chapterNum,
+          normalizedKoVersion
+        );
         const resp = await fetch(url, {
           headers: {
             "User-Agent": "Mozilla/5.0 (compatible; biblics-extractor/1.0)",
@@ -171,7 +229,16 @@ async function getVersePayload(query) {
       lines[result.language] = result.lines;
     });
 
-    return { sourceUrl, lines };
+    return {
+      sourceUrl,
+      lines,
+      meta: {
+        bookEntry,
+        chapterNum,
+        languages,
+        koVersion: normalizedKoVersion,
+      },
+    };
   } catch (err) {
     if (!err.statusCode) {
       err.statusCode = 502;
@@ -193,7 +260,7 @@ function buildPptxFilename(query, payload) {
   return sanitizeFilename(raw);
 }
 
-function buildPptx(linesByLang) {
+function buildPptx(payload, theme) {
   const pptx = new PptxGenJS();
   pptx.layout = "LAYOUT_WIDE";
 
@@ -210,21 +277,55 @@ function buildPptx(linesByLang) {
     h: layout.height - layout.marginY * 2,
   };
 
+  const linesByLang = payload.lines;
   const hasKo = Array.isArray(linesByLang.ko);
   const hasEn = Array.isArray(linesByLang.en);
+  const labelText = buildSlideLabel(
+    payload.meta,
+    hasKo && !hasEn ? "ko" : hasEn && !hasKo ? "en" : "both"
+  );
+  const labelBox = buildLabelBox(safe, layout);
+  const slideTheme = theme || getPptxTheme("dark");
 
   if (hasKo && hasEn) {
-    addBothSlides(pptx, linesByLang, safe);
+    addBothSlides(pptx, linesByLang, safe, labelBox, labelText, slideTheme, layout);
   } else if (hasEn) {
-    addSingleLanguageSlides(pptx, linesByLang.en, safe, "en");
+    addSingleLanguageSlides(
+      pptx,
+      linesByLang.en,
+      safe,
+      labelBox,
+      labelText,
+      "en",
+      slideTheme,
+      layout
+    );
   } else {
-    addSingleLanguageSlides(pptx, linesByLang.ko || [], safe, "ko");
+    addSingleLanguageSlides(
+      pptx,
+      linesByLang.ko || [],
+      safe,
+      labelBox,
+      labelText,
+      "ko",
+      slideTheme,
+      layout
+    );
   }
 
   return pptx;
 }
 
-function addSingleLanguageSlides(pptx, lines, safe, lang) {
+function addSingleLanguageSlides(
+  pptx,
+  lines,
+  safe,
+  labelBox,
+  labelText,
+  lang,
+  theme,
+  layout
+) {
   const config = getLanguageConfig(lang);
   const entries = toEntries(lines);
   const textBlocks = entries.length ? entries.map((entry) => entry.line) : lines;
@@ -233,7 +334,8 @@ function addSingleLanguageSlides(pptx, lines, safe, lang) {
     const slides = fitTextToSlides(text, safe, config);
     slides.forEach((slideItem) => {
       const slide = pptx.addSlide();
-      slide.background = { color: "000000" };
+      applySlideBackground(pptx, slide, layout, theme);
+      addCornerLabel(slide, labelText, labelBox, getLabelConfig(lang, theme));
       slide.addText(slideItem.text, {
         x: safe.x,
         y: safe.y,
@@ -242,7 +344,7 @@ function addSingleLanguageSlides(pptx, lines, safe, lang) {
         fontFace: config.fontFace,
         fontSize: slideItem.fontSize,
         bold: true,
-        color: "FFFFFF",
+        color: theme.textColor,
         align: "left",
         valign: "top",
         lineSpacingMultiple: config.lineSpacing,
@@ -251,7 +353,7 @@ function addSingleLanguageSlides(pptx, lines, safe, lang) {
   });
 }
 
-function addBothSlides(pptx, linesByLang, safe) {
+function addBothSlides(pptx, linesByLang, safe, labelBox, labelText, theme, layout) {
   const koEntries = toEntries(linesByLang.ko || []);
   const enEntries = toEntries(linesByLang.en || []);
   const koMap = new Map(koEntries.filter((e) => e.num !== null).map((e) => [e.num, e.line]));
@@ -279,7 +381,8 @@ function addBothSlides(pptx, linesByLang, safe) {
     const koText = koMap.get(num) || "";
     const enText = enMap.get(num) || "";
     const slide = pptx.addSlide();
-    slide.background = { color: "000000" };
+    applySlideBackground(pptx, slide, layout, theme);
+    addCornerLabel(slide, labelText, labelBox, getLabelConfig("ko", theme));
 
     if (koText) {
       const fittedKo = fitText(koText, topBox, koConfig);
@@ -291,7 +394,7 @@ function addBothSlides(pptx, linesByLang, safe) {
         fontFace: koConfig.fontFace,
         fontSize: fittedKo.fontSize,
         bold: true,
-        color: "FFFFFF",
+        color: theme.textColor,
         align: "left",
         valign: "top",
         lineSpacingMultiple: koConfig.lineSpacing,
@@ -308,7 +411,7 @@ function addBothSlides(pptx, linesByLang, safe) {
         fontFace: enConfig.fontFace,
         fontSize: fittedEn.fontSize,
         bold: true,
-        color: "FFFFFF",
+        color: theme.textColor,
         align: "left",
         valign: "top",
         lineSpacingMultiple: enConfig.lineSpacing,
@@ -336,6 +439,62 @@ function getLanguageConfig(lang) {
     charWidth: 0.95,
     preserveText: true,
   };
+}
+
+function buildLabelBox(safe, layout) {
+  const labelHeight = Math.min(0.38, Math.max(0.2, layout.marginY - 0.1));
+  const labelY = Math.max(0.08, layout.marginY - labelHeight);
+  return {
+    x: Math.max(0.08, safe.x - 0.28),
+    y: labelY,
+    w: Math.min(3.9, safe.w * 0.45 + 0.2),
+    h: labelHeight,
+  };
+}
+
+function getLabelConfig(lang, theme) {
+  return {
+    fontFace: lang === "en" ? "Calibri" : "Malgun Gothic",
+    maxFontSize: 24,
+    minFontSize: 12,
+    lineSpacing: 1.0,
+    charWidth: lang === "en" ? 0.55 : 0.9,
+    preserveText: true,
+    color: theme.labelColor,
+  };
+}
+
+function addCornerLabel(slide, text, box, config) {
+  if (!text) {
+    return;
+  }
+  const fitted = fitText(text, box, config);
+  slide.addText(fitted.text, {
+    x: box.x,
+    y: box.y,
+    w: box.w,
+    h: box.h,
+    fontFace: config.fontFace,
+    fontSize: fitted.fontSize,
+    bold: true,
+    color: config.color,
+    align: "left",
+    valign: "top",
+    lineSpacingMultiple: config.lineSpacing,
+  });
+}
+
+function buildSlideLabel(meta, mode) {
+  if (!meta || !meta.bookEntry || !meta.chapterNum) {
+    return "";
+  }
+  const chapter = meta.chapterNum;
+  if (mode === "en") {
+    const abbrEn = meta.bookEntry.abbrEn || meta.bookEntry.slugEn || meta.bookEntry.name;
+    return `${abbrEn} ${chapter}`;
+  }
+  const abbrKo = meta.bookEntry.abbrKo || meta.bookEntry.name;
+  return `${abbrKo} ${chapter}`;
 }
 
 function toEntries(lines) {
@@ -495,6 +654,182 @@ function sanitizeFilename(value) {
 
 function sanitizeAsciiFilename(value) {
   return value.replace(/[^\w.-]+/g, "_");
+}
+
+function resolvePptxTheme(input) {
+  const themeId = input?.themeId || input?.theme || "dark";
+  const useCustomImage =
+    input?.useCustomImage === true || input?.useCustomImage === "true";
+  const customImageData = input?.customImageData;
+
+  if (useCustomImage) {
+    if (!customImageData || !customImageData.startsWith("data:image/")) {
+      const err = new Error("유효한 배경 이미지를 선택하세요.");
+      err.statusCode = 400;
+      throw err;
+    }
+    return {
+      ...getPptxTheme(themeId),
+      bgImageData: customImageData,
+      overlayColor: "000000",
+      overlayTransparency: 35,
+    };
+  }
+
+  return getPptxTheme(themeId);
+}
+
+function getPptxTheme(themeId) {
+  const themes = {
+    dark: {
+      id: "dark",
+      bgColor: "000000",
+      textColor: "FFFFFF",
+      labelColor: "EDEDED",
+    },
+    light: {
+      id: "light",
+      bgColor: "F6F1E8",
+      textColor: "1C1B18",
+      labelColor: "4D4036",
+    },
+    navy: {
+      id: "navy",
+      bgColor: "0B1325",
+      bgImageData: buildSvgDataUri(buildNavySvg()),
+      textColor: "F7F3E9",
+      labelColor: "E9DFC8",
+      overlayColor: "000000",
+      overlayTransparency: 30,
+    },
+    forest: {
+      id: "forest",
+      bgColor: "0D1B16",
+      bgImageData: buildSvgDataUri(buildForestSvg()),
+      textColor: "F6F2EA",
+      labelColor: "E5D9C5",
+      overlayColor: "000000",
+      overlayTransparency: 30,
+    },
+    burgundy: {
+      id: "burgundy",
+      bgColor: "1B0C12",
+      bgImageData: buildSvgDataUri(buildBurgundySvg()),
+      textColor: "F7F2EA",
+      labelColor: "E6D7C0",
+      overlayColor: "000000",
+      overlayTransparency: 30,
+    },
+    "navy-solid": {
+      id: "navy-solid",
+      bgColor: "0B1325",
+      textColor: "F7F3E9",
+      labelColor: "F2C15B",
+    },
+    "forest-solid": {
+      id: "forest-solid",
+      bgColor: "0D1B16",
+      textColor: "F6F2EA",
+      labelColor: "D6B36A",
+    },
+    "burgundy-solid": {
+      id: "burgundy-solid",
+      bgColor: "1B0C12",
+      textColor: "F7F2EA",
+      labelColor: "E0B56F",
+    },
+  };
+
+  return themes[themeId] || themes.dark;
+}
+
+function applySlideBackground(pptx, slide, layout, theme) {
+  if (theme.bgColor) {
+    slide.background = { color: theme.bgColor };
+  }
+  if (theme.bgImageData) {
+    slide.addImage({
+      data: theme.bgImageData,
+      x: 0,
+      y: 0,
+      w: layout.width,
+      h: layout.height,
+    });
+    slide.addShape(pptx.ShapeType.rect, {
+      x: 0,
+      y: 0,
+      w: layout.width,
+      h: layout.height,
+      fill: {
+        color: theme.overlayColor || "000000",
+        transparency:
+          typeof theme.overlayTransparency === "number"
+            ? theme.overlayTransparency
+            : 30,
+      },
+      line: { color: "000000", transparency: 100 },
+    });
+    return;
+  }
+  slide.background = { color: theme.bgColor || "000000" };
+}
+
+function buildSvgDataUri(svg) {
+  return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
+}
+
+function buildNavySvg() {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1333 750">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0b1a33"/>
+      <stop offset="100%" stop-color="#1c2f52"/>
+    </linearGradient>
+    <radialGradient id="r" cx="0.85" cy="0.1" r="0.4">
+      <stop offset="0%" stop-color="#f2c15b" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#f2c15b" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1333" height="750" fill="url(#g)"/>
+  <rect width="1333" height="750" fill="url(#r)"/>
+</svg>`;
+}
+
+function buildForestSvg() {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1333 750">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0d1b16"/>
+      <stop offset="100%" stop-color="#1f3529"/>
+    </linearGradient>
+    <radialGradient id="r" cx="0.1" cy="0.1" r="0.5">
+      <stop offset="0%" stop-color="#d6b36a" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="#d6b36a" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1333" height="750" fill="url(#g)"/>
+  <rect width="1333" height="750" fill="url(#r)"/>
+</svg>`;
+}
+
+function buildBurgundySvg() {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1333 750">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1b0c12"/>
+      <stop offset="100%" stop-color="#3b1420"/>
+    </linearGradient>
+    <radialGradient id="r" cx="0.9" cy="0.1" r="0.4">
+      <stop offset="0%" stop-color="#e0b56f" stop-opacity="0.16"/>
+      <stop offset="100%" stop-color="#e0b56f" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1333" height="750" fill="url(#g)"/>
+  <rect width="1333" height="750" fill="url(#r)"/>
+</svg>`;
 }
 
 function filterLines(items, startNum, endNum) {
