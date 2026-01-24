@@ -796,7 +796,7 @@ function renderPreview(slideOverride) {
             <button class="zoom-btn" id="zoom-in-${pptxContainerId}">+</button>
             <button class="zoom-btn" id="zoom-reset-${pptxContainerId}" title="Reset">⟲</button>
           `;
-          ph.appendChild(controls);
+          slidePreview.appendChild(controls); // Fixed position, not inside scroll area
 
           // Event Listeners for Zoom
           setTimeout(() => {
@@ -848,12 +848,6 @@ function renderPreview(slideOverride) {
         }
       }, 50);
 
-      // Filename overlay or footer
-      const info = document.createElement('div');
-      info.className = 'preview-filename-badge';
-      info.textContent = data.file ? `${data.file.name}` : `${data.fileName || data.currentFileName}`;
-      ph.appendChild(info);
-
     } else {
       // Fallback Logic
       const containerFallback = document.createElement('div');
@@ -888,7 +882,18 @@ function renderPreview(slideOverride) {
     }
 
     slidePreview.style.background = '#222';
+    slidePreview.style.position = 'relative'; // Ensure overlays can be positioned
     slidePreview.innerHTML = "";
+
+    // Add filename badge at end of scrollable content (for sticky positioning)
+    const displayName = data.file ? data.file.name : (data.fileName || data.currentFileName);
+    if (displayName) {
+      const badge = document.createElement('div');
+      badge.className = 'preview-filename-badge';
+      badge.textContent = displayName;
+      ph.appendChild(badge); // Inside scrollable content for sticky to work
+    }
+
     slidePreview.appendChild(ph);
     return;
   }
@@ -976,6 +981,9 @@ function populateEditor(slide) {
   slideFontSizeSelect.value = slide.fontSize || "40";
   slideBgSelect.value = slide.bg;
   slideAlignSelect.value = slide.align;
+
+  // Clear file input to avoid showing stale filename from previous slide
+  userPptxFile.value = '';
 
   // Set source type radio
   sourceRadios.forEach(r => {

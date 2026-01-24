@@ -107,7 +107,7 @@ app.post("/api/upload", upload.single('file'), async (req, res) => {
   res.json({
     filename: req.file.filename,
     path: `/uploads/${req.file.filename}`,
-    originalName: req.file.originalname,
+    originalName: originalName,
     thumbnail: thumbnailPath
   });
 });

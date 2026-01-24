@@ -649,8 +649,8 @@ body {
   /* Critical: preventing blowout */
   display: block !important;
   /* Not flex center */
-  padding: 10px !important;
-  /* Reduced padding to maximize content size */
+  padding: 5px !important;
+  /* Minimal padding to maximize content size */
 
   /* Custom scrollbar to look premium */
   scrollbar-width: thin;
@@ -758,11 +758,14 @@ body {
 
 /* Premium Filename Badge */
 .preview-filename-badge {
-  position: absolute;
-  bottom: 15px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(0, 0, 0, 0.6);
+  position: sticky;
+  bottom: 10px;
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  width: fit-content;
+  max-width: 80%;
+  background: rgba(0, 0, 0, 0.7);
   padding: 8px 16px;
   border-radius: 20px;
   color: #eee;
@@ -770,13 +773,10 @@ body {
   backdrop-filter: blur(4px);
   border: 1px solid rgba(255, 255, 255, 0.1);
   z-index: 90;
-  pointer-events: none;
   white-space: nowrap;
-  max-width: 80%;
   overflow: hidden;
   text-overflow: ellipsis;
-  opacity: 0.8;
-  transition: opacity 0.3s;
+  text-align: center;
 }
 
 .slide-preview-box:hover .preview-filename-badge {
