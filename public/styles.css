@@ -649,7 +649,25 @@ body {
   /* Critical: preventing blowout */
   display: block !important;
   /* Not flex center */
-  padding: 0 !important;
+  padding: 20px !important;
+  /* Add breathing room around slides */
+
+  /* Custom scrollbar to look premium */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+.slide-preview-box.preview-scroll-mode::-webkit-scrollbar {
+  width: 8px;
+}
+
+.slide-preview-box.preview-scroll-mode::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.slide-preview-box.preview-scroll-mode::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
 }
 
 /* Force PPTXjs slides styling */

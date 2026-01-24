@@ -766,16 +766,23 @@ function renderPreview(slideOverride) {
               clearInterval(fitInterval);
 
               // Get container width
-              const containerWidth = container.offsetWidth || 400;
+              const styles = window.getComputedStyle(container);
+              const paddingX = parseFloat(styles.paddingLeft) + parseFloat(styles.paddingRight);
+              const availableWidth = (container.offsetWidth - paddingX) || 400;
 
               slides.forEach(slide => {
                 const slideWidth = slide.offsetWidth || slide.scrollWidth || 500;
-                if (slideWidth > containerWidth) {
-                  // Use zoom property for better content scaling
-                  const zoomLevel = containerWidth / slideWidth;
-                  slide.style.zoom = zoomLevel;
-                  slide.style.marginBottom = '20px';
-                }
+
+                // Always recalculate zoom to ensure perfect fit within the padded area
+                // Use a slightly smaller ratio (0.98) to ensure edges don't touch scrollbar
+                const zoomLevel = (availableWidth / slideWidth) * 0.98;
+
+                slide.style.zoom = zoomLevel;
+                slide.style.marginBottom = '20px';
+
+                // Add a subtle border radius/shadow for better aesthetics
+                slide.style.borderRadius = "4px";
+                slide.style.overflow = "hidden";
               });
             }
 
