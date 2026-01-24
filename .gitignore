@@ -3,4 +3,8 @@ package-lock.json
 .DS_Store
 *.pptx
 *.txt
+*.bak
 uploads/
+debug_pptx.js
+.env
+data/slides.json

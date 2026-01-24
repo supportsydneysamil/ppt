@@ -26,6 +26,13 @@ const booksPath = path.join(__dirname, "data", "books.json");
 const slidesPath = path.join(__dirname, "data", "slides.json");
 const uploadsDir = path.join(__dirname, "uploads");
 
+// Ensure structure exists
+(async () => {
+  try { await fs.access(uploadsDir); } catch { await fs.mkdir(uploadsDir, { recursive: true }); }
+  try { await fs.access(path.dirname(slidesPath)); } catch { await fs.mkdir(path.dirname(slidesPath), { recursive: true }); }
+  try { await fs.access(slidesPath); } catch { await fs.writeFile(slidesPath, "[]", "utf-8"); }
+})();
+
 const booksData = JSON.parse(await fs.readFile(booksPath, "utf-8"));
 
 // Multer Setup
