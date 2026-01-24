@@ -83,7 +83,8 @@ app.post("/api/upload", upload.single('file'), async (req, res) => {
   }
 
   const filePath = req.file.path;
-  const originalName = req.file.originalname;
+  // Fix for Korean text encoding issues (Multer/Node often parses headers as latin1)
+  const originalName = Buffer.from(req.file.originalname, "latin1").toString("utf8");
   let thumbnailPath = null;
 
   // Try extracting thumbnail
