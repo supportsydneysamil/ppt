@@ -682,9 +682,63 @@ body {
 /* Ensure wrapper doesn't lock width */
 .pptx-renderer>div,
 .pptx-wrapper {
-  display: block !important;
   width: 100% !important;
   max-width: 100% !important;
   height: auto !important;
   min-height: 0 !important;
+}
+
+/* Zoom Controls Overlay */
+.zoom-controls {
+  position: absolute;
+  top: 15px;
+  right: 25px;
+  /* Account for scrollbar */
+  display: flex;
+  gap: 5px;
+  background: rgba(30, 30, 30, 0.85);
+  padding: 6px;
+  border-radius: 8px;
+  z-index: 100;
+  backdrop-filter: blur(4px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.zoom-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #fff;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: bold;
+  transition: all 0.2s ease;
+}
+
+.zoom-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.5);
+  transform: translateY(-1px);
+}
+
+.zoom-btn:active {
+  transform: translateY(0);
+}
+
+.zoom-display {
+  color: #eee;
+  font-size: 12px;
+  font-family: monospace;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  min-width: 45px;
+  user-select: none;
 }

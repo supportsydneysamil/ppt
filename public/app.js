@@ -754,6 +754,73 @@ function renderPreview(slideOverride) {
             keyBoardShortCut: false
           });
 
+          // Zoom State
+          let manualZoomMultiplier = 1.0;
+
+          // Helper: Apply Zoom
+          const applyZoom = () => {
+            const container = document.getElementById(pptxContainerId);
+            if (!container) return;
+
+            const slides = container.querySelectorAll('.slide');
+            if (slides.length === 0) return;
+
+            const styles = window.getComputedStyle(container);
+            const paddingX = parseFloat(styles.paddingLeft) + parseFloat(styles.paddingRight);
+            const availableWidth = (container.offsetWidth - paddingX) || 400;
+
+            slides.forEach(slide => {
+              const slideWidth = slide.offsetWidth || slide.scrollWidth || 500;
+              // Base fit: (Available / Slide) * 0.99 for safety
+              // Then multiply by manualZoomMultiplier
+              const baseZoom = (availableWidth / slideWidth) * 0.99;
+              const finalZoom = baseZoom * manualZoomMultiplier;
+
+              slide.style.zoom = finalZoom;
+              slide.style.marginBottom = '20px';
+              slide.style.borderRadius = "4px";
+              slide.style.overflow = "hidden";
+            });
+
+            // Update display text
+            const display = document.getElementById('zoom-val-' + pptxContainerId);
+            if (display) display.textContent = Math.round(manualZoomMultiplier * 100) + '%';
+          };
+
+          // Create Zoom Controls
+          const controls = document.createElement('div');
+          controls.className = 'zoom-controls';
+          controls.innerHTML = `
+            <button class="zoom-btn" id="zoom-out-${pptxContainerId}">-</button>
+            <span class="zoom-display" id="zoom-val-${pptxContainerId}">100%</span>
+            <button class="zoom-btn" id="zoom-in-${pptxContainerId}">+</button>
+            <button class="zoom-btn" id="zoom-reset-${pptxContainerId}" title="Reset">⟲</button>
+          `;
+          ph.appendChild(controls);
+
+          // Event Listeners for Zoom
+          setTimeout(() => {
+            const btnIn = document.getElementById(`zoom-in-${pptxContainerId}`);
+            const btnOut = document.getElementById(`zoom-out-${pptxContainerId}`);
+            const btnReset = document.getElementById(`zoom-reset-${pptxContainerId}`);
+
+            if (btnIn) btnIn.onclick = (e) => {
+              e.stopPropagation();
+              manualZoomMultiplier = Math.min(manualZoomMultiplier + 0.1, 3.0);
+              applyZoom();
+            };
+            if (btnOut) btnOut.onclick = (e) => {
+              e.stopPropagation();
+              manualZoomMultiplier = Math.max(manualZoomMultiplier - 0.1, 0.2);
+              applyZoom();
+            };
+            if (btnReset) btnReset.onclick = (e) => {
+              e.stopPropagation();
+              manualZoomMultiplier = 1.0;
+              applyZoom();
+            };
+          }, 100);
+
           // Post-render: poll for slides and apply zoom to fit container
           let checks = 0;
           const fitInterval = setInterval(() => {
@@ -764,30 +831,16 @@ function renderPreview(slideOverride) {
             const slides = container.querySelectorAll('.slide');
             if (slides.length > 0) {
               clearInterval(fitInterval);
-
-              // Get container width
-              const styles = window.getComputedStyle(container);
-              const paddingX = parseFloat(styles.paddingLeft) + parseFloat(styles.paddingRight);
-              const availableWidth = (container.offsetWidth - paddingX) || 400;
-
-              slides.forEach(slide => {
-                const slideWidth = slide.offsetWidth || slide.scrollWidth || 500;
-
-                // Always recalculate zoom to ensure perfect fit within the padded area
-                // Use a slightly smaller ratio (0.99) to ensure edges don't touch scrollbar
-                const zoomLevel = (availableWidth / slideWidth) * 0.99;
-
-                slide.style.zoom = zoomLevel;
-                slide.style.marginBottom = '20px';
-
-                // Add a subtle border radius/shadow for better aesthetics
-                slide.style.borderRadius = "4px";
-                slide.style.overflow = "hidden";
-              });
+              applyZoom(); // Initial apply
             }
-
             if (checks > 30) clearInterval(fitInterval);
           }, 100);
+
+          // Window resize listener
+          const resizeObserver = new ResizeObserver(() => {
+            requestAnimationFrame(applyZoom);
+          });
+          resizeObserver.observe(pptxContainer);
 
         } catch (e) {
           console.error("PPTXjs error:", e);
