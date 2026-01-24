@@ -4,6 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import PptxGenJS from "pptxgenjs";
 import multer from "multer";
+import AdmZip from "adm-zip";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -76,15 +77,37 @@ app.post("/api/slides", async (req, res) => {
 });
 
 // Upload File
-app.post("/api/upload", upload.single('file'), (req, res) => {
+app.post("/api/upload", upload.single('file'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "No file uploaded" });
   }
+
+  const filePath = req.file.path;
+  const originalName = req.file.originalname;
+  let thumbnailPath = null;
+
+  // Try extracting thumbnail
+  if (originalName.toLowerCase().endsWith(".pptx")) {
+    try {
+      const zip = new AdmZip(filePath);
+      const thumbEntry = zip.getEntry("docProps/thumbnail.jpeg");
+      if (thumbEntry) {
+        const thumbName = req.file.filename + "-thumb.jpeg";
+        const thumbOutPath = path.join(uploadsDir, thumbName);
+        await fs.writeFile(thumbOutPath, thumbEntry.getData());
+        thumbnailPath = `/uploads/${thumbName}`;
+      }
+    } catch (e) {
+      console.warn("Failed to extract thumbnail:", e.message);
+    }
+  }
+
   // Return web-accessible path
   res.json({
     filename: req.file.filename,
     path: `/uploads/${req.file.filename}`,
-    originalName: req.file.originalname
+    originalName: req.file.originalname,
+    thumbnail: thumbnailPath
   });
 });
 
@@ -204,7 +227,8 @@ app.post("/api/create-slide-pptx", async (req, res) => {
       autoFit: false
     });
 
-    const buffer = await pptx.write({ outputType: "nodebuffer" });
+    let buffer = await pptx.write({ outputType: "nodebuffer" });
+    buffer = injectThumbnail(buffer); // Inject thumbnail
     const filename = `slide_${Date.now()}.pptx`;
     const asciiFilename = sanitizeAsciiFilename(filename);
 
@@ -228,7 +252,9 @@ app.post("/api/pptx", async (req, res) => {
     const payload = await getVersePayload(req.body);
     const theme = resolvePptxTheme(req.body);
     const pptx = buildPptx(payload, theme);
-    const buffer = await pptx.write({ outputType: "nodebuffer" });
+    let buffer = await pptx.write({ outputType: "nodebuffer" });
+    buffer = injectThumbnail(buffer); // Inject thumbnail
+
     const filename = buildPptxFilename(req.body, payload);
     const asciiFilename = sanitizeAsciiFilename(filename);
     const encodedFilename = encodeURIComponent(filename);
@@ -1139,6 +1165,21 @@ function decodeEntities(text) {
     }
     return Object.prototype.hasOwnProperty.call(named, code) ? named[code] : m;
   });
+}
+
+// Helper to inject a generic thumbnail into PPTX buffer
+function injectThumbnail(buffer) {
+  try {
+    const zip = new AdmZip(buffer);
+    // Minimal white 1x1 JPEG
+    const thumbBase64 = "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wAALCAABAAEBAREA/8QAHAABAAP/2gAIAQEAAD8A0s8g/9k=";
+    const thumbBuffer = Buffer.from(thumbBase64, "base64");
+    zip.addFile("docProps/thumbnail.jpeg", thumbBuffer);
+    return zip.toBuffer();
+  } catch (e) {
+    console.warn("Failed to inject thumbnail:", e.message);
+    return buffer;
+  }
 }
 
 app.listen(PORT, "0.0.0.0", () => {

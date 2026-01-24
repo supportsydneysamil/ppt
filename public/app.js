@@ -690,14 +690,20 @@ function renderPreview(slideOverride) {
       file: userPptxFile.files[0]
     };
 
-    // If we are editing an EXISTING slide, and no NEW file picked, we might want to show existing name?
-    // But 'data' here is transient.
-    // If currentSlideId exists, we can fallback to its existing data if input is empty?
+    // If we are editing an EXISTING slide, and no NEW file picked, we want to show existing name.
     if (currentSlideId && !data.file) {
       const current = slides.find(s => s.id === currentSlideId);
-      if (current && current.sourceType === 'upload') {
-        data.currentFileName = current.fileName;
-        data.currentFileSaved = current.fileSaved;
+      if (current) {
+        // Even if we just switched to 'upload', if the slide ALREADY has a file saved/associated, we should show it.
+        // But only if we are in 'upload' mode or switching to it?
+        // The 'data.sourceType' comes from the checked radio.
+        if (data.sourceType === 'upload') {
+          if (current.fileName || current.serverFilePath) {
+            data.currentFileName = current.fileName || (current.serverFilePath ? current.serverFilePath.split('/').pop() : 'Unknown File');
+            data.currentFileSaved = current.fileSaved || Boolean(current.serverFilePath);
+            data.currentThumbnail = current.thumbnail; // Load thumbnail if available
+          }
+        }
       }
     }
   }
@@ -710,42 +716,128 @@ function renderPreview(slideOverride) {
   if (!slidePreview) return;
 
   if (data.sourceType === 'upload') {
+    slidePreview.classList.add('preview-scroll-mode'); // Enable scroll layout
+
     const ph = document.createElement('div');
     ph.className = 'preview-placeholder';
+    ph.style.display = 'block'; // Block for stacking
+    ph.style.width = '100%';
+    ph.style.minHeight = '100%';
+    ph.style.padding = '0'; // No padding
 
-    const icon = document.createElement('div');
-    icon.textContent = "📄";
-    icon.style.fontSize = "48px";
-    icon.style.marginBottom = "10px";
+    // Container for PPTXjs
+    const pptxContainerId = "pptx-renderer-" + Date.now();
+    const pptxContainer = document.createElement('div');
+    pptxContainer.id = pptxContainerId;
+    pptxContainer.className = "pptx-renderer";
 
-    const text = document.createElement('div');
-
-    // Display Logic:
-    // 1. New file selected (data.file) -> Show name + "Ready to save"
-    // 2. Existing file (data.currentFileName) -> Show name + Saved Status
-    // 3. Nothing -> "Upload please"
+    let fileUrl = null;
 
     if (data.file) {
-      text.innerHTML = `선택된 파일: <strong>${data.file.name}</strong><br><span style='font-size:0.8em; color:#8fabff;'>저장 버튼을 눌러 확정하세요.</span>`;
+      fileUrl = URL.createObjectURL(data.file);
+    } else if (data.serverFilePath) {
+      fileUrl = data.serverFilePath;
     } else if (data.currentFileName) {
-      const savedBadge = data.currentFileSaved ?
-        "<span style='color:#4caf50; font-size:0.8em;'>[저장됨]</span>" :
-        "<span style='color:#ff8888; font-size:0.8em;'>[미저장/세션전용]</span>";
-      text.innerHTML = `파일: <strong>${data.currentFileName}</strong> ${savedBadge}`;
-    } else {
-      text.textContent = "PPTX 파일을 업로드하거나 선택하세요.";
-      text.style.color = "#ccc";
+      // Fallback
     }
 
-    ph.appendChild(icon);
-    ph.appendChild(text);
+    if (fileUrl && window.jQuery && window.jQuery.fn.pptxToHtml) {
+      ph.appendChild(pptxContainer);
+
+      // Render
+      setTimeout(() => {
+        try {
+          window.jQuery(`#${pptxContainerId}`).pptxToHtml({
+            pptxFileUrl: fileUrl,
+            slidesScale: "50%", // Render at 50% of native
+            slideMode: false,
+            keyBoardShortCut: false
+          });
+
+          // Post-render: poll for slides and apply zoom to fit container
+          let checks = 0;
+          const fitInterval = setInterval(() => {
+            checks++;
+            const container = document.getElementById(pptxContainerId);
+            if (!container) { clearInterval(fitInterval); return; }
+
+            const slides = container.querySelectorAll('.slide');
+            if (slides.length > 0) {
+              clearInterval(fitInterval);
+
+              // Get container width
+              const containerWidth = container.offsetWidth || 400;
+
+              slides.forEach(slide => {
+                const slideWidth = slide.offsetWidth || slide.scrollWidth || 500;
+                if (slideWidth > containerWidth) {
+                  // Use zoom property for better content scaling
+                  const zoomLevel = containerWidth / slideWidth;
+                  slide.style.zoom = zoomLevel;
+                  slide.style.marginBottom = '20px';
+                }
+              });
+            }
+
+            if (checks > 30) clearInterval(fitInterval);
+          }, 100);
+
+        } catch (e) {
+          console.error("PPTXjs error:", e);
+          pptxContainer.textContent = "미리보기 로딩 실패";
+        }
+      }, 50);
+
+      // Filename overlay or footer
+      const info = document.createElement('div');
+      info.style.padding = "10px";
+      info.style.fontSize = "12px";
+      info.style.color = "#aaa";
+      info.style.textAlign = "center";
+      info.textContent = data.file ? `파일: ${data.file.name}` : `파일: ${data.fileName || data.currentFileName}`;
+      ph.appendChild(info);
+
+    } else {
+      // Fallback Logic
+      const containerFallback = document.createElement('div');
+      containerFallback.style.display = 'flex';
+      containerFallback.style.flexDirection = 'column';
+      containerFallback.style.alignItems = 'center';
+      containerFallback.style.justifyContent = 'center';
+      containerFallback.style.height = '100%';
+      containerFallback.style.minHeight = '300px';
+
+      const icon = document.createElement('div');
+      icon.textContent = "📄";
+      icon.style.fontSize = "48px";
+
+      let thumbnailSrc = data.currentThumbnail || data.thumbnail;
+      if (thumbnailSrc) {
+        const img = document.createElement('img');
+        img.src = thumbnailSrc;
+        img.style.maxWidth = "100%";
+        containerFallback.appendChild(img);
+      } else {
+        containerFallback.appendChild(icon);
+      }
+
+      const text = document.createElement('div');
+      text.style.marginTop = "10px";
+      const name = data.file ? data.file.name : (data.fileName || data.currentFileName);
+      text.innerHTML = name ? `파일: ${name}` : "파일을 선택하세요";
+      containerFallback.appendChild(text);
+
+      ph.appendChild(containerFallback);
+    }
 
     slidePreview.style.background = '#222';
+    slidePreview.innerHTML = "";
     slidePreview.appendChild(ph);
     return;
   }
 
-  // ... basic render ...
+  // Basic Render
+  slidePreview.classList.remove('preview-scroll-mode'); // Reset
   const container = document.createElement("div");
   container.className = "preview-content";
 
@@ -1005,6 +1097,7 @@ async function saveCurrentSlide() {
           // Update slide with server file info
           slide.serverFilePath = result.path; // e.g. /uploads/xxx-name.pptx
           slide.fileName = result.originalName;
+          slide.thumbnail = result.thumbnail; // Save thumbnail path
           slide.fileSaved = true;
 
           // Clear transient file obj

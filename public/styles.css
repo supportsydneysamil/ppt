@@ -377,6 +377,7 @@ body {
     opacity: 0;
     transform: translateY(12px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -527,6 +528,10 @@ body {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  min-width: 0;
+  /* CRITICAL: prevents grid/flex blowout */
+  overflow: hidden;
+  /* extra safety */
 }
 
 .editor-header {
@@ -596,7 +601,7 @@ body {
   justify-content: center;
   overflow: hidden;
   position: relative;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
 .preview-content {
@@ -621,4 +626,45 @@ body {
   border-radius: 16px;
   color: var(--muted);
   min-height: 400px;
+}
+
+/* PPTX Preview Layout (Vertical Scroll) */
+.pptx-renderer {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 20px;
+  padding: 20px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Modifier class added by JS when in upload mode */
+.slide-preview-box.preview-scroll-mode {
+  aspect-ratio: auto !important;
+  height: auto !important;
+  max-height: 600px;
+  /* Scrollable area height */
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  /* Critical: preventing blowout */
+  display: block !important;
+  /* Not flex center */
+  padding: 0 !important;
+}
+
+/* Force PPTXjs slides styling */
+.pptx-renderer .slide {
+  margin-bottom: 20px !important;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+  /* Let library handle width/height/transform via slidesScale */
+  /* We only ensure it doesn't overflow container if library messes up */
+  /* max-width: 100%; REMOVED to allow proper JS scaling */
+}
+
+/* Ensure wrapper doesn't lock width */
+.pptx-renderer>div,
+.pptx-wrapper {
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
 }
