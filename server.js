@@ -95,18 +95,49 @@ app.post("/api/upload", upload.single('file'), async (req, res) => {
     return res.status(400).json({ error: "No file uploaded" });
   }
 
-  const filePath = req.file.path;
+  let filePath = req.file.path;
+  let filename = req.file.filename;
   // Fix for Korean text encoding issues (Multer/Node often parses headers as latin1)
   const originalName = Buffer.from(req.file.originalname, "latin1").toString("utf8");
   let thumbnailPath = null;
 
-  // Try extracting thumbnail
-  if (originalName.toLowerCase().endsWith(".pptx")) {
+  // Automatic .ppt to .pptx conversion
+  if (path.extname(originalName).toLowerCase() === '.ppt') {
+    try {
+      console.log(`Converting ${originalName} to PPTX...`);
+      const soffice = "/opt/homebrew/bin/soffice"; // Path verified
+
+      // Helper to execute conversion
+      // Usage: soffice --headless --convert-to pptx --outdir <dir> <file>
+      const cmd = `"${soffice}" --headless --convert-to pptx --outdir "${uploadsDir}" "${filePath}"`;
+      await execAsync(cmd);
+
+      // Calculate new filename (soffice replaces extension)
+      const newFilename = filename.replace(/\.ppt$/i, '.pptx');
+      const newPath = path.join(uploadsDir, newFilename);
+
+      // Verify existence
+      await fs.access(newPath);
+
+      // Delete original .ppt
+      await fs.unlink(filePath);
+
+      filePath = newPath;
+      filename = newFilename;
+      console.log("Conversion successful:", filename);
+
+    } catch (e) {
+      console.warn("PPT conversion failed (will use original):", e.message);
+    }
+  }
+
+  // Try extracting thumbnail (works for regular .pptx AND converted .ppt)
+  if (filename.toLowerCase().endsWith(".pptx")) {
     try {
       const zip = new AdmZip(filePath);
       const thumbEntry = zip.getEntry("docProps/thumbnail.jpeg");
       if (thumbEntry) {
-        const thumbName = req.file.filename + "-thumb.jpeg";
+        const thumbName = filename + "-thumb.jpeg";
         const thumbOutPath = path.join(uploadsDir, thumbName);
         await fs.writeFile(thumbOutPath, thumbEntry.getData());
         thumbnailPath = `/uploads/${thumbName}`;
@@ -118,8 +149,8 @@ app.post("/api/upload", upload.single('file'), async (req, res) => {
 
   // Return web-accessible path
   res.json({
-    filename: req.file.filename,
-    path: `/uploads/${req.file.filename}`,
+    filename: filename,
+    path: `/uploads/${filename}`,
     originalName: originalName,
     thumbnail: thumbnailPath
   });

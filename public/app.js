@@ -759,18 +759,23 @@ function renderPreview(slideOverride) {
       };
     }
 
-    // If we are editing an EXISTING slide, and no NEW file picked, we want to show existing name.
-    if (currentSlideId && !data.file) {
+    // If we are editing an EXISTING slide
+    if (currentSlideId) {
       const current = slides.find(s => s.id === currentSlideId);
       if (current) {
-        // Even if we just switched to 'upload', if the slide ALREADY has a file saved/associated, we should show it.
-        // But only if we are in 'upload' mode or switching to it?
-        // The 'data.sourceType' comes from the checked radio.
-        if (data.sourceType === 'upload') {
-          if (current.fileName || current.serverFilePath) {
-            data.currentFileName = current.fileName || (current.serverFilePath ? current.serverFilePath.split('/').pop() : 'Unknown File');
-            data.currentFileSaved = current.fileSaved || Boolean(current.serverFilePath);
-            data.currentThumbnail = current.thumbnail; // Load thumbnail if available
+        // Essential: Attach serverFilePath if available (for .ppt conversion preview)
+        if (current.serverFilePath) {
+          data.serverFilePath = current.serverFilePath;
+        }
+
+        // If no NEW file picked, restore saved metadata
+        if (!data.file) {
+          if (data.sourceType === 'upload') {
+            if (current.fileName || current.serverFilePath) {
+              data.currentFileName = current.fileName || (current.serverFilePath ? current.serverFilePath.split('/').pop() : 'Unknown File');
+              data.currentFileSaved = current.fileSaved || Boolean(current.serverFilePath);
+              data.currentThumbnail = current.thumbnail;
+            }
           }
         }
       }
@@ -779,9 +784,11 @@ function renderPreview(slideOverride) {
 
   console.log("renderPreview called with data:", data);
 
-  // Optimization: Prevent iframe reload on name change
+  // Optimization: Prevent iframe reload on name change (Comprehensive)
+  let skipRender = false;
+
+  // Case 1: Legacy PPT URL Cache
   let potentialPptUrl = null;
-  // Check if we are dealing with a Hymn/PPT scenario that uses iframe
   if (data.type === 'hymn' || (data.sourceType === 'upload' && (data.originalUrl || data.type === 'hymn'))) {
     potentialPptUrl = data.originalUrl;
     if (!potentialPptUrl && data.type === 'hymn' && data.hymnNumber) {
@@ -789,9 +796,33 @@ function renderPreview(slideOverride) {
     }
   }
   if (potentialPptUrl && slidePreview.dataset.lastRenderedUrl === potentialPptUrl) {
+    skipRender = true;
+  }
+
+  // Case 2: File object (Blob) Cache
+  if (data.file) {
+    const fileId = data.file.name + ':' + data.file.size + ':' + data.file.lastModified;
+    if (slidePreview.dataset.lastRenderedFile === fileId) {
+      skipRender = true;
+    }
+  }
+
+  // Case 3: Server File Path Cache
+  // Only use this if not overridden by a new file upload
+  if (data.serverFilePath && !data.file) {
+    if (slidePreview.dataset.lastRenderedPath === data.serverFilePath) {
+      skipRender = true;
+    }
+  }
+
+  if (skipRender) {
     return;
   }
+
+  // Clear caches before render
   slidePreview.dataset.lastRenderedUrl = "";
+  slidePreview.dataset.lastRenderedFile = "";
+  slidePreview.dataset.lastRenderedPath = "";
 
   slidePreview.innerHTML = "";
 
@@ -817,7 +848,15 @@ function renderPreview(slideOverride) {
     let fileUrl = null;
 
     if (data.file) {
-      fileUrl = URL.createObjectURL(data.file);
+      // If local file is .ppt (unsupported by viewer) but we have converted .pptx server file, use server file
+      if (data.file.name.toLowerCase().endsWith('.ppt') &&
+        data.serverFilePath &&
+        typeof data.serverFilePath === 'string' &&
+        data.serverFilePath.toLowerCase().endsWith('.pptx')) {
+        fileUrl = data.serverFilePath;
+      } else {
+        fileUrl = URL.createObjectURL(data.file);
+      }
     } else if (data.serverFilePath) {
       fileUrl = data.serverFilePath;
     } else if (data.currentFileName) {
@@ -852,6 +891,14 @@ function renderPreview(slideOverride) {
       }
     } else if (fileUrl && window.jQuery && window.jQuery.fn.pptxToHtml) {
       ph.appendChild(pptxContainer);
+
+      // Update Cache State
+      if (data.file) {
+        slidePreview.dataset.lastRenderedFile = data.file.name + ':' + data.file.size + ':' + data.file.lastModified;
+      }
+      if (data.serverFilePath) {
+        slidePreview.dataset.lastRenderedPath = data.serverFilePath;
+      }
 
       // Render
       setTimeout(() => {
@@ -1524,8 +1571,34 @@ sourceRadios.forEach(radio => {
   })
 });
 
-userPptxFile.addEventListener('change', () => {
+userPptxFile.addEventListener('change', async () => {
   hasUnsavedChanges = true;
+
+  if (userPptxFile.files.length > 0) {
+    const file = userPptxFile.files[0];
+    // Auto-upload and convert .ppt files
+    if (file.name.toLowerCase().endsWith(".ppt")) {
+      slidePreview.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:300px;color:#666;">
+                 <div style="font-size:24px;margin-bottom:10px;">⏳</div>
+                 <div>PPT 변환 및 업로드 중...</div>
+                 <div style="font-size:12px;color:#aaa;">(잠시만 기다려주세요)</div>
+             </div>`;
+
+      try {
+        const result = await uploadFile(file);
+        const current = slides.find(s => s.id === currentSlideId);
+        if (current) {
+          current.serverFilePath = result.path;
+          current.fileName = result.originalName || file.name;
+        }
+        renderPreview(); // Render using converted server file
+        return;
+      } catch (e) {
+        alert("PPT 변환 업로드 실패: " + e.message);
+      }
+    }
+  }
+
   renderPreview();
 });
 
