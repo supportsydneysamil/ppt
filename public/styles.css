@@ -91,6 +91,8 @@ body {
   position: relative;
   overflow: hidden;
   animation: floatIn 700ms ease;
+  margin-bottom: 32px;
+  /* Add spacing below hero */
 }
 
 .hero::after {
@@ -397,7 +399,8 @@ body {
   gap: 16px;
   border-bottom: 1px solid var(--border);
   padding-bottom: 16px;
-  margin-bottom: 24px;
+  margin-bottom: 0;
+  /* Increased for better spacing between nav and content */
 }
 
 .nav-item {
