@@ -850,11 +850,8 @@ function renderPreview(slideOverride) {
 
       // Filename overlay or footer
       const info = document.createElement('div');
-      info.style.padding = "10px";
-      info.style.fontSize = "12px";
-      info.style.color = "#aaa";
-      info.style.textAlign = "center";
-      info.textContent = data.file ? `파일: ${data.file.name}` : `파일: ${data.fileName || data.currentFileName}`;
+      info.className = 'preview-filename-badge';
+      info.textContent = data.file ? `${data.file.name}` : `${data.fileName || data.currentFileName}`;
       ph.appendChild(info);
 
     } else {
