@@ -355,6 +355,860 @@ async function buildPptxPayload() {
   return payload;
 }
 
+const navExtractor = document.getElementById("navExtractor");
+const navPpt = document.getElementById("navPpt");
+const viewExtractor = document.getElementById("view-extractor");
+const viewPpt = document.getElementById("view-ppt");
+
+const slideListContainer = document.getElementById("slideListContainer");
+const slideEditor = document.getElementById("slideEditor");
+const emptyEditorState = document.getElementById("emptyEditorState");
+const addSlideBtn = document.getElementById("addSlideBtn");
+const editorSaveBtn = document.getElementById("editorSaveBtn");
+const editorResetBtn = document.getElementById("editorResetBtn");
+const editorCancelBtn = document.getElementById("editorCancelBtn");
+
+const editorDeleteBtn = document.getElementById("editorDeleteBtn");
+
+const slideFontSizeSelect = document.getElementById("slideFontSize");
+const editorDownloadBtn = document.getElementById("editorDownloadBtn");
+
+const slideNameInput = document.getElementById("slideName");
+const slideTypeSelect = document.getElementById("slideType");
+const slideContentInput = document.getElementById("slideContent");
+const slideFontSelect = document.getElementById("slideFont");
+const slideBgSelect = document.getElementById("slideBg");
+const slideAlignSelect = document.getElementById("slideAlign");
+const slidePreview = document.getElementById("slidePreview");
+const sourceRadios = document.querySelectorAll('input[name="sourceType"]');
+const basicSettingsMode = document.getElementById("basicSettingsMode");
+const uploadSettingsMode = document.getElementById("uploadSettingsMode");
+const userPptxFile = document.getElementById("userPptxFile");
+
+// State
+let slides = [];
+let currentSlideId = null;
+let hasUnsavedChanges = false;
+
+// --- Navigation ---
+function switchView(viewName) {
+  if (hasUnsavedChanges) {
+    if (!confirm("저장하지 않은 변경사항이 있습니다. 정말 이동하시겠습니까?")) {
+      return;
+    }
+    hasUnsavedChanges = false;
+  }
+
+  if (viewName === "extractor") {
+    viewExtractor.style.display = "block";
+    viewPpt.style.display = "none";
+    navExtractor.classList.add("active");
+    navPpt.classList.remove("active");
+  } else {
+    viewExtractor.style.display = "none";
+    viewPpt.style.display = "grid";
+    navExtractor.classList.remove("active");
+    navPpt.classList.add("active");
+    renderSlideList();
+  }
+}
+
+navExtractor.addEventListener("click", () => switchView("extractor"));
+navPpt.addEventListener("click", () => switchView("ppt"));
+
+// --- Storage ---
+
+// --- Storage ---
+
+// --- Storage (Server Side) ---
+
+async function saveSlidesToServer() {
+  try {
+    const resp = await fetch("/api/slides", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(slides),
+    });
+    if (!resp.ok) {
+      console.error("Failed to save slides");
+    }
+  } catch (e) {
+    console.error("Network error saving slides", e);
+  }
+}
+
+async function loadSlidesFromServer() {
+  try {
+    const resp = await fetch("/api/slides");
+    if (resp.ok) {
+      slides = await resp.json();
+      if (!Array.isArray(slides)) slides = [];
+      renderSlideList();
+    }
+  } catch (e) {
+    console.error("Failed to load slides", e);
+    slides = [];
+  }
+}
+
+// ... (loadSlidesFromStorage) ...
+
+// --- Slide Management ---
+
+function createSlide() {
+  const newSlide = {
+    id: Date.now().toString(),
+    name: "새 슬라이드",
+    type: "simple",
+    sourceType: "basic",
+    content: "",
+    font: "Malgun Gothic",
+    fontSize: "40",
+    bg: "black",
+    align: "center",
+    file: null,      // File object (runtime only)
+    fileData: null,  // Base64 string (persistent)
+    fileName: null,  // string
+    fileSaved: false,// boolean (persisted status)
+    saved: false,
+  };
+  slides.push(newSlide);
+  // Do NOT save to storage yet
+  selectSlide(newSlide.id);
+  hasUnsavedChanges = true;
+  renderSlideList();
+}
+
+// ... (selectSlide, populateEditor, toggleSettingsMode) ...
+
+// Helpers
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function base64ToBlob(base64, mimeType = "application/vnd.openxmlformats-officedocument.presentationml.presentation") {
+  const arr = base64.split(',');
+  const data = arr[1] ? arr[1] : arr[0]; // handle with or without prefix
+  const byteString = atob(data);
+  const ab = new ArrayBuffer(byteString.length);
+  const ia = new Uint8Array(ab);
+  for (let i = 0; i < byteString.length; i++) {
+    ia[i] = byteString.charCodeAt(i);
+  }
+  return new Blob([ab], { type: mimeType });
+}
+
+// Updated saveCurrentSlide to be ASYNC to handle file reading
+async function saveCurrentSlide() {
+  console.log("saveCurrentSlide called. currentSlideId:", currentSlideId);
+  if (!currentSlideId) {
+    console.error("No currentSlideId!");
+    return;
+  }
+
+  const name = slideNameInput.value.trim();
+  console.log("Saving name:", name);
+
+  if (!name) {
+    alert("슬라이드 이름을 입력하세요.");
+    return;
+  }
+
+  // Check duplicate name
+  const existing = slides.find((s) => s.name === name && s.id !== currentSlideId);
+  if (existing) {
+    alert("이미 존재하는 슬라이드 이름입니다.");
+    return;
+  }
+
+  const slide = slides.find((s) => s.id === currentSlideId);
+  if (!slide) {
+    console.error("Slide object not found for id:", currentSlideId);
+    return;
+  }
+
+  try {
+    slide.name = name;
+    slide.type = slideTypeSelect.value;
+    const sourceRadio = document.querySelector('input[name="sourceType"]:checked');
+    if (!sourceRadio) {
+      console.error("No source radio checked");
+      return;
+    }
+    slide.sourceType = sourceRadio.value;
+    slide.content = slideContentInput.value;
+    slide.font = slideFontSelect.value;
+    slide.fontSize = slideFontSizeSelect.value;
+    slide.bg = slideBgSelect.value;
+    slide.align = slideAlignSelect.value;
+    slide.saved = true;
+
+    // Handle File Upload
+    if (slide.sourceType === 'upload') {
+      if (userPptxFile.files.length > 0) {
+        const file = userPptxFile.files[0];
+        // Limits: Check size (e.g. 3MB)
+        if (file.size > 3 * 1024 * 1024) {
+          alert(`파일 용량이 큽니다 (${(file.size / 1024 / 1024).toFixed(1)}MB). \n3MB 이상의 파일은 브라우저에 저장되지 않으며, 새로고침 시 초기화됩니다.`);
+          slide.file = file;
+          slide.fileName = file.name;
+          slide.fileData = null; // Don't save big file
+          slide.fileSaved = false;
+        } else {
+          // Read and store
+          try {
+            const base64 = await readFileAsBase64(file);
+            slide.file = file;
+            slide.fileName = file.name;
+            slide.fileData = base64;
+            slide.fileSaved = true;
+          } catch (readErr) {
+            console.error("File read error:", readErr);
+            alert("파일 읽기 실패");
+            return;
+          }
+        }
+      } else if (!slide.fileName) {
+        // No new file, and no existing file
+        alert("PPTX 파일을 업로드해주세요.");
+        return;
+      }
+      // If no new file selected but we have existing (slide.file or slide.fileData), keep it.
+    }
+
+    console.log("Saving slide data:", slide);
+    await saveSlidesToServer();
+    hasUnsavedChanges = false;
+    updateButtonsState(slide);
+    renderSlideList();
+    alert("저장되었습니다.");
+  } catch (e) {
+    console.error("Error in saveCurrentSlide:", e);
+    alert("저장 중 오류 발생: " + e.message);
+  }
+}
+
+// ... (resetCurrentSlide, updateButtonsState, deleteCurrentSlide, cancelEdit) ...
+
+async function downloadSlide() {
+  if (!currentSlideId) return;
+  const slide = slides.find(s => s.id === currentSlideId);
+  if (!slide || !slide.saved) return;
+
+  if (slide.sourceType === 'basic') {
+    // ... basic processing ...
+    try {
+      const resp = await fetch("/api/create-slide-pptx", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content: slide.content,
+          font: slide.font,
+          fontSize: slide.fontSize,
+          bg: slide.bg,
+          align: slide.align
+        })
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json();
+        alert("다운로드 실패: " + (err.error || "Unknown Error"));
+        return;
+      }
+
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${slide.name}.pptx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+    } catch (e) {
+      alert("다운로드 중 오류가 발생했습니다.");
+      console.error(e);
+    }
+  } else {
+    // Upload Mode
+    // Use serverFilePath if available
+    let url = null;
+    let filename = slide.fileName || "slide.pptx";
+
+    if (slide.serverFilePath) {
+      url = slide.serverFilePath; // e.g. /uploads/xxx.pptx
+    } else if (slide.file) {
+      url = URL.createObjectURL(slide.file);
+    } else if (slide.fileData) {
+      // Fallback for old data or small files if we still have them?
+      // But we are migrating away.
+      const blob = base64ToBlob(slide.fileData);
+      url = URL.createObjectURL(blob);
+    }
+
+    if (!url) {
+      alert("파일을 찾을 수 없습니다.");
+      return;
+    }
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    if (!slide.serverFilePath) URL.revokeObjectURL(url);
+  }
+}
+
+// ... (renderSlideList) ...
+
+function renderPreview(slideOverride) {
+  // Use override if provided (for loading initial state), otherwise build from inputs
+  let data = slideOverride;
+  // Note: if doing "Live Preview" (data is null), we are reading form inputs.
+  // The user might have selected a file in the input, but not saved it yet.
+
+  if (!data) {
+    // Live preview from inputs
+    data = {
+      name: slideNameInput.value,
+      type: slideTypeSelect.value,
+      sourceType: document.querySelector('input[name="sourceType"]:checked').value,
+      content: slideContentInput.value,
+      font: slideFontSelect.value,
+      fontSize: slideFontSizeSelect.value,
+      bg: slideBgSelect.value,
+      align: slideAlignSelect.value,
+      // For preview, we check the INPUT element directly
+      file: userPptxFile.files[0]
+    };
+
+    // If we are editing an EXISTING slide, and no NEW file picked, we might want to show existing name?
+    // But 'data' here is transient.
+    // If currentSlideId exists, we can fallback to its existing data if input is empty?
+    if (currentSlideId && !data.file) {
+      const current = slides.find(s => s.id === currentSlideId);
+      if (current && current.sourceType === 'upload') {
+        data.currentFileName = current.fileName;
+        data.currentFileSaved = current.fileSaved;
+      }
+    }
+  }
+
+  console.log("renderPreview called with data:", data);
+
+  slidePreview.innerHTML = "";
+
+  // Ensure slidePreview is visible (just in case)
+  if (!slidePreview) return;
+
+  if (data.sourceType === 'upload') {
+    const ph = document.createElement('div');
+    ph.className = 'preview-placeholder';
+
+    const icon = document.createElement('div');
+    icon.textContent = "📄";
+    icon.style.fontSize = "48px";
+    icon.style.marginBottom = "10px";
+
+    const text = document.createElement('div');
+
+    // Display Logic:
+    // 1. New file selected (data.file) -> Show name + "Ready to save"
+    // 2. Existing file (data.currentFileName) -> Show name + Saved Status
+    // 3. Nothing -> "Upload please"
+
+    if (data.file) {
+      text.innerHTML = `선택된 파일: <strong>${data.file.name}</strong><br><span style='font-size:0.8em; color:#8fabff;'>저장 버튼을 눌러 확정하세요.</span>`;
+    } else if (data.currentFileName) {
+      const savedBadge = data.currentFileSaved ?
+        "<span style='color:#4caf50; font-size:0.8em;'>[저장됨]</span>" :
+        "<span style='color:#ff8888; font-size:0.8em;'>[미저장/세션전용]</span>";
+      text.innerHTML = `파일: <strong>${data.currentFileName}</strong> ${savedBadge}`;
+    } else {
+      text.textContent = "PPTX 파일을 업로드하거나 선택하세요.";
+      text.style.color = "#ccc";
+    }
+
+    ph.appendChild(icon);
+    ph.appendChild(text);
+
+    slidePreview.style.background = '#222';
+    slidePreview.appendChild(ph);
+    return;
+  }
+
+  // ... basic render ...
+  const container = document.createElement("div");
+  container.className = "preview-content";
+
+  // Apply styles
+  container.style.backgroundColor = data.bg === "black" ? "black" : "white";
+  container.style.color = data.bg === "black" ? "white" : "black";
+  container.style.fontFamily = data.font;
+  container.style.textAlign = data.align;
+
+  // Vertical align
+  if (data.align === 'top') {
+    container.style.justifyContent = 'flex-start';
+  } else {
+    container.style.justifyContent = 'center';
+  }
+
+  // Content split by newline
+  const lines = data.content ? data.content.split('\n') : ["내용을 입력하세요"];
+
+  lines.forEach(line => {
+    const p = document.createElement("div");
+    p.textContent = line;
+    p.style.fontSize = `${data.fontSize || 40}px`;
+    p.style.fontWeight = "bold";
+    p.style.lineHeight = "1.2";
+    p.style.whiteSpace = "pre-wrap";
+    container.appendChild(p);
+  });
+
+  slidePreview.appendChild(container);
+}
+
+function selectSlide(id) {
+  if (currentSlideId === id) return;
+
+  if (currentSlideId) {
+    const prevSlide = slides.find(s => s.id === currentSlideId);
+    // If previous slide was unsaved (never saved), we should discard/delete it if user navigates away
+    if (prevSlide && !prevSlide.saved) {
+      if (!confirm("이 슬라이드는 저장되지 않았습니다. 이동하면 삭제됩니다. 계속하시겠습니까?")) {
+        return;
+      }
+      // Remove the unsaved slide
+      slides = slides.filter(s => s.id !== currentSlideId);
+      hasUnsavedChanges = false;
+    } else if (hasUnsavedChanges) {
+      // Saved slide but has pending edits
+      if (!confirm("저장하지 않은 변경사항이 있습니다. 무시하고 이동하시겠습니까?")) {
+        return;
+      }
+      hasUnsavedChanges = false;
+    }
+  }
+
+  currentSlideId = id;
+  const slide = slides.find((s) => s.id === id);
+
+  if (slide) {
+    emptyEditorState.style.display = "none";
+    slideEditor.style.display = "flex";
+    populateEditor(slide);
+    renderPreview(slide);
+    updateButtonsState(slide);
+    renderSlideList();
+  } else {
+    // If id not found (e.g. after delete), show empty
+    currentSlideId = null;
+    emptyEditorState.style.display = "flex";
+    slideEditor.style.display = "none";
+    renderSlideList();
+  }
+}
+
+function populateEditor(slide) {
+  slideNameInput.value = slide.name;
+  slideTypeSelect.value = slide.type;
+  slideContentInput.value = slide.content;
+  slideFontSelect.value = slide.font;
+  slideFontSizeSelect.value = slide.fontSize || "40";
+  slideBgSelect.value = slide.bg;
+  slideAlignSelect.value = slide.align;
+
+  // Set source type radio
+  sourceRadios.forEach(r => {
+    r.checked = r.value === slide.sourceType;
+  });
+  toggleSettingsMode(slide.sourceType);
+}
+
+function toggleSettingsMode(mode) {
+  if (mode === "basic") {
+    basicSettingsMode.style.display = "block";
+    uploadSettingsMode.style.display = "none";
+  } else {
+    basicSettingsMode.style.display = "none";
+    uploadSettingsMode.style.display = "block";
+  }
+}
+
+function resetCurrentSlide() {
+  if (!currentSlideId) return;
+  const slide = slides.find((s) => s.id === currentSlideId);
+  // Reset fields to last saved state
+  populateEditor(slide);
+  renderPreview(slide);
+  hasUnsavedChanges = false;
+  updateButtonsState(slide);
+}
+
+function updateButtonsState(slide) {
+  if (slide.saved) {
+    editorDownloadBtn.style.display = "inline-flex";
+    editorDeleteBtn.style.display = "inline-flex";
+    editorCancelBtn.style.display = "none";
+  } else {
+    editorDownloadBtn.style.display = "none";
+    editorDeleteBtn.style.display = "none";
+    editorCancelBtn.style.display = "inline-flex";
+  }
+}
+
+function renderSlideList() {
+  slideListContainer.innerHTML = "";
+  slides.forEach((slide) => {
+    const card = document.createElement("div");
+    card.className = `slide-card ${slide.id === currentSlideId ? "active" : ""}`;
+    card.onclick = () => selectSlide(slide.id);
+
+    const title = document.createElement("h4");
+    title.textContent = slide.name;
+    const desc = document.createElement("p");
+    desc.textContent =
+      slide.type === "simple" ? "단순 슬라이드" : slide.type;
+
+    card.appendChild(title);
+    card.appendChild(desc);
+    slideListContainer.appendChild(card);
+  });
+}
+
+async function deleteCurrentSlide() {
+  if (!currentSlideId) return;
+
+  if (!confirm("정말 이 슬라이드를 삭제하시겠습니까?")) {
+    return;
+  }
+
+  // Call API
+  try {
+    await fetch(`/api/slides/${currentSlideId}`, { method: 'DELETE' });
+    // Refresh
+    await loadSlidesFromServer();
+
+    currentSlideId = null;
+    hasUnsavedChanges = false;
+
+    emptyEditorState.style.display = "flex";
+    slideEditor.style.display = "none";
+    renderSlideList();
+  } catch (e) {
+    alert("삭제 실패");
+    console.error(e);
+  }
+}
+
+// ... cancelEdit (no server logic needed here usually, just discard local) ...
+function cancelEdit() {
+  if (!currentSlideId) return;
+  const slide = slides.find(s => s.id === currentSlideId);
+
+  if (slide && !slide.saved) {
+    if (!confirm("작성 중인 슬라이드가 삭제됩니다. 취소하시겠습니까?")) {
+      return;
+    }
+    slides = slides.filter(s => s.id !== currentSlideId);
+    currentSlideId = null;
+    hasUnsavedChanges = false;
+
+    emptyEditorState.style.display = "flex";
+    slideEditor.style.display = "none";
+    renderSlideList();
+  } else {
+    currentSlideId = null;
+    hasUnsavedChanges = false;
+    emptyEditorState.style.display = "flex";
+    slideEditor.style.display = "none";
+    renderSlideList();
+  }
+}
+
+async function uploadFile(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const resp = await fetch("/api/upload", {
+    method: "POST",
+    body: formData
+  });
+
+  if (!resp.ok) {
+    throw new Error("File upload failed");
+  }
+  return await resp.json();
+}
+
+async function saveCurrentSlide() {
+  console.log("saveCurrentSlide called. currentSlideId:", currentSlideId);
+  if (!currentSlideId) {
+    console.error("No currentSlideId!");
+    return;
+  }
+
+  const name = slideNameInput.value.trim();
+  console.log("Saving name:", name);
+
+  if (!name) {
+    alert("슬라이드 이름을 입력하세요.");
+    return;
+  }
+
+  // Check duplicate name
+  const existing = slides.find((s) => s.name === name && s.id !== currentSlideId);
+  if (existing) {
+    alert("이미 존재하는 슬라이드 이름입니다.");
+    return;
+  }
+
+  const slide = slides.find((s) => s.id === currentSlideId);
+  if (!slide) {
+    console.error("Slide object not found for id:", currentSlideId);
+    return;
+  }
+
+  try {
+    slide.name = name;
+    slide.type = slideTypeSelect.value;
+    const sourceRadio = document.querySelector('input[name="sourceType"]:checked');
+    if (!sourceRadio) {
+      console.error("No source radio checked");
+      return;
+    }
+    slide.sourceType = sourceRadio.value;
+    slide.content = slideContentInput.value;
+    slide.font = slideFontSelect.value;
+    slide.fontSize = slideFontSizeSelect.value;
+    slide.bg = slideBgSelect.value;
+    slide.align = slideAlignSelect.value;
+    slide.saved = true;
+
+    // Handle File Upload
+    if (slide.sourceType === 'upload') {
+      if (userPptxFile.files.length > 0) {
+        const file = userPptxFile.files[0];
+        // Upload to server
+        try {
+          const result = await uploadFile(file);
+          // Update slide with server file info
+          slide.serverFilePath = result.path; // e.g. /uploads/xxx-name.pptx
+          slide.fileName = result.originalName;
+          slide.fileSaved = true;
+
+          // Clear transient file obj
+          slide.file = null;
+          slide.fileData = null;
+        } catch (err) {
+          console.error("Upload Error:", err);
+          alert("파일 업로드 실패");
+          return;
+        }
+      } else if (!slide.fileName && !slide.serverFilePath) {
+        alert("PPTX 파일을 업로드해주세요.");
+        return;
+      }
+    }
+
+    // Save full list to server
+    console.log("Saving slide data:", slide);
+    await saveSlidesToServer();
+
+    hasUnsavedChanges = false;
+    updateButtonsState(slide);
+    renderSlideList();
+    alert("저장되었습니다.");
+  } catch (e) {
+    console.error("Error in saveCurrentSlide:", e);
+    alert("저장 중 오류 발생: " + e.message);
+  }
+}
+
+async function downloadSlide() {
+  if (!currentSlideId) return;
+  const slide = slides.find(s => s.id === currentSlideId);
+  if (!slide || !slide.saved) return;
+
+  if (slide.sourceType === 'basic') {
+    try {
+      const resp = await fetch("/api/create-slide-pptx", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content: slide.content,
+          font: slide.font,
+          fontSize: slide.fontSize,
+          bg: slide.bg,
+          align: slide.align
+        })
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json();
+        alert("다운로드 실패: " + (err.error || "Unknown Error"));
+        return;
+      }
+
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${slide.name}.pptx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+    } catch (e) {
+      alert("다운로드 중 오류가 발생했습니다.");
+      console.error(e);
+    }
+  } else {
+    // Upload Mode
+    // Priority: 1. Runtime File Object, 2. Base64 Data, 3. Server File Path
+    let blobToDownload = null;
+    let filename = slide.fileName || "slide.pptx";
+
+    if (slide.file) {
+      blobToDownload = slide.file;
+    } else if (slide.fileData) {
+      blobToDownload = base64ToBlob(slide.fileData);
+    } else if (slide.serverFilePath) {
+      // If file is on server, fetch it
+      try {
+        const resp = await fetch(slide.serverFilePath);
+        if (!resp.ok) {
+          throw new Error(`Failed to fetch file from server: ${resp.statusText}`);
+        }
+        blobToDownload = await resp.blob();
+      } catch (e) {
+        alert("서버에서 파일을 가져오는 데 실패했습니다.");
+        console.error(e);
+        return;
+      }
+    }
+
+    if (!blobToDownload) {
+      alert("파일을 찾을 수 없습니다. 다시 업로드해주세요.");
+      return;
+    }
+
+    const url = URL.createObjectURL(blobToDownload);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+}
+
+
+// --- Event Listeners ---
+
+addSlideBtn.addEventListener("click", createSlide);
+
+editorSaveBtn.addEventListener("click", saveCurrentSlide);
+editorResetBtn.addEventListener("click", resetCurrentSlide);
+editorCancelBtn.addEventListener("click", cancelEdit);
+
+async function deleteCurrentSlide() {
+  if (!currentSlideId) return;
+
+  if (!confirm("정말 이 슬라이드를 삭제하시겠습니까?")) {
+    return;
+  }
+
+  // Call API
+  try {
+    await fetch(`/api/slides/${currentSlideId}`, { method: 'DELETE' });
+    // Refresh
+    await loadSlidesFromServer();
+
+    currentSlideId = null;
+    hasUnsavedChanges = false;
+
+    emptyEditorState.style.display = "flex";
+    slideEditor.style.display = "none";
+    renderSlideList();
+  } catch (e) {
+    alert("삭제 실패");
+    console.error(e);
+  }
+}
+
+// ... cancelEdit (no server logic needed here usually, just discard local) ...
+function cancelEdit() {
+  if (!currentSlideId) return;
+  const slide = slides.find(s => s.id === currentSlideId);
+
+  if (slide && !slide.saved) {
+    if (!confirm("작성 중인 슬라이드가 삭제됩니다. 취소하시겠습니까?")) {
+      return;
+    }
+    slides = slides.filter(s => s.id !== currentSlideId);
+    currentSlideId = null;
+    hasUnsavedChanges = false;
+
+    emptyEditorState.style.display = "flex";
+    slideEditor.style.display = "none";
+    renderSlideList();
+  } else {
+    currentSlideId = null;
+    hasUnsavedChanges = false;
+    emptyEditorState.style.display = "flex";
+    slideEditor.style.display = "none";
+    renderSlideList();
+  }
+}
+
+editorDeleteBtn.addEventListener("click", deleteCurrentSlide);
+editorDownloadBtn.addEventListener("click", downloadSlide);
+
+[
+  slideNameInput,
+  slideTypeSelect,
+  slideContentInput,
+  slideFontSelect,
+  slideFontSizeSelect,
+  slideBgSelect,
+  slideAlignSelect,
+].forEach((el) => {
+  el.addEventListener("input", () => {
+    hasUnsavedChanges = true;
+    renderPreview();
+  });
+});
+
+sourceRadios.forEach(radio => {
+  radio.addEventListener('change', (e) => {
+    hasUnsavedChanges = true;
+    toggleSettingsMode(e.target.value);
+    renderPreview();
+  })
+});
+
+userPptxFile.addEventListener('change', () => {
+  hasUnsavedChanges = true;
+  renderPreview();
+});
+
+// Load slides on init
+loadSlidesFromServer();
+
+// Helpers
 function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();

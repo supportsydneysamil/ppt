@@ -3,6 +3,7 @@ import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
 import PptxGenJS from "pptxgenjs";
+import multer from "multer";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -15,10 +16,108 @@ const BASE_URLS = {
 const KO_TRANSLATIONS = new Set(["새번역", "개역한글", "현대인의-성경"]);
 
 const booksPath = path.join(__dirname, "data", "books.json");
+const slidesPath = path.join(__dirname, "data", "slides.json");
+const uploadsDir = path.join(__dirname, "uploads");
+
 const booksData = JSON.parse(await fs.readFile(booksPath, "utf-8"));
 
-app.use(express.json({ limit: "12mb" }));
+// Multer Setup
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, uploadsDir)
+  },
+  filename: function (req, file, cb) {
+    // Sanitize filename to be safe
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+    cb(null, uniqueSuffix + '-' + sanitizedName)
+  }
+});
+const upload = multer({
+  storage: storage,
+  limits: { fileSize: 50 * 1024 * 1024 } // 50MB limit
+});
+
+app.use(express.json({ limit: "50mb" }));
 app.use(express.static(path.join(__dirname, "public")));
+app.use('/uploads', express.static(uploadsDir)); // Serve uploaded files
+
+// --- Slide Persistence APIs ---
+
+// Get all slides
+app.get("/api/slides", async (req, res) => {
+  try {
+    const data = await fs.readFile(slidesPath, "utf-8");
+    res.json(JSON.parse(data || "[]"));
+  } catch (err) {
+    // If file doesn't exist, return empty array
+    if (err.code === 'ENOENT') {
+      return res.json([]);
+    }
+    res.status(500).json({ error: "Failed to load slides" });
+  }
+});
+
+// Save all slides (Sync)
+// In a real app we'd do individual updates, but for this single-user tool,
+// syncing the whole list is easier to migrate from localStorage.
+app.post("/api/slides", async (req, res) => {
+  try {
+    const slides = req.body;
+    if (!Array.isArray(slides)) {
+      return res.status(400).json({ error: "Invalid data format" });
+    }
+    await fs.writeFile(slidesPath, JSON.stringify(slides, null, 2));
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to save slides" });
+  }
+});
+
+// Upload File
+app.post("/api/upload", upload.single('file'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "No file uploaded" });
+  }
+  // Return web-accessible path
+  res.json({
+    filename: req.file.filename,
+    path: `/uploads/${req.file.filename}`,
+    originalName: req.file.originalname
+  });
+});
+
+// Delete Slide (and optionally file)
+app.delete("/api/slides/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const data = JSON.parse(await fs.readFile(slidesPath, "utf-8") || "[]");
+
+    // Find slide to check for file deletion
+    const slide = data.find(s => s.id === id);
+    if (slide && slide.serverFilePath) {
+      // Try to delete the file
+      try {
+        // serverFilePath is like "/uploads/filename.pptx"
+        // We need absolute path
+        const relativePath = slide.serverFilePath.replace(/^\/uploads\//, '');
+        const absPath = path.join(uploadsDir, relativePath);
+        await fs.unlink(absPath);
+      } catch (e) {
+        console.warn("Failed to delete accompanying file:", e.message);
+      }
+    }
+
+    const newData = data.filter(s => s.id !== id);
+    await fs.writeFile(slidesPath, JSON.stringify(newData, null, 2));
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to delete slide" });
+  }
+});
+
+// --- Existing APIs ---
 
 app.get("/api/books", (req, res) => {
   res.json(booksData);
@@ -54,6 +153,73 @@ app.get("/api/pptx", async (req, res) => {
     return res.send(buffer);
   } catch (err) {
     return res.status(err.statusCode || 502).json({ error: err.message });
+  }
+});
+
+app.post("/api/create-slide-pptx", async (req, res) => {
+  try {
+    const { content, font, fontSize, bg, align } = req.body;
+
+    // Create PPTX
+    const pptx = new PptxGenJS();
+    pptx.layout = "LAYOUT_WIDE"; // 16:9
+
+    // Define colors based on background selection
+    const bgColor = bg === 'white' ? 'FFFFFF' : '000000';
+    const textColor = bg === 'white' ? '000000' : 'FFFFFF';
+
+    // Clean inputs
+    const safeContent = content || "";
+    const safeFont = font || "Malgun Gothic";
+    const safeFontSize = parseInt(fontSize, 10) || 24;
+    const safeAlign = align || "center";
+    // align map: 'left'|'center'|'right'|'justify'
+
+    const slide = pptx.addSlide();
+    slide.background = { color: bgColor };
+
+    // Determine position based on alignment
+    let yPos = "10%";
+    let valign = "middle";
+
+    if (safeAlign === 'top') {
+      yPos = "5%";
+      valign = "top";
+    }
+
+    // Map horizontal align
+    let hAlign = safeAlign === 'top' ? 'left' : safeAlign;
+
+    slide.addText(safeContent, {
+      x: "5%",
+      y: yPos,
+      w: "90%",
+      h: "80%",
+      fontSize: safeFontSize,
+      fontFace: safeFont,
+      color: textColor,
+      align: hAlign,
+      valign: valign,
+      wrap: true,
+      autoFit: false
+    });
+
+    const buffer = await pptx.write({ outputType: "nodebuffer" });
+    const filename = `slide_${Date.now()}.pptx`;
+    const asciiFilename = sanitizeAsciiFilename(filename);
+
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    );
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${asciiFilename}"`
+    );
+    return res.send(buffer);
+
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
   }
 });
 

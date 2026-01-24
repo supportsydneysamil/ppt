@@ -1,19 +1,26 @@
 <!DOCTYPE html>
 <html lang="ko">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>성경 텍스트 추출기</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Work+Sans:wght@400;500;600&display=swap"
-      rel="stylesheet"
-    />
-    <link rel="stylesheet" href="/styles.css" />
-  </head>
-  <body>
-    <main class="page">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>성경 텍스트 추출기</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Work+Sans:wght@400;500;600&display=swap"
+    rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+
+<body>
+  <main class="page">
+    <nav class="main-nav">
+      <button id="navExtractor" class="nav-item active">성경 텍스트</button>
+      <button id="navPpt" class="nav-item">PPT 생성기</button>
+    </nav>
+
+    <div id="view-extractor">
       <section class="hero">
         <div class="badge">Biblics Extractor</div>
         <h1>원하는 구절만 뽑아오기</h1>
@@ -113,12 +120,7 @@
                     <input type="checkbox" id="pptxImageToggle" />
                     이미지 사용
                   </label>
-                  <input
-                    id="pptxImageInput"
-                    type="file"
-                    accept="image/*"
-                    disabled
-                  />
+                  <input id="pptxImageInput" type="file" accept="image/*" disabled />
                 </div>
                 <small class="hint">
                   선택한 이미지는 투명 오버레이로 처리되어 본문 가독성을
@@ -144,11 +146,140 @@
           </div>
           <pre id="outputText" class="output-text">
 원하는 범위를 입력하고 실행하세요.
-          </pre>
+            </pre>
         </div>
       </section>
-    </main>
+    </div>
 
-    <script src="/app.js"></script>
-  </body>
+    <div id="view-ppt" style="display: none;">
+      <nav class="sub-nav">
+        <button class="sub-nav-item active">슬라이드</button>
+        <button class="sub-nav-item">템플릿 만들기</button>
+        <button class="sub-nav-item">템플릿 관리</button>
+      </nav>
+
+      <section class="ppt-interface">
+        <!-- Left: Slide List -->
+        <div class="slide-list-panel">
+          <div class="slide-list-header">
+            <h3>슬라이드 목록</h3>
+            <button id="addSlideBtn" class="ghost small">+ 추가</button>
+          </div>
+          <div id="slideListContainer" class="slide-cards">
+            <!-- Cards will be injected here -->
+          </div>
+        </div>
+
+        <!-- Right: Editor -->
+        <div class="slide-editor-panel" id="slideEditor" style="display:none;">
+          <div class="editor-header">
+            <h3>상세 설정</h3>
+            <div class="editor-actions">
+              <button id="editorCancelBtn" class="ghost small">취소</button>
+              <button id="editorResetBtn" class="ghost small">리셋</button>
+              <button id="editorDeleteBtn" class="ghost small" style="color: #ff6b6b; display:none;">삭제</button>
+              <button id="editorDownloadBtn" class="ghost small" style="display:none;" title="PPTX 다운로드">⬇️</button>
+              <button id="editorSaveBtn" class="cta small">저장</button>
+            </div>
+          </div>
+
+          <form id="slideForm" class="editor-form">
+            <label class="field">
+              <span>이름</span>
+              <input id="slideName" type="text" placeholder="슬라이드 이름 (영문/숫자 권장)" />
+            </label>
+
+            <label class="field">
+              <span>슬라이드 타입</span>
+              <select id="slideType">
+                <option value="simple">단순 슬라이드</option>
+                <!-- Future types -->
+              </select>
+            </label>
+
+            <!-- Dynamic Settings Area -->
+            <div id="simpleSlideSettings" class="settings-group">
+              <div class="field">
+                <span>소스 선택</span>
+                <div class="radio-group">
+                  <label><input type="radio" name="sourceType" value="basic" checked> 기본 설정</label>
+                  <label><input type="radio" name="sourceType" value="upload"> PPTX 업로드</label>
+                </div>
+              </div>
+
+              <div id="basicSettingsMode">
+                <label class="field">
+                  <span>텍스트 내용</span>
+                  <textarea id="slideContent" rows="4" placeholder="내용을 입력하세요"></textarea>
+                </label>
+                <div class="split-fields">
+                  <label class="field">
+                    <span>폰트</span>
+                    <select id="slideFont">
+                      <option value="Malgun Gothic">맑은 고딕</option>
+                      <option value="Calibri">Calibri</option>
+                      <option value="Arial">Arial</option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span>크기</span>
+                    <select id="slideFontSize">
+                      <option value="24">24</option>
+                      <option value="32">32</option>
+                      <option value="40">40</option>
+                      <option value="48">48</option>
+                      <option value="60">60</option>
+                      <option value="80">80</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="split-fields">
+                  <label class="field">
+                    <span>배경</span>
+                    <select id="slideBg">
+                      <option value="black">블랙 (흰 글씨)</option>
+                      <option value="white">화이트 (검은 글씨)</option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span>정렬</span>
+                    <select id="slideAlign">
+                      <option value="center">가운데</option>
+                      <option value="left">왼쪽</option>
+                      <option value="right">오른쪽</option>
+                      <option value="top">상단</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
+
+              <div id="uploadSettingsMode" style="display:none;">
+                <label class="field">
+                  <span>PPTX 파일 업로드</span>
+                  <input type="file" id="userPptxFile" accept=".ppt,.pptx" />
+                </label>
+                <p class="hint">사용자가 제작한 PPTX를 그대로 사용합니다.</p>
+              </div>
+            </div>
+          </form>
+
+          <div class="preview-area">
+            <h4>미리보기</h4>
+            <div id="slidePreview" class="slide-preview-box">
+              <!-- Preview Content -->
+              <div class="preview-placeholder">설정을 변경하면 미리보기가 표시됩니다.</div>
+            </div>
+          </div>
+        </div>
+
+        <div id="emptyEditorState" class="empty-state">
+          <p>슬라이드를 선택하거나 추가하세요.</p>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+
 </html>
