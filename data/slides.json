@@ -66,5 +66,25 @@
     "saved": true,
     "serverFilePath": "/uploads/1769268799816-841497883-______________________18_16-26_KO__3_.pptx",
     "thumbnail": null
+  },
+  {
+    "id": "1769287215778",
+    "name": "새 슬라이드231223",
+    "type": "hymn",
+    "sourceType": "upload",
+    "content": "",
+    "font": "Malgun Gothic",
+    "fontSize": "40",
+    "bg": "black",
+    "align": "center",
+    "file": null,
+    "fileData": null,
+    "fileName": "nhymn34.ppt",
+    "fileSaved": false,
+    "saved": true,
+    "hymnNumber": "34",
+    "serverFilePath": "/uploads/hymn_34_1769287940088.ppt",
+    "originalUrl": "https://www.rickc.online/uploads/1/0/9/7/109730685/nhymn34.ppt",
+    "thumbnail": null
   }
 ]

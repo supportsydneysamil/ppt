@@ -383,12 +383,69 @@ const slidePreview = document.getElementById("slidePreview");
 const sourceRadios = document.querySelectorAll('input[name="sourceType"]');
 const basicSettingsMode = document.getElementById("basicSettingsMode");
 const uploadSettingsMode = document.getElementById("uploadSettingsMode");
+const simpleSlideSettings = document.getElementById("simpleSlideSettings");
+const hymnSlideSettings = document.getElementById("hymnSlideSettings");
+const hymnNumberInput = document.getElementById("hymnNumber");
+const hymnLoadBtn = document.getElementById("hymnLoadBtn");
 const userPptxFile = document.getElementById("userPptxFile");
 
 // State
 let slides = [];
 let currentSlideId = null;
 let hasUnsavedChanges = false;
+
+// --- Event Listeners for Hymn Type ---
+slideTypeSelect.addEventListener('change', () => {
+  const type = slideTypeSelect.value;
+  if (type === 'hymn') {
+    simpleSlideSettings.style.display = 'none';
+    hymnSlideSettings.style.display = 'block';
+  } else {
+    simpleSlideSettings.style.display = 'block';
+    hymnSlideSettings.style.display = 'none';
+  }
+  hasUnsavedChanges = true;
+  renderPreview();
+});
+
+hymnLoadBtn.addEventListener('click', async () => {
+  const number = hymnNumberInput.value;
+  if (!number) return alert("찬송가 장수를 입력하세요.");
+
+  hymnLoadBtn.disabled = true;
+  hymnLoadBtn.textContent = "다운로드 중...";
+
+  try {
+    const res = await fetch('/api/hymn/download', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ number })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Download failed");
+
+    // Update current slide data (in memory)
+    const current = slides.find(s => s.id === currentSlideId);
+    if (current) {
+      current.hymnNumber = number;
+      current.serverFilePath = data.path;
+      current.fileName = data.originalName;
+      current.originalUrl = data.originalUrl;
+      current.thumbnail = null;
+      current.type = 'hymn';
+      current.sourceType = 'upload'; // Vital for renderPreview logic
+
+      renderPreview(current);
+      hasUnsavedChanges = true;
+      updateButtonsState(current);
+    }
+  } catch (e) {
+    alert("다운로드 실패: " + e.message);
+  } finally {
+    hymnLoadBtn.disabled = false;
+    hymnLoadBtn.textContent = "로드";
+  }
+});
 
 // --- Navigation ---
 function switchView(viewName) {
@@ -677,18 +734,30 @@ function renderPreview(slideOverride) {
 
   if (!data) {
     // Live preview from inputs
-    data = {
-      name: slideNameInput.value,
-      type: slideTypeSelect.value,
-      sourceType: document.querySelector('input[name="sourceType"]:checked').value,
-      content: slideContentInput.value,
-      font: slideFontSelect.value,
-      fontSize: slideFontSizeSelect.value,
-      bg: slideBgSelect.value,
-      align: slideAlignSelect.value,
-      // For preview, we check the INPUT element directly
-      file: userPptxFile.files[0]
-    };
+    const type = slideTypeSelect.value;
+    if (type === 'hymn') {
+      data = {
+        type: 'hymn',
+        hymnNumber: hymnNumberInput.value,
+        // Try to find if we have file info in current slide
+        ...((slides.find(s => s.id === currentSlideId) || {}))
+      };
+      // Explicitly set source type to upload-like behavior for renderer
+      data.sourceType = 'upload';
+    } else {
+      data = {
+        name: slideNameInput.value,
+        type: 'simple',
+        sourceType: document.querySelector('input[name="sourceType"]:checked').value,
+        content: slideContentInput.value,
+        font: slideFontSelect.value,
+        fontSize: slideFontSizeSelect.value,
+        bg: slideBgSelect.value,
+        align: slideAlignSelect.value,
+        // For preview, we check the INPUT element directly
+        file: userPptxFile.files[0]
+      };
+    }
 
     // If we are editing an EXISTING slide, and no NEW file picked, we want to show existing name.
     if (currentSlideId && !data.file) {
@@ -709,6 +778,20 @@ function renderPreview(slideOverride) {
   }
 
   console.log("renderPreview called with data:", data);
+
+  // Optimization: Prevent iframe reload on name change
+  let potentialPptUrl = null;
+  // Check if we are dealing with a Hymn/PPT scenario that uses iframe
+  if (data.type === 'hymn' || (data.sourceType === 'upload' && (data.originalUrl || data.type === 'hymn'))) {
+    potentialPptUrl = data.originalUrl;
+    if (!potentialPptUrl && data.type === 'hymn' && data.hymnNumber) {
+      potentialPptUrl = `https://www.rickc.online/uploads/1/0/9/7/109730685/nhymn${data.hymnNumber}.ppt`;
+    }
+  }
+  if (potentialPptUrl && slidePreview.dataset.lastRenderedUrl === potentialPptUrl) {
+    return;
+  }
+  slidePreview.dataset.lastRenderedUrl = "";
 
   slidePreview.innerHTML = "";
 
@@ -741,7 +824,33 @@ function renderPreview(slideOverride) {
       // Fallback
     }
 
-    if (fileUrl && window.jQuery && window.jQuery.fn.pptxToHtml) {
+    const isLegacyPpt = fileUrl && fileUrl.toLowerCase().endsWith('.ppt');
+
+    if (isLegacyPpt) {
+      // Check for public URL for iframe viewer
+      let publicUrl = data.originalUrl;
+
+      if (!publicUrl && data.type === 'hymn' && data.hymnNumber) {
+        publicUrl = `https://www.rickc.online/uploads/1/0/9/7/109730685/nhymn${data.hymnNumber}.ppt`;
+      }
+
+      if (publicUrl) {
+        const viewerSrc = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(publicUrl)}`;
+        ph.innerHTML = `
+            <iframe src="${viewerSrc}" width="100%" height="500px" frameborder="0" style="border:none;background:white;"></iframe>
+            <div style="text-align:center;margin-top:8px;font-size:12px;color:#666;">
+                ⚠️ 미리보기가 보이지 않나요? <a href="${viewerSrc}" target="_blank" style="color:#007bff;text-decoration:underline;">새 창에서 열기</a>
+            </div>
+        `;
+        slidePreview.dataset.lastRenderedUrl = publicUrl;
+      } else {
+        ph.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:300px;color:#888;gap:15px;text-align:center;">
+              <div style="font-size:48px;">⚠️</div>
+              <div style="font-weight:bold;font-size:16px;">미리보기 불가 (.ppt)</div>
+              <div style="font-size:13px;color:#aaa;">로컬 업로드된 .ppt 파일은 미리보기를 지원하지 않습니다.<br>외부 링크 파일만 지원됩니다.</div>
+          </div>`;
+      }
+    } else if (fileUrl && window.jQuery && window.jQuery.fn.pptxToHtml) {
       ph.appendChild(pptxContainer);
 
       // Render
@@ -976,20 +1085,31 @@ function selectSlide(id) {
 function populateEditor(slide) {
   slideNameInput.value = slide.name;
   slideTypeSelect.value = slide.type;
-  slideContentInput.value = slide.content;
-  slideFontSelect.value = slide.font;
-  slideFontSizeSelect.value = slide.fontSize || "40";
-  slideBgSelect.value = slide.bg;
-  slideAlignSelect.value = slide.align;
+
+  hymnNumberInput.value = slide.hymnNumber || '';
+
+  if (slide.type === 'hymn') {
+    simpleSlideSettings.style.display = 'none';
+    hymnSlideSettings.style.display = 'block';
+  } else {
+    simpleSlideSettings.style.display = 'block';
+    hymnSlideSettings.style.display = 'none';
+
+    slideContentInput.value = slide.content;
+    slideFontSelect.value = slide.font;
+    slideFontSizeSelect.value = slide.fontSize || "40";
+    slideBgSelect.value = slide.bg;
+    slideAlignSelect.value = slide.align;
+
+    // Set source type radio logic only for simple slides
+    sourceRadios.forEach(r => {
+      r.checked = r.value === slide.sourceType;
+    });
+    toggleSettingsMode(slide.sourceType);
+  }
 
   // Clear file input to avoid showing stale filename from previous slide
   userPptxFile.value = '';
-
-  // Set source type radio
-  sourceRadios.forEach(r => {
-    r.checked = r.value === slide.sourceType;
-  });
-  toggleSettingsMode(slide.sourceType);
 }
 
 function toggleSettingsMode(mode) {
@@ -1139,43 +1259,89 @@ async function saveCurrentSlide() {
   try {
     slide.name = name;
     slide.type = slideTypeSelect.value;
-    const sourceRadio = document.querySelector('input[name="sourceType"]:checked');
-    if (!sourceRadio) {
-      console.error("No source radio checked");
-      return;
-    }
-    slide.sourceType = sourceRadio.value;
-    slide.content = slideContentInput.value;
-    slide.font = slideFontSelect.value;
-    slide.fontSize = slideFontSizeSelect.value;
-    slide.bg = slideBgSelect.value;
-    slide.align = slideAlignSelect.value;
-    slide.saved = true;
 
-    // Handle File Upload
-    if (slide.sourceType === 'upload') {
-      if (userPptxFile.files.length > 0) {
-        const file = userPptxFile.files[0];
-        // Upload to server
+    if (slide.type === 'hymn') {
+      const number = hymnNumberInput.value;
+      if (!number) {
+        alert("찬송가 장수를 입력하세요.");
+        return;
+      }
+
+      // Explicitly check if we need to download (if number changed or no file)
+      // slide.hymnNumber tracks what's currently loaded/saved. 
+      if (!slide.serverFilePath || slide.hymnNumber != number) {
+        const saveBtnMsg = document.getElementById('editorSaveBtn');
+        const originalText = saveBtnMsg ? saveBtnMsg.textContent : "저장";
+        if (saveBtnMsg) saveBtnMsg.textContent = "다운로드 중...";
+
         try {
-          const result = await uploadFile(file);
-          // Update slide with server file info
-          slide.serverFilePath = result.path; // e.g. /uploads/xxx-name.pptx
-          slide.fileName = result.originalName;
-          slide.thumbnail = result.thumbnail; // Save thumbnail path
-          slide.fileSaved = true;
+          const res = await fetch('/api/hymn/download', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ number })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Download failed");
 
-          // Clear transient file obj
-          slide.file = null;
-          slide.fileData = null;
-        } catch (err) {
-          console.error("Upload Error:", err);
-          alert("파일 업로드 실패");
+          slide.serverFilePath = data.path;
+          slide.fileName = data.originalName;
+          slide.originalUrl = data.originalUrl;
+          slide.hymnNumber = number;
+          slide.thumbnail = null;
+        } catch (e) {
+          alert("자동 다운로드 실패: " + e.message);
+          if (saveBtnMsg) saveBtnMsg.textContent = originalText;
+          return; // Stop save if download fails
+        } finally {
+          if (saveBtnMsg) saveBtnMsg.textContent = originalText;
+        }
+      } else {
+        // Ensure it is synced
+        slide.hymnNumber = number;
+      }
+      slide.sourceType = 'upload';
+      slide.saved = true;
+
+    } else {
+      // Simple Slide Logic
+      const sourceRadio = document.querySelector('input[name="sourceType"]:checked');
+      if (!sourceRadio) {
+        console.error("No source radio checked");
+        return;
+      }
+      slide.sourceType = sourceRadio.value;
+      slide.content = slideContentInput.value;
+      slide.font = slideFontSelect.value;
+      slide.fontSize = slideFontSizeSelect.value;
+      slide.bg = slideBgSelect.value;
+      slide.align = slideAlignSelect.value;
+      slide.saved = true;
+
+      // Handle File Upload
+      if (slide.sourceType === 'upload') {
+        if (userPptxFile.files.length > 0) {
+          const file = userPptxFile.files[0];
+          // Upload to server
+          try {
+            const result = await uploadFile(file);
+            // Update slide with server file info
+            slide.serverFilePath = result.path; // e.g. /uploads/xxx-name.pptx
+            slide.fileName = result.originalName;
+            slide.thumbnail = result.thumbnail; // Save thumbnail path
+            slide.fileSaved = true;
+
+            // Clear transient file obj
+            slide.file = null;
+            slide.fileData = null;
+          } catch (err) {
+            console.error("Upload Error:", err);
+            alert("파일 업로드 실패");
+            return;
+          }
+        } else if (!slide.fileName && !slide.serverFilePath) {
+          alert("PPTX 파일을 업로드해주세요.");
           return;
         }
-      } else if (!slide.fileName && !slide.serverFilePath) {
-        alert("PPTX 파일을 업로드해주세요.");
-        return;
       }
     }
 

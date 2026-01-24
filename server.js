@@ -5,6 +5,12 @@ import { fileURLToPath } from "url";
 import PptxGenJS from "pptxgenjs";
 import multer from "multer";
 import AdmZip from "adm-zip";
+import https from "https";
+import { createWriteStream } from "fs";
+import { exec } from "child_process";
+import { promisify } from "util";
+
+const execAsync = promisify(exec);
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -110,6 +116,61 @@ app.post("/api/upload", upload.single('file'), async (req, res) => {
     originalName: originalName,
     thumbnail: thumbnailPath
   });
+});
+
+// Download Hymn from External Source
+app.post("/api/hymn/download", async (req, res) => {
+  try {
+    const { number } = req.body;
+    if (!number) {
+      return res.status(400).json({ error: "Hymn number required" });
+    }
+
+    // Ensure uploads folder exists
+    try {
+      await fs.access(uploadsDir);
+    } catch {
+      await fs.mkdir(uploadsDir, { recursive: true });
+    }
+
+    const fileName = `nhymn${number}.ppt`;
+    const url = `https://www.rickc.online/uploads/1/0/9/7/109730685/${fileName}`;
+    const localFileName = `hymn_${number}_${Date.now()}.ppt`;
+    const savePath = path.join(uploadsDir, localFileName);
+
+    console.log(`Downloading (curl) ${url} to ${savePath}`);
+
+    try {
+      await execAsync(`curl -L -f -s -o "${savePath}" "${url}"`);
+
+      // Verify file size > 0
+      const stats = await fs.stat(savePath);
+      if (stats.size === 0) {
+        await fs.unlink(savePath);
+        throw new Error("Downloaded file is empty");
+      }
+
+      res.json({
+        success: true,
+        path: `/uploads/${localFileName}`,
+        filename: localFileName,
+        originalName: fileName,
+        originalUrl: url,
+        thumbnail: null
+      });
+
+    } catch (err) {
+      console.error("Curl download failed:", err);
+      try { await fs.unlink(savePath); } catch { }
+      res.status(404).json({ error: "Download failed. Check if hymn number is correct." });
+    }
+
+  } catch (e) {
+    console.error("Hymn Download Endpoint Error:", e);
+    if (!res.headersSent) {
+      res.status(500).json({ error: e.message });
+    }
+  }
 });
 
 // Delete Slide (and optionally file)
@@ -1182,6 +1243,26 @@ function injectThumbnail(buffer) {
     return buffer;
   }
 }
+
+// Function to extract thumbnail from PPTX
+async function extractThumbnail(filePath, uploadsDir) {
+  try {
+    const zip = new AdmZip(filePath);
+    const thumbEntry = zip.getEntry("docProps/thumbnail.jpeg");
+    if (thumbEntry) {
+      const filename = path.basename(filePath);
+      const thumbName = filename + "-thumb.jpeg";
+      const thumbOutPath = path.join(uploadsDir, thumbName);
+      await fs.writeFile(thumbOutPath, thumbEntry.getData());
+      return `/uploads/${thumbName}`;
+    }
+  } catch (e) {
+    console.warn("Failed to extract thumbnail:", e.message);
+  }
+  return null;
+}
+
+
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on http://0.0.0.0:${PORT}`);

@@ -193,7 +193,7 @@
               <span>슬라이드 타입</span>
               <select id="slideType">
                 <option value="simple">단순 슬라이드</option>
-                <!-- Future types -->
+                <option value="hymn">찬송가 (한영)</option>
               </select>
             </label>
 
@@ -259,6 +259,18 @@
                   <input type="file" id="userPptxFile" accept=".ppt,.pptx" />
                 </label>
                 <p class="hint">사용자가 제작한 PPTX를 그대로 사용합니다.</p>
+              </div>
+            </div>
+
+            <!-- Hymn Settings -->
+            <div id="hymnSlideSettings" class="settings-group" style="display:none;">
+              <div class="field">
+                <span>찬송가 장수</span>
+                <div style="display:flex; gap:8px;">
+                  <input id="hymnNumber" type="number" placeholder="예: 1" style="flex:1;">
+                  <button id="hymnLoadBtn" type="button" class="ghost" style="white-space:nowrap;">로드</button>
+                </div>
+                <p class="hint">RickC.online에서 한영 찬송가(PPT)를 다운로드합니다.</p>
               </div>
             </div>
           </form>
