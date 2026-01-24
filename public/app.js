@@ -774,8 +774,8 @@ function renderPreview(slideOverride) {
                 const slideWidth = slide.offsetWidth || slide.scrollWidth || 500;
 
                 // Always recalculate zoom to ensure perfect fit within the padded area
-                // Use a slightly smaller ratio (0.98) to ensure edges don't touch scrollbar
-                const zoomLevel = (availableWidth / slideWidth) * 0.98;
+                // Use a slightly smaller ratio (0.99) to ensure edges don't touch scrollbar
+                const zoomLevel = (availableWidth / slideWidth) * 0.99;
 
                 slide.style.zoom = zoomLevel;
                 slide.style.marginBottom = '20px';

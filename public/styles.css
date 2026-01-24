@@ -649,8 +649,8 @@ body {
   /* Critical: preventing blowout */
   display: block !important;
   /* Not flex center */
-  padding: 20px !important;
-  /* Add breathing room around slides */
+  padding: 10px !important;
+  /* Reduced padding to maximize content size */
 
   /* Custom scrollbar to look premium */
   scrollbar-width: thin;
