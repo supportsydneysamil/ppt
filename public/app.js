@@ -388,6 +388,15 @@ const hymnSlideSettings = document.getElementById("hymnSlideSettings");
 const hymnNumberInput = document.getElementById("hymnNumber");
 const hymnLoadBtn = document.getElementById("hymnLoadBtn");
 const userPptxFile = document.getElementById("userPptxFile");
+const adSlideSettings = document.getElementById("adSlideSettings");
+const adTitleInput = document.getElementById("adTitle");
+const adTitleSizeSelect = document.getElementById("adTitleSize");
+const adTitleAlignSelect = document.getElementById("adTitleAlign");
+const adBgSourceRadios = document.querySelectorAll('input[name="adBgSource"]');
+const adBgImageFile = document.getElementById("adBgImageFile");
+const adBgImageUrl = document.getElementById("adBgImageUrl");
+const adBgOpacity = document.getElementById("adBgOpacity");
+const adBgOpacityValue = document.getElementById("adBgOpacityValue");
 
 // State
 let slides = [];
@@ -400,9 +409,15 @@ slideTypeSelect.addEventListener('change', () => {
   if (type === 'hymn') {
     simpleSlideSettings.style.display = 'none';
     hymnSlideSettings.style.display = 'block';
+    adSlideSettings.style.display = 'none';
+  } else if (type === 'ad') {
+    simpleSlideSettings.style.display = 'block';
+    hymnSlideSettings.style.display = 'none';
+    adSlideSettings.style.display = 'block';
   } else {
     simpleSlideSettings.style.display = 'block';
     hymnSlideSettings.style.display = 'none';
+    adSlideSettings.style.display = 'none';
   }
   hasUnsavedChanges = true;
   renderPreview();
@@ -528,6 +543,14 @@ function createSlide() {
     fileName: null,  // string
     fileSaved: false,// boolean (persisted status)
     saved: false,
+    // Ad slide properties
+    adTitle: "",
+    adTitleSize: "medium",
+    adTitleAlign: "center",
+    adBgSource: "none",
+    adBgImagePath: null,
+    adBgImageUrl: null,
+    adBgOpacity: 30,
   };
   slides.push(newSlide);
   // Do NOT save to storage yet
@@ -560,169 +583,7 @@ function base64ToBlob(base64, mimeType = "application/vnd.openxmlformats-officed
   return new Blob([ab], { type: mimeType });
 }
 
-// Updated saveCurrentSlide to be ASYNC to handle file reading
-async function saveCurrentSlide() {
-  console.log("saveCurrentSlide called. currentSlideId:", currentSlideId);
-  if (!currentSlideId) {
-    console.error("No currentSlideId!");
-    return;
-  }
-
-  const name = slideNameInput.value.trim();
-  console.log("Saving name:", name);
-
-  if (!name) {
-    alert("슬라이드 이름을 입력하세요.");
-    return;
-  }
-
-  // Check duplicate name
-  const existing = slides.find((s) => s.name === name && s.id !== currentSlideId);
-  if (existing) {
-    alert("이미 존재하는 슬라이드 이름입니다.");
-    return;
-  }
-
-  const slide = slides.find((s) => s.id === currentSlideId);
-  if (!slide) {
-    console.error("Slide object not found for id:", currentSlideId);
-    return;
-  }
-
-  try {
-    slide.name = name;
-    slide.type = slideTypeSelect.value;
-    const sourceRadio = document.querySelector('input[name="sourceType"]:checked');
-    if (!sourceRadio) {
-      console.error("No source radio checked");
-      return;
-    }
-    slide.sourceType = sourceRadio.value;
-    slide.content = slideContentInput.value;
-    slide.font = slideFontSelect.value;
-    slide.fontSize = slideFontSizeSelect.value;
-    slide.bg = slideBgSelect.value;
-    slide.align = slideAlignSelect.value;
-    slide.saved = true;
-
-    // Handle File Upload
-    if (slide.sourceType === 'upload') {
-      if (userPptxFile.files.length > 0) {
-        const file = userPptxFile.files[0];
-        // Limits: Check size (e.g. 3MB)
-        if (file.size > 3 * 1024 * 1024) {
-          alert(`파일 용량이 큽니다 (${(file.size / 1024 / 1024).toFixed(1)}MB). \n3MB 이상의 파일은 브라우저에 저장되지 않으며, 새로고침 시 초기화됩니다.`);
-          slide.file = file;
-          slide.fileName = file.name;
-          slide.fileData = null; // Don't save big file
-          slide.fileSaved = false;
-        } else {
-          // Read and store
-          try {
-            const base64 = await readFileAsBase64(file);
-            slide.file = file;
-            slide.fileName = file.name;
-            slide.fileData = base64;
-            slide.fileSaved = true;
-          } catch (readErr) {
-            console.error("File read error:", readErr);
-            alert("파일 읽기 실패");
-            return;
-          }
-        }
-      } else if (!slide.fileName) {
-        // No new file, and no existing file
-        alert("PPTX 파일을 업로드해주세요.");
-        return;
-      }
-      // If no new file selected but we have existing (slide.file or slide.fileData), keep it.
-    }
-
-    console.log("Saving slide data:", slide);
-    await saveSlidesToServer();
-    hasUnsavedChanges = false;
-    updateButtonsState(slide);
-    renderSlideList();
-    alert("저장되었습니다.");
-  } catch (e) {
-    console.error("Error in saveCurrentSlide:", e);
-    alert("저장 중 오류 발생: " + e.message);
-  }
-}
-
 // ... (resetCurrentSlide, updateButtonsState, deleteCurrentSlide, cancelEdit) ...
-
-async function downloadSlide() {
-  if (!currentSlideId) return;
-  const slide = slides.find(s => s.id === currentSlideId);
-  if (!slide || !slide.saved) return;
-
-  if (slide.sourceType === 'basic') {
-    // ... basic processing ...
-    try {
-      const resp = await fetch("/api/create-slide-pptx", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          content: slide.content,
-          font: slide.font,
-          fontSize: slide.fontSize,
-          bg: slide.bg,
-          align: slide.align
-        })
-      });
-
-      if (!resp.ok) {
-        const err = await resp.json();
-        alert("다운로드 실패: " + (err.error || "Unknown Error"));
-        return;
-      }
-
-      const blob = await resp.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${slide.name}.pptx`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-    } catch (e) {
-      alert("다운로드 중 오류가 발생했습니다.");
-      console.error(e);
-    }
-  } else {
-    // Upload Mode
-    // Use serverFilePath if available
-    let url = null;
-    let filename = slide.fileName || "slide.pptx";
-
-    if (slide.serverFilePath) {
-      url = slide.serverFilePath; // e.g. /uploads/xxx.pptx
-    } else if (slide.file) {
-      url = URL.createObjectURL(slide.file);
-    } else if (slide.fileData) {
-      // Fallback for old data or small files if we still have them?
-      // But we are migrating away.
-      const blob = base64ToBlob(slide.fileData);
-      url = URL.createObjectURL(blob);
-    }
-
-    if (!url) {
-      alert("파일을 찾을 수 없습니다.");
-      return;
-    }
-
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    if (!slide.serverFilePath) URL.revokeObjectURL(url);
-  }
-}
 
 // ... (renderSlideList) ...
 
@@ -1138,9 +999,39 @@ function populateEditor(slide) {
   if (slide.type === 'hymn') {
     simpleSlideSettings.style.display = 'none';
     hymnSlideSettings.style.display = 'block';
+    adSlideSettings.style.display = 'none';
+  } else if (slide.type === 'ad') {
+    simpleSlideSettings.style.display = 'block';
+    hymnSlideSettings.style.display = 'none';
+    adSlideSettings.style.display = 'block';
+
+    slideContentInput.value = slide.content;
+    slideFontSelect.value = slide.font;
+    slideFontSizeSelect.value = slide.fontSize || "40";
+    slideBgSelect.value = slide.bg;
+    slideAlignSelect.value = slide.align;
+
+    sourceRadios.forEach(r => {
+      r.checked = r.value === slide.sourceType;
+    });
+    toggleSettingsMode(slide.sourceType);
+
+    // Load ad-specific properties
+    adTitleInput.value = slide.adTitle || '';
+    adTitleSizeSelect.value = slide.adTitleSize || 'medium';
+    adTitleAlignSelect.value = slide.adTitleAlign || 'center';
+    adBgOpacity.value = slide.adBgOpacity || 30;
+    adBgOpacityValue.textContent = slide.adBgOpacity || 30;
+
+    // Set background source radio
+    adBgSourceRadios.forEach(r => {
+      r.checked = r.value === (slide.adBgSource || 'none');
+    });
+    toggleAdBgMode(slide.adBgSource || 'none');
   } else {
     simpleSlideSettings.style.display = 'block';
     hymnSlideSettings.style.display = 'none';
+    adSlideSettings.style.display = 'none';
 
     slideContentInput.value = slide.content;
     slideFontSelect.value = slide.font;
@@ -1166,6 +1057,21 @@ function toggleSettingsMode(mode) {
   } else {
     basicSettingsMode.style.display = "none";
     uploadSettingsMode.style.display = "block";
+  }
+}
+
+function toggleAdBgMode(source) {
+  const adBgFileMode = document.getElementById("adBgFileMode");
+  const adBgUrlMode = document.getElementById("adBgUrlMode");
+  if (source === "file") {
+    adBgFileMode.style.display = "block";
+    adBgUrlMode.style.display = "none";
+  } else if (source === "url") {
+    adBgFileMode.style.display = "none";
+    adBgUrlMode.style.display = "block";
+  } else {
+    adBgFileMode.style.display = "none";
+    adBgUrlMode.style.display = "none";
   }
 }
 
@@ -1208,56 +1114,6 @@ function renderSlideList() {
     card.appendChild(desc);
     slideListContainer.appendChild(card);
   });
-}
-
-async function deleteCurrentSlide() {
-  if (!currentSlideId) return;
-
-  if (!confirm("정말 이 슬라이드를 삭제하시겠습니까?")) {
-    return;
-  }
-
-  // Call API
-  try {
-    await fetch(`/api/slides/${currentSlideId}`, { method: 'DELETE' });
-    // Refresh
-    await loadSlidesFromServer();
-
-    currentSlideId = null;
-    hasUnsavedChanges = false;
-
-    emptyEditorState.style.display = "flex";
-    slideEditor.style.display = "none";
-    renderSlideList();
-  } catch (e) {
-    alert("삭제 실패");
-    console.error(e);
-  }
-}
-
-// ... cancelEdit (no server logic needed here usually, just discard local) ...
-function cancelEdit() {
-  if (!currentSlideId) return;
-  const slide = slides.find(s => s.id === currentSlideId);
-
-  if (slide && !slide.saved) {
-    if (!confirm("작성 중인 슬라이드가 삭제됩니다. 취소하시겠습니까?")) {
-      return;
-    }
-    slides = slides.filter(s => s.id !== currentSlideId);
-    currentSlideId = null;
-    hasUnsavedChanges = false;
-
-    emptyEditorState.style.display = "flex";
-    slideEditor.style.display = "none";
-    renderSlideList();
-  } else {
-    currentSlideId = null;
-    hasUnsavedChanges = false;
-    emptyEditorState.style.display = "flex";
-    slideEditor.style.display = "none";
-    renderSlideList();
-  }
 }
 
 async function uploadFile(file) {
@@ -1569,6 +1425,20 @@ sourceRadios.forEach(radio => {
     toggleSettingsMode(e.target.value);
     renderPreview();
   })
+});
+
+adBgSourceRadios.forEach(radio => {
+  radio.addEventListener('change', (e) => {
+    hasUnsavedChanges = true;
+    toggleAdBgMode(e.target.value);
+    renderPreview();
+  })
+});
+
+adBgOpacity.addEventListener('input', () => {
+  adBgOpacityValue.textContent = adBgOpacity.value;
+  hasUnsavedChanges = true;
+  renderPreview();
 });
 
 userPptxFile.addEventListener('change', async () => {
