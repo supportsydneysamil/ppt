@@ -324,3 +324,147 @@ This ensures only one source is active at a time in the saved data.
 4. **Property Reuse**: Ad slides inherit all simple slide properties, reducing duplication
 5. **Mutual Exclusivity**: File and URL are never both set, enforced at save time
 6. **Null vs Empty String**: File paths use null (not empty string) when not set
+
+## PPTX Generation Endpoint (Task 5: /api/create-ad-slide-pptx)
+
+### Endpoint Structure
+- **Location**: `server.js` lines 350-475
+- **Method**: POST
+- **Route**: `/api/create-ad-slide-pptx`
+- **Request Body**: JSON with ad slide properties
+- **Response**: PPTX file as binary attachment
+
+### Request Body Parameters
+```javascript
+{
+  content: string,           // Main content text
+  font: string,              // Font family (e.g., "Malgun Gothic")
+  fontSize: string|number,   // Font size in points
+  bg: string,                // Background color ("black" or "white")
+  align: string,             // Text alignment (left/center/right)
+  adTitle: string,           // Title text
+  adTitleSize: string,       // Title size (large/medium/small)
+  adTitleAlign: string,      // Title alignment (left/center/right)
+  adBgSource: string,        // Background source (none/file/url)
+  adBgImagePath: string|null,// File path for uploaded image
+  adBgImageUrl: string|null, // URL for remote image
+  adBgOpacity: number        // Overlay opacity (0-100)
+}
+```
+
+### PPTX Generation Structure (4-Layer Approach)
+
+#### Layer 1: Background Image
+- **File Source**: Reads from `adBgImagePath` using `fs.readFile()` (async)
+  - Converts to base64 data URL
+  - Detects MIME type from file extension (.png or .jpeg)
+  - Adds as full-slide image (x:0, y:0, w:100%, h:100%)
+- **URL Source**: Fetches from `adBgImageUrl` with 10-second timeout
+  - Uses `https` or `http` module based on URL protocol
+  - Converts response to base64
+  - Adds as full-slide image
+- **No Source**: Falls back to solid background color
+  - White if `bg === 'white'`, black otherwise
+
+#### Layer 2: Overlay Rectangle
+- Positioned at x:0, y:0, w:100%, h:100% (full slide)
+- Black color (#000000)
+- Transparency calculated as: `100 - adBgOpacity`
+  - Example: opacity=50 → transparency=50 (50% dark overlay)
+- No border (transparency: 100)
+
+#### Layer 3: Title Text
+- **Condition**: Only added if `adTitle` is truthy
+- **Position**: x:5%, y:5%, w:90%, h:15%
+- **Styling**:
+  - Bold: true
+  - Size mapping: `{ large: 60pt, medium: 40pt, small: 24pt }`
+  - Color: White if bg=black, black if bg=white
+  - Alignment: From `adTitleAlign` (default: center)
+  - Vertical alignment: top
+
+#### Layer 4: Content Text
+- **Position**: x:5%, y:25%, w:90%, h:65%
+- **Styling**:
+  - Font family: From `font` parameter (default: "Malgun Gothic")
+  - Font size: Parsed from `fontSize` (default: 24pt)
+  - Color: White if bg=black, black if bg=white
+  - Alignment: From `align` parameter (default: center)
+  - Vertical alignment: middle
+  - Wrap: true (text wraps to multiple lines)
+
+### Key Implementation Details
+
+#### Async/Await Pattern
+- File reading uses `await fs.readFile()` (async)
+- URL fetching uses Promise with timeout
+- Both are awaited before proceeding to PPTX generation
+
+#### URL Fetch with Timeout
+```javascript
+const imageData = await new Promise((resolve, reject) => {
+  const timeout = setTimeout(() => reject(new Error('URL fetch timeout')), 10000);
+  const protocol = adBgImageUrl.startsWith('https') ? https : http;
+  
+  protocol.get(adBgImageUrl, (response) => {
+    const chunks = [];
+    response.on('data', chunk => chunks.push(chunk));
+    response.on('end', () => {
+      clearTimeout(timeout);
+      resolve(Buffer.concat(chunks).toString('base64'));
+    });
+  }).on('error', (e) => {
+    clearTimeout(timeout);
+    reject(e);
+  });
+});
+```
+- Timeout: 10 seconds (10000ms)
+- Accumulates response chunks
+- Converts to base64 for data URL
+
+#### Module Imports
+- `https` and `http` imported at top of file (ES6 imports)
+- `fs` imported as `fs/promises` for async operations
+- `path` for file path operations
+- `PptxGenJS` for PPTX generation
+
+#### Response Headers
+```javascript
+res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
+res.setHeader("Content-Disposition", `attachment; filename="${asciiFilename}"`);
+```
+- Proper MIME type for PPTX files
+- Filename sanitized via `sanitizeAsciiFilename()` function
+- Filename format: `ad_slide_${Date.now()}.pptx`
+
+#### Error Handling
+- Try-catch wraps entire endpoint
+- Logs error to console: `console.error("Ad slide PPTX generation error:", err)`
+- Returns 500 status with error message in JSON
+
+### Verification Results
+- ✓ Endpoint syntax valid (`node -c server.js`)
+- ✓ Test 1: No background image (solid black) - generates valid PPTX (45KB)
+- ✓ Test 2: URL background image (Google logo) - generates valid PPTX (52KB)
+- ✓ Test 3: White background with small title - generates valid PPTX (45KB)
+- ✓ All PPTX files are valid Zip archives (confirmed via `file` command)
+
+### Title Size Mapping (PPTX)
+- `large`: 60pt
+- `medium`: 40pt (default)
+- `small`: 24pt
+
+### Opacity Calculation
+- Input range: 0-100 (0=transparent, 100=fully dark)
+- Transparency value: `100 - adBgOpacity`
+- Example: adBgOpacity=30 → transparency=70 (30% dark overlay)
+
+### Design Patterns Observed
+1. **Reuse of Simple Slide Properties**: Ad endpoint accepts content, font, fontSize, bg, align from simple slides
+2. **Mutual Exclusivity**: Only one background source active (file/url/none)
+3. **Fallback Colors**: Text color automatically inverted based on background
+4. **Full-Slide Positioning**: Background and overlay use percentage-based positioning (100%)
+5. **Async File Operations**: Uses async fs.readFile() instead of sync readFileSync()
+6. **Protocol Detection**: Automatically selects https or http based on URL prefix
+

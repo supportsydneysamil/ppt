@@ -271,7 +271,7 @@ Task 1 (HTML) → Task 2 (JS 기본) → Task 3 (JS 미리보기)
 
 ---
 
-- [ ] 5. Backend: 광고 슬라이드 PPTX 생성 API
+- [x] 5. Backend: 광고 슬라이드 PPTX 생성 API
 
   **What to do**:
   - `server.js`에 새 엔드포인트 추가: `POST /api/create-ad-slide-pptx`

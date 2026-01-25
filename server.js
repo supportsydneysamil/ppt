@@ -6,6 +6,7 @@ import PptxGenJS from "pptxgenjs";
 import multer from "multer";
 import AdmZip from "adm-zip";
 import https from "https";
+import http from "http";
 import { createWriteStream } from "fs";
 import { exec } from "child_process";
 import { promisify } from "util";
@@ -343,6 +344,130 @@ app.post("/api/create-slide-pptx", async (req, res) => {
     return res.send(buffer);
 
   } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/create-ad-slide-pptx", async (req, res) => {
+  try {
+    const { content, font, fontSize, bg, align, adTitle, adTitleSize, adTitleAlign, adBgSource, adBgImagePath, adBgImageUrl, adBgOpacity } = req.body;
+
+    // Create PPTX
+    const pptx = new PptxGenJS();
+    pptx.layout = "LAYOUT_WIDE"; // 16:9
+
+    const slide = pptx.addSlide();
+
+    // Background image handling
+    if (adBgSource === 'file' && adBgImagePath) {
+      const imagePath = path.join(__dirname, adBgImagePath);
+      const imageBuffer = await fs.readFile(imagePath);
+      const imageData = imageBuffer.toString('base64');
+      const ext = path.extname(adBgImagePath).toLowerCase();
+      const mimeType = ext === '.png' ? 'image/png' : 'image/jpeg';
+
+      slide.addImage({
+        data: `data:${mimeType};base64,${imageData}`,
+        x: 0,
+        y: 0,
+        w: '100%',
+        h: '100%'
+      });
+    } else if (adBgSource === 'url' && adBgImageUrl) {
+      // Fetch URL with timeout
+      const imageData = await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('URL fetch timeout')), 10000);
+        const protocol = adBgImageUrl.startsWith('https') ? https : http;
+
+        protocol.get(adBgImageUrl, (response) => {
+          const chunks = [];
+          response.on('data', chunk => chunks.push(chunk));
+          response.on('end', () => {
+            clearTimeout(timeout);
+            resolve(Buffer.concat(chunks).toString('base64'));
+          });
+        }).on('error', (e) => {
+          clearTimeout(timeout);
+          reject(e);
+        });
+      });
+
+      slide.addImage({
+        data: `data:image/jpeg;base64,${imageData}`,
+        x: 0,
+        y: 0,
+        w: '100%',
+        h: '100%'
+      });
+    } else {
+      // No background image - use solid color
+      const bgColor = bg === 'white' ? 'FFFFFF' : '000000';
+      slide.background = { color: bgColor };
+    }
+
+    // Overlay
+    slide.addShape(pptx.ShapeType.rect, {
+      x: 0,
+      y: 0,
+      w: '100%',
+      h: '100%',
+      fill: {
+        color: '000000',
+        transparency: 100 - adBgOpacity
+      },
+      line: { color: '000000', transparency: 100 }
+    });
+
+    // Title
+    if (adTitle) {
+      const titleSizeMap = { large: 60, medium: 40, small: 24 };
+      const titleSize = titleSizeMap[adTitleSize] || 40;
+      const textColor = bg === 'white' ? '000000' : 'FFFFFF';
+
+      slide.addText(adTitle, {
+        x: '5%',
+        y: '5%',
+        w: '90%',
+        h: '15%',
+        fontSize: titleSize,
+        bold: true,
+        color: textColor,
+        align: adTitleAlign || 'center',
+        valign: 'top'
+      });
+    }
+
+    // Content
+    const textColor = bg === 'white' ? '000000' : 'FFFFFF';
+    const safeContent = content || "";
+    const safeFont = font || "Malgun Gothic";
+    const safeFontSize = parseInt(fontSize, 10) || 24;
+    const safeAlign = align || "center";
+
+    slide.addText(safeContent, {
+      x: '5%',
+      y: '25%',
+      w: '90%',
+      h: '65%',
+      fontSize: safeFontSize,
+      fontFace: safeFont,
+      color: textColor,
+      align: safeAlign,
+      valign: 'middle',
+      wrap: true
+    });
+
+    let buffer = await pptx.write({ outputType: "nodebuffer" });
+    buffer = injectThumbnail(buffer);
+    const filename = `ad_slide_${Date.now()}.pptx`;
+    const asciiFilename = sanitizeAsciiFilename(filename);
+
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
+    res.setHeader("Content-Disposition", `attachment; filename="${asciiFilename}"`);
+    return res.send(buffer);
+
+  } catch (err) {
+    console.error("Ad slide PPTX generation error:", err);
     return res.status(500).json({ error: err.message });
   }
 });
