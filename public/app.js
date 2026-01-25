@@ -1128,11 +1128,19 @@ function populateEditor(slide) {
     adBgOpacity.value = slide.adBgOpacity || 30;
     adBgOpacityValue.textContent = slide.adBgOpacity || 30;
 
-    // Set background source radio
-    adBgSourceRadios.forEach(r => {
-      r.checked = r.value === (slide.adBgSource || 'none');
-    });
-    toggleAdBgMode(slide.adBgSource || 'none');
+     // Set background source radio
+     adBgSourceRadios.forEach(r => {
+       r.checked = r.value === (slide.adBgSource || 'none');
+     });
+     toggleAdBgMode(slide.adBgSource || 'none');
+     
+     // Load background image URL if available
+     if (slide.adBgImageUrl) {
+       adBgImageUrl.value = slide.adBgImageUrl;
+     }
+     
+     // Clear file input to avoid showing stale filename
+     adBgImageFile.value = '';
   } else {
     simpleSlideSettings.style.display = 'block';
     hymnSlideSettings.style.display = 'none';
@@ -1308,6 +1316,80 @@ async function saveCurrentSlide() {
         slide.hymnNumber = number;
       }
       slide.sourceType = 'upload';
+      slide.saved = true;
+
+    } else if (slide.type === 'ad') {
+      // Ad Slide Logic
+      slide.adTitle = adTitleInput.value;
+      slide.adTitleSize = adTitleSizeSelect.value;
+      slide.adTitleAlign = adTitleAlignSelect.value;
+      slide.adBgOpacity = parseInt(adBgOpacity.value);
+      
+      const bgSource = document.querySelector('input[name="adBgSource"]:checked').value;
+      slide.adBgSource = bgSource;
+      
+      // Handle background image file upload
+      if (bgSource === 'file' && adBgImageFile.files[0]) {
+        const saveBtnMsg = document.getElementById('editorSaveBtn');
+        const originalText = saveBtnMsg ? saveBtnMsg.textContent : "저장";
+        if (saveBtnMsg) saveBtnMsg.textContent = "업로드 중...";
+        
+        try {
+          const uploadResult = await uploadFile(adBgImageFile.files[0]);
+          slide.adBgImagePath = uploadResult.path;
+          slide.adBgImageUrl = null; // Clear URL if file is uploaded
+        } catch (e) {
+          alert("배경 이미지 업로드 실패: " + e.message);
+          if (saveBtnMsg) saveBtnMsg.textContent = originalText;
+          return;
+        } finally {
+          if (saveBtnMsg) saveBtnMsg.textContent = originalText;
+        }
+      } else if (bgSource === 'url') {
+        slide.adBgImageUrl = adBgImageUrl.value;
+        slide.adBgImagePath = null; // Clear file path if URL is used
+      } else {
+        // No background
+        slide.adBgImagePath = null;
+        slide.adBgImageUrl = null;
+      }
+      
+      // Save simple slide properties (ad slides reuse these)
+      slide.content = slideContentInput.value;
+      slide.font = slideFontSelect.value;
+      slide.fontSize = slideFontSizeSelect.value;
+      slide.bg = slideBgSelect.value;
+      slide.align = slideAlignSelect.value;
+      
+      const sourceType = document.querySelector('input[name="sourceType"]:checked').value;
+      slide.sourceType = sourceType;
+      
+      if (sourceType === 'upload' && userPptxFile.files[0]) {
+        // Handle PPTX file upload (same as simple slide)
+        const file = userPptxFile.files[0];
+        if (file.size > 50 * 1024 * 1024) {
+          alert("파일 크기가 50MB를 초과합니다.");
+          return;
+        }
+        
+        const saveBtnMsg = document.getElementById('editorSaveBtn');
+        const originalText = saveBtnMsg ? saveBtnMsg.textContent : "저장";
+        if (saveBtnMsg) saveBtnMsg.textContent = "업로드 중...";
+        
+        try {
+          const uploadResult = await uploadFile(file);
+          slide.fileName = file.name;
+          slide.serverFilePath = uploadResult.path;
+          slide.fileSaved = true;
+        } catch (e) {
+          alert("파일 업로드 실패: " + e.message);
+          if (saveBtnMsg) saveBtnMsg.textContent = originalText;
+          return;
+        } finally {
+          if (saveBtnMsg) saveBtnMsg.textContent = originalText;
+        }
+      }
+      
       slide.saved = true;
 
     } else {

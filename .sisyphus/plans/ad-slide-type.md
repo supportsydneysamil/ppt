@@ -230,7 +230,7 @@ Task 1 (HTML) → Task 2 (JS 기본) → Task 3 (JS 미리보기)
 
 ---
 
-- [ ] 4. JS: 광고 슬라이드 저장 로직
+- [x] 4. JS: 광고 슬라이드 저장 로직
 
   **What to do**:
   - `saveCurrentSlide()` (라인 1278-1407) 확장

@@ -229,3 +229,98 @@ Both ad slide rendering and upload source type rendering use `return;` to exit t
 - No CSS file modifications required
 - Ad preview shows: background image, overlay, title (bold), content as specified
 
+
+## Save Logic Implementation (Task 4: saveCurrentSlide Extension)
+
+### Ad Type Save Block Structure
+- **Location**: `public/app.js` lines 1313-1385 (inserted between hymn and simple slide logic)
+- **Pattern**: Three-way conditional branching in saveCurrentSlide function
+  - `if (slide.type === 'hymn')`: Hymn download/save logic
+  - `else if (slide.type === 'ad')`: Ad-specific save logic (NEW)
+  - `else`: Simple slide save logic (default)
+
+### Ad-Specific Properties Saved
+1. **Title Properties**:
+   - `slide.adTitle` - From `adTitleInput.value`
+   - `slide.adTitleSize` - From `adTitleSizeSelect.value`
+   - `slide.adTitleAlign` - From `adTitleAlignSelect.value`
+
+2. **Background Properties**:
+   - `slide.adBgSource` - From radio button selection (none/file/url)
+   - `slide.adBgOpacity` - From slider, parsed as integer
+
+3. **Background Image Handling** (Mutually Exclusive):
+   - **File Source**: 
+     - Uploads file via `uploadFile()` function
+     - Stores path in `slide.adBgImagePath`
+     - Clears `slide.adBgImageUrl` to null
+   - **URL Source**:
+     - Stores URL in `slide.adBgImageUrl`
+     - Clears `slide.adBgImagePath` to null
+   - **No Source**:
+     - Both `adBgImagePath` and `adBgImageUrl` set to null
+
+4. **Simple Slide Properties** (Reused):
+   - `slide.content` - From `slideContentInput.value`
+   - `slide.font` - From `slideFontSelect.value`
+   - `slide.fontSize` - From `slideFontSizeSelect.value`
+   - `slide.bg` - From `slideBgSelect.value`
+   - `slide.align` - From `slideAlignSelect.value`
+   - `slide.sourceType` - From radio button (basic/upload)
+
+5. **PPTX File Upload** (if sourceType === 'upload'):
+   - File size validation: max 50MB
+   - Uploads via `uploadFile()` function
+   - Stores in `slide.serverFilePath` and `slide.fileName`
+
+### File Upload Pattern
+Both background image and PPTX uploads follow the same pattern:
+```javascript
+const saveBtnMsg = document.getElementById('editorSaveBtn');
+const originalText = saveBtnMsg ? saveBtnMsg.textContent : "저장";
+if (saveBtnMsg) saveBtnMsg.textContent = "업로드 중...";
+
+try {
+  const uploadResult = await uploadFile(file);
+  // Store result
+} catch (e) {
+  alert("업로드 실패: " + e.message);
+  if (saveBtnMsg) saveBtnMsg.textContent = originalText;
+  return; // Stop save on error
+} finally {
+  if (saveBtnMsg) saveBtnMsg.textContent = originalText;
+}
+```
+
+### Mutual Exclusivity Implementation
+The background source is handled as a three-way exclusive choice:
+1. Check `bgSource` value from radio button
+2. If 'file': upload file, set path, clear URL
+3. Else if 'url': set URL, clear path
+4. Else: clear both path and URL
+
+This ensures only one source is active at a time in the saved data.
+
+### populateEditor() Extension
+- **Location**: `public/app.js` lines 1131-1145
+- **Pattern**: Loads ad-specific properties when slide type is 'ad'
+- **Key Addition**: Load `adBgImageUrl` if available
+- **File Input Clearing**: Clear `adBgImageFile.value` to prevent stale data
+
+### Verification Results
+- Syntax validation: `node -c public/app.js` passes
+- Save test: Ad slide with URL background saves successfully
+- Reload test: All properties persist after page reload
+  - adTitle: "Test Ad Title" ✓
+  - adBgImageUrl: "https://example.com/bg.jpg" ✓
+  - adOpacity: "30" ✓
+  - content: "Ad content here" ✓
+- Server storage: Data correctly stored in `data/slides.json`
+
+### Key Design Insights
+1. **Async Upload Handling**: Both background image and PPTX uploads are async, requiring await
+2. **Button State Management**: Save button text changes to "업로드 중..." during upload
+3. **Error Recovery**: Upload failures stop the save process and restore button text
+4. **Property Reuse**: Ad slides inherit all simple slide properties, reducing duplication
+5. **Mutual Exclusivity**: File and URL are never both set, enforced at save time
+6. **Null vs Empty String**: File paths use null (not empty string) when not set
