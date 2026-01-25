@@ -623,7 +623,8 @@ function addSingleLanguageSlides(
   const textBlocks = entries.length ? entries.map((entry) => entry.line) : lines;
 
   textBlocks.forEach((text) => {
-    const slides = fitTextToSlides(text, safe, config);
+    const processedText = lang === "ko" ? insertWordJoiner(text) : text;
+    const slides = fitTextToSlides(processedText, safe, config);
     slides.forEach((slideItem) => {
       const slide = pptx.addSlide();
       applySlideBackground(pptx, slide, layout, theme);
@@ -640,6 +641,8 @@ function addSingleLanguageSlides(
         align: "left",
         valign: "top",
         lineSpacingMultiple: config.lineSpacing,
+        fit: "shrink",
+        lang: lang === "ko" ? "ko-KR" : "en-US",
       });
     });
   });
@@ -677,7 +680,8 @@ function addBothSlides(pptx, linesByLang, safe, labelBox, labelText, theme, layo
     addCornerLabel(slide, labelText, labelBox, getLabelConfig("ko", theme));
 
     if (koText) {
-      const fittedKo = fitText(koText, topBox, koConfig);
+      const processedKo = insertWordJoiner(koText);
+      const fittedKo = fitText(processedKo, topBox, koConfig);
       slide.addText(fittedKo.text, {
         x: topBox.x,
         y: topBox.y,
@@ -690,6 +694,8 @@ function addBothSlides(pptx, linesByLang, safe, labelBox, labelText, theme, layo
         align: "left",
         valign: "top",
         lineSpacingMultiple: koConfig.lineSpacing,
+        fit: "shrink",
+        lang: "ko-KR",
       });
     }
 
@@ -728,7 +734,7 @@ function getLanguageConfig(lang) {
     maxFontSize: 54,
     minFontSize: 18,
     lineSpacing: 1.22,
-    charWidth: 0.95,
+    charWidth: 1.0,
     preserveText: true,
   };
 }
@@ -900,7 +906,9 @@ function wrapText(text, maxChars) {
     current = "";
 
     if (wordLength > maxChars) {
-      lines.push(...breakLongWord(word, maxChars));
+      // Don't break long words if using autoFit strategy (especially for Korean with WordJoiners)
+      lines.push(word);
+      return;
     } else {
       current = word;
     }
@@ -923,7 +931,13 @@ function breakLongWord(word, maxChars) {
 }
 
 function countChars(value) {
-  return Array.from(value).length;
+  // Ignore Word Joiner (U+2060)
+  return Array.from(value.replace(/\u2060/g, "")).length;
+}
+
+function insertWordJoiner(text) {
+  // Insert U+2060 between Korean characters
+  return text.replace(/([가-힣])(?=[가-힣])/g, "$1\u2060");
 }
 
 function getFixedFontSize(texts, box, config) {
@@ -945,7 +959,14 @@ function sanitizeFilename(value) {
 }
 
 function sanitizeAsciiFilename(value) {
-  return value.replace(/[^\w.-]+/g, "_");
+  // Replace non-ascii chars with underscore
+  const sanitized = value.replace(/[^\w.-]+/g, "_");
+
+  // If result is empty, very short, only underscores/dots, or starts with multiple underscores
+  if (!sanitized || sanitized.length < 3 || /^[._]+$/.test(sanitized) || sanitized.startsWith("__")) {
+    return "bible_extract.pptx";
+  }
+  return sanitized;
 }
 
 function resolvePptxTheme(input) {
