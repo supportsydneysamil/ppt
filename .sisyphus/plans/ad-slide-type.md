@@ -338,7 +338,7 @@ Task 1 (HTML) → Task 2 (JS 기본) → Task 3 (JS 미리보기)
 
 ---
 
-- [ ] 6. JS: 광고 슬라이드 다운로드 연동
+- [x] 6. JS: 광고 슬라이드 다운로드 연동
 
   **What to do**:
   - `downloadSlide()` 함수 확장

@@ -1454,6 +1454,53 @@ async function downloadSlide() {
   const slide = slides.find(s => s.id === currentSlideId);
   if (!slide || !slide.saved) return;
 
+  // Ad slide download
+  if (slide.type === 'ad' && slide.sourceType === 'basic') {
+    try {
+      const payload = {
+        content: slide.content,
+        font: slide.font,
+        fontSize: slide.fontSize,
+        bg: slide.bg,
+        align: slide.align,
+        adTitle: slide.adTitle,
+        adTitleSize: slide.adTitleSize,
+        adTitleAlign: slide.adTitleAlign,
+        adBgSource: slide.adBgSource,
+        adBgImagePath: slide.adBgImagePath,
+        adBgImageUrl: slide.adBgImageUrl,
+        adBgOpacity: slide.adBgOpacity
+      };
+
+      const resp = await fetch('/api/create-ad-slide-pptx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json();
+        alert("다운로드 실패: " + (err.error || "Unknown Error"));
+        return;
+      }
+
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ad_slide_${slide.adTitle || slide.name || 'untitled'}.pptx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      return;
+    } catch (e) {
+      alert("다운로드 중 오류가 발생했습니다.");
+      console.error(e);
+      return;
+    }
+  }
+
   if (slide.sourceType === 'basic') {
     try {
       const resp = await fetch("/api/create-slide-pptx", {

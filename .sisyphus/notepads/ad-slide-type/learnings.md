@@ -468,3 +468,72 @@ res.setHeader("Content-Disposition", `attachment; filename="${asciiFilename}"`);
 5. **Async File Operations**: Uses async fs.readFile() instead of sync readFileSync()
 6. **Protocol Detection**: Automatically selects https or http based on URL prefix
 
+
+## Download Integration (Task 6: downloadSlide() Extension)
+
+### Function Location & Structure
+- **Location**: `public/app.js` lines 1452-1530 (extended)
+- **Pattern**: Three-way conditional branching for slide types
+  - Ad slide download (NEW)
+  - Simple slide download (basic sourceType)
+  - Upload mode download (upload sourceType)
+
+### Ad Slide Download Logic
+- **Trigger Condition**: `slide.type === 'ad' && slide.sourceType === 'basic'`
+- **Endpoint**: POST `/api/create-ad-slide-pptx`
+- **Request Payload**: All ad slide properties
+  ```javascript
+  {
+    content, font, fontSize, bg, align,           // Simple slide properties
+    adTitle, adTitleSize, adTitleAlign,           // Title properties
+    adBgSource, adBgImagePath, adBgImageUrl,      // Background properties
+    adBgOpacity                                    // Opacity
+  }
+  ```
+
+### Fetch/Blob/Download Pattern
+1. **Fetch Request**:
+   - Method: POST
+   - Headers: `Content-Type: application/json`
+   - Body: JSON stringified payload
+   
+2. **Response Handling**:
+   - Check `resp.ok` status
+   - If error: parse JSON error message and alert user
+   - If success: convert response to blob
+   
+3. **File Download**:
+   - Create object URL from blob: `URL.createObjectURL(blob)`
+   - Create anchor element with download attribute
+   - Set filename: `ad_slide_${slide.adTitle || slide.name || 'untitled'}.pptx`
+   - Append to DOM, click, remove from DOM
+   - Revoke object URL: `URL.revokeObjectURL(url)`
+
+### Filename Generation Pattern
+- Format: `ad_slide_{title}.pptx`
+- Fallback chain: `adTitle` → `name` → `'untitled'`
+- Example: "ad_slide_광고제목.pptx"
+
+### Error Handling
+- Try-catch wraps entire download logic
+- Network errors: "다운로드 중 오류가 발생했습니다."
+- API errors: "다운로드 실패: {error message}"
+- Errors logged to console via `console.error(e)`
+
+### Early Return Pattern
+- Ad slide download uses `return;` to exit function after successful download
+- Prevents fallthrough to simple slide logic
+- Ensures only one download path executes
+
+### Key Design Insights
+1. **Reuse of Simple Slide Properties**: Ad download includes content, font, fontSize, bg, align
+2. **Mutual Exclusivity**: Ad slides with sourceType='basic' use endpoint, not upload mode
+3. **Filename Flexibility**: Uses adTitle if available, falls back to slide name
+4. **Resource Cleanup**: Always revokes object URL after download to prevent memory leaks
+5. **User Feedback**: Alerts on both success (implicit via download) and errors
+
+### Verification
+- ✓ Syntax validation: `node -c public/app.js` passes
+- ✓ Server running: http://localhost:3000 responds
+- ✓ Code served correctly: curl shows ad download logic in app.js
+- ✓ Endpoint exists: `/api/create-ad-slide-pptx` implemented in server.js
