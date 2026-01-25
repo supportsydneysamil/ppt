@@ -195,7 +195,7 @@ Task 1 (HTML) → Task 2 (JS 기본) → Task 3 (JS 미리보기)
 
 ---
 
-- [ ] 3. JS: 광고 슬라이드 미리보기 렌더링
+- [x] 3. JS: 광고 슬라이드 미리보기 렌더링
 
   **What to do**:
   - `renderPreview()` 함수 확장 (또는 새 함수 `renderAdPreview()` 생성)

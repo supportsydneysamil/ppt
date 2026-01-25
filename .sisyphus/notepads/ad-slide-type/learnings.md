@@ -144,3 +144,88 @@ adBgOpacity.addEventListener('input', () => {
 - Server running successfully on http://localhost:3000
 - Ad option appears in slide type dropdown
 - All DOM references resolve correctly
+
+## Preview Rendering Pattern (Task 3: renderPreview() Extension)
+
+### Two-Part Modification Approach
+
+The `renderPreview()` function in `public/app.js` was extended to handle ad slide type preview rendering through two distinct modifications:
+
+#### PART A: Ad Type Data Collection (lines 599-627)
+- **Location**: Inside the `if (!data)` block where live preview data is collected from form inputs
+- **Pattern**: Three-way conditional branching for slide types
+  - `if (type === 'hymn')`: Hymn-specific data collection
+  - `else if (type === 'ad')`: Ad-specific data collection (NEW)
+  - `else`: Simple slide data collection (default)
+- **Ad Data Properties Collected**:
+  - Simple slide properties: `name`, `type`, `sourceType`, `content`, `font`, `fontSize`, `bg`, `align`
+  - Ad-specific properties: `adTitle`, `adTitleSize`, `adTitleAlign`, `adBgSource`, `adBgImageUrl`, `adBgOpacity`
+  - File references: `file` (for PPTX upload), `adBgImageFile` (for background image)
+- **Key Detail**: `adBgOpacity` is parsed as integer from slider value (0-100 range)
+
+#### PART B: Ad Slide Rendering Logic (inserted before line 918)
+- **Location**: Before the "// Basic Render" section, after upload source type handling
+- **Trigger Condition**: `if (data.type === 'ad' && data.sourceType === 'basic')`
+- **Rendering Structure** (4-layer approach):
+  1. **Container Setup**: Creates div with `position: relative` and `overflow: hidden`
+  2. **Background Layer**: 
+     - File source: Uses FileReader to convert local file to data URL
+     - URL source: Direct CSS background-image with URL
+     - No source: Falls back to bg color (black/white)
+     - CSS: `background-size: cover`, `background-position: center`
+  3. **Overlay Layer**: 
+     - Absolute positioned div covering entire container
+     - `backgroundColor: rgba(0,0,0,${opacity/100})`
+     - `pointer-events: none` to prevent interaction blocking
+  4. **Content Layer** (relative z-index: 1):
+     - Flex container with column direction
+     - **Title Section** (if adTitle exists):
+       - Bold text with color based on bg (white if black bg, black if white bg)
+       - Text alignment from adTitleAlign
+       - Font size mapping: `{ large: "24px", medium: "18px", small: "14px" }`
+       - Bottom margin: 20px
+     - **Content Section**:
+       - Flex: 1 to fill remaining space
+       - Centered alignment (flex center)
+       - Font family from data.font
+       - Text color matches title color logic
+       - Text alignment from data.align
+       - Content split by newlines, each line in separate div
+       - Font size: `${data.fontSize || 40}px`
+       - Font weight: bold
+       - Line height: 1.2
+
+### Title Size Mapping
+The preview uses a three-tier size system for ad titles:
+- `large`: 24px (대)
+- `medium`: 18px (중) - default
+- `small`: 14px (소)
+
+### Color Logic Pattern
+Both title and content use the same color determination:
+```
+color = (data.bg === "black") ? "white" : "black"
+```
+This ensures text is always readable against the background.
+
+### FileReader Pattern for Local Images
+When background source is 'file' with an image file:
+```javascript
+const reader = new FileReader();
+reader.onload = (e) => {
+  container.style.backgroundImage = `url(${e.target.result})`;
+  // ... other styles
+};
+reader.readAsDataURL(data.adBgImageFile);
+```
+This converts the File object to a data URL for preview rendering.
+
+### Early Return Pattern
+Both ad slide rendering and upload source type rendering use `return;` to exit the function early, preventing fallthrough to the "Basic Render" section.
+
+### Verification
+- Syntax validation: `node -c public/app.js` passes without errors
+- No modifications to existing simple/hymn rendering logic
+- No CSS file modifications required
+- Ad preview shows: background image, overlay, title (bold), content as specified
+

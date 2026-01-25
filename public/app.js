@@ -605,6 +605,25 @@ function renderPreview(slideOverride) {
       };
       // Explicitly set source type to upload-like behavior for renderer
       data.sourceType = 'upload';
+    } else if (type === 'ad') {
+      data = {
+        name: slideNameInput.value,
+        type: 'ad',
+        sourceType: document.querySelector('input[name="sourceType"]:checked').value,
+        content: slideContentInput.value,
+        font: slideFontSelect.value,
+        fontSize: slideFontSizeSelect.value,
+        bg: slideBgSelect.value,
+        align: slideAlignSelect.value,
+        adTitle: adTitleInput.value,
+        adTitleSize: adTitleSizeSelect.value,
+        adTitleAlign: adTitleAlignSelect.value,
+        adBgSource: document.querySelector('input[name="adBgSource"]:checked').value,
+        adBgImageUrl: adBgImageUrl.value,
+        adBgOpacity: parseInt(adBgOpacity.value),
+        file: userPptxFile.files[0],
+        adBgImageFile: adBgImageFile.files[0]
+      };
     } else {
       data = {
         name: slideNameInput.value,
@@ -912,6 +931,92 @@ function renderPreview(slideOverride) {
     }
 
     slidePreview.appendChild(ph);
+    return;
+  }
+
+  // Ad Slide Render
+  if (data.type === 'ad' && data.sourceType === 'basic') {
+    slidePreview.classList.remove('preview-scroll-mode');
+    const container = document.createElement("div");
+    container.className = "preview-content";
+    container.style.position = "relative";
+    container.style.overflow = "hidden";
+    
+    // Background image
+    if (data.adBgSource === 'file' && data.adBgImageFile) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        container.style.backgroundImage = `url(${e.target.result})`;
+        container.style.backgroundSize = "cover";
+        container.style.backgroundPosition = "center";
+      };
+      reader.readAsDataURL(data.adBgImageFile);
+    } else if (data.adBgSource === 'url' && data.adBgImageUrl) {
+      container.style.backgroundImage = `url(${data.adBgImageUrl})`;
+      container.style.backgroundSize = "cover";
+      container.style.backgroundPosition = "center";
+    } else {
+      container.style.backgroundColor = data.bg === "black" ? "black" : "white";
+    }
+    
+    // Overlay
+    const overlay = document.createElement("div");
+    overlay.style.position = "absolute";
+    overlay.style.top = "0";
+    overlay.style.left = "0";
+    overlay.style.width = "100%";
+    overlay.style.height = "100%";
+    overlay.style.backgroundColor = `rgba(0,0,0,${data.adBgOpacity / 100})`;
+    overlay.style.pointerEvents = "none";
+    container.appendChild(overlay);
+    
+    // Content wrapper
+    const contentWrapper = document.createElement("div");
+    contentWrapper.style.position = "relative";
+    contentWrapper.style.zIndex = "1";
+    contentWrapper.style.padding = "20px";
+    contentWrapper.style.height = "100%";
+    contentWrapper.style.display = "flex";
+    contentWrapper.style.flexDirection = "column";
+    
+    // Title
+    if (data.adTitle) {
+      const title = document.createElement("div");
+      title.textContent = data.adTitle;
+      title.style.fontWeight = "bold";
+      title.style.color = data.bg === "black" ? "white" : "black";
+      title.style.textAlign = data.adTitleAlign || "center";
+      title.style.marginBottom = "20px";
+      
+      const titleSizeMap = { large: "24px", medium: "18px", small: "14px" };
+      title.style.fontSize = titleSizeMap[data.adTitleSize] || "18px";
+      
+      contentWrapper.appendChild(title);
+    }
+    
+    // Content
+    const content = document.createElement("div");
+    content.style.flex = "1";
+    content.style.display = "flex";
+    content.style.alignItems = "center";
+    content.style.justifyContent = "center";
+    content.style.fontFamily = data.font;
+    content.style.color = data.bg === "black" ? "white" : "black";
+    content.style.textAlign = data.align;
+    
+    const lines = data.content ? data.content.split('\n') : ["내용을 입력하세요"];
+    lines.forEach(line => {
+      const p = document.createElement("div");
+      p.textContent = line;
+      p.style.fontSize = `${data.fontSize || 40}px`;
+      p.style.fontWeight = "bold";
+      p.style.lineHeight = "1.2";
+      content.appendChild(p);
+    });
+    
+    contentWrapper.appendChild(content);
+    container.appendChild(contentWrapper);
+    slidePreview.appendChild(container);
     return;
   }
 
