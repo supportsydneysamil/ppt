@@ -178,161 +178,220 @@
               <button id="editorCancelBtn" class="ghost small">취소</button>
               <button id="editorResetBtn" class="ghost small">리셋</button>
               <button id="editorDeleteBtn" class="ghost small" style="color: #ff6b6b; display:none;">삭제</button>
-              <button id="editorDownloadBtn" class="ghost small" style="display:none;" title="PPTX 다운로드">⬇️</button>
+              <button id="editorDownloadBtn" class="ghost small icon-btn" style="display:none;" title="PPTX 다운로드" aria-label="PPTX 다운로드">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 3a1 1 0 0 1 1 1v9.17l2.59-2.58a1 1 0 1 1 1.41 1.42l-4.3 4.29a1 1 0 0 1-1.4 0l-4.3-4.29a1 1 0 1 1 1.41-1.42L11 13.17V4a1 1 0 0 1 1-1z"></path>
+                  <path d="M5 20a1 1 0 0 1-1-1v-2a1 1 0 1 1 2 0v1h12v-1a1 1 0 1 1 2 0v2a1 1 0 0 1-1 1H5z"></path>
+                </svg>
+              </button>
               <button id="editorSaveBtn" class="cta small">저장</button>
             </div>
           </div>
 
           <form id="slideForm" class="editor-form">
-            <label class="field">
-              <span>이름</span>
-              <input id="slideName" type="text" placeholder="슬라이드 이름 (영문/숫자 권장)" />
-            </label>
+            <div class="settings-section">
+              <label class="field">
+                <span>이름</span>
+                <input id="slideName" type="text" placeholder="슬라이드 이름 (영문/숫자 권장)" />
+              </label>
 
-            <label class="field">
-              <span>슬라이드 타입</span>
-              <select id="slideType">
-                <option value="simple">단순 슬라이드</option>
-                <option value="hymn">찬송가 (한영)</option>
-                <option value="ad">광고</option>
-              </select>
-            </label>
+              <label class="field">
+                <span>슬라이드 타입</span>
+                <select id="slideType">
+                  <option value="simple">단순 슬라이드</option>
+                  <option value="hymn">찬송가 (한영)</option>
+                  <option value="ad">광고</option>
+                </select>
+              </label>
+            </div>
 
             <!-- Dynamic Settings Area -->
             <div id="simpleSlideSettings" class="settings-group">
-              <div class="field">
-                <span>소스 선택</span>
-                <div class="radio-group">
-                  <label><input type="radio" name="sourceType" value="basic" checked> 기본 설정</label>
-                  <label><input type="radio" name="sourceType" value="upload"> PPTX 업로드</label>
+              <div class="settings-section">
+                <div class="field">
+                  <span>소스 선택</span>
+                  <div class="radio-group source-radio">
+                    <label><input type="radio" name="sourceType" value="basic" checked><span>기본 설정</span></label>
+                    <label><input type="radio" name="sourceType" value="upload"><span>PPTX 업로드</span></label>
+                  </div>
+                </div>
+              </div>
+
+              <div id="adSlideSettings" class="settings-group" style="display:none;">
+                <div class="settings-section">
+                  <label class="field">
+                    <span>제목</span>
+                    <input id="adTitle" type="text" placeholder="광고 제목을 입력하세요" />
+                  </label>
+
+                  <div class="split-fields">
+                    <label class="field">
+                      <span>제목 크기</span>
+                      <select id="adTitleSize">
+                        <option value="large">대</option>
+                        <option value="medium" selected>중</option>
+                        <option value="small">소</option>
+                      </select>
+                    </label>
+                    <label class="field">
+                      <span>제목 정렬</span>
+                      <select id="adTitleAlign">
+                        <option value="left">왼쪽</option>
+                        <option value="center" selected>가운데</option>
+                        <option value="right">오른쪽</option>
+                      </select>
+                    </label>
+                  </div>
                 </div>
               </div>
 
               <div id="basicSettingsMode">
-                <label class="field">
-                  <span>텍스트 내용</span>
-                  <textarea id="slideContent" rows="4" placeholder="내용을 입력하세요"></textarea>
-                </label>
-                <div class="split-fields">
+                <div class="settings-section">
                   <label class="field">
-                    <span>폰트</span>
-                    <select id="slideFont">
-                      <option value="Malgun Gothic">맑은 고딕</option>
-                      <option value="Calibri">Calibri</option>
-                      <option value="Arial">Arial</option>
-                    </select>
-                  </label>
-                  <label class="field">
-                    <span>크기</span>
-                    <select id="slideFontSize">
-                      <option value="24">24</option>
-                      <option value="32">32</option>
-                      <option value="40">40</option>
-                      <option value="48">48</option>
-                      <option value="60">60</option>
-                      <option value="80">80</option>
-                    </select>
+                    <span>텍스트 내용</span>
+                    <textarea id="slideContent" rows="4" placeholder="내용을 입력하세요"></textarea>
                   </label>
                 </div>
-                <div class="split-fields">
-                  <label class="field">
-                    <span>배경</span>
-                    <select id="slideBg">
-                      <option value="black">블랙 (흰 글씨)</option>
-                      <option value="white">화이트 (검은 글씨)</option>
-                    </select>
-                  </label>
-                  <label class="field">
-                    <span>정렬</span>
-                    <select id="slideAlign">
-                      <option value="center">가운데</option>
-                      <option value="left">왼쪽</option>
-                      <option value="right">오른쪽</option>
-                      <option value="top">상단</option>
-                    </select>
-                  </label>
+                <div class="settings-section">
+                  <div class="split-fields">
+                    <label class="field">
+                      <span>폰트</span>
+                      <select id="slideFont">
+                        <option value="Malgun Gothic">맑은 고딕</option>
+                        <option value="Calibri">Calibri</option>
+                        <option value="Arial">Arial</option>
+                      </select>
+                    </label>
+                    <label class="field">
+                      <span>크기</span>
+                      <select id="slideFontSize">
+                        <option value="24">24</option>
+                        <option value="32">32</option>
+                        <option value="40">40</option>
+                        <option value="48">48</option>
+                        <option value="60">60</option>
+                        <option value="80">80</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div class="split-fields">
+                    <label class="field">
+                      <span>배경</span>
+                      <div class="bg-tabs">
+                        <button type="button" class="bg-tab is-active" data-value="black">
+                          <span class="bg-tab-preview bg-tab-dark">텍스트</span>
+                        </button>
+                        <button type="button" class="bg-tab" data-value="white">
+                          <span class="bg-tab-preview bg-tab-light">텍스트</span>
+                        </button>
+                      </div>
+                      <select id="slideBg" class="hidden-select">
+                        <option value="black">블랙 (흰 글씨)</option>
+                        <option value="white">화이트 (검은 글씨)</option>
+                      </select>
+                    </label>
+                    <label class="field">
+                      <span>정렬</span>
+                      <div class="align-tabs">
+                        <button type="button" class="align-tab" data-value="left" aria-label="왼쪽">
+                          <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <rect x="4" y="6" width="12" height="2" rx="1"></rect>
+                            <rect x="4" y="11" width="16" height="2" rx="1"></rect>
+                            <rect x="4" y="16" width="10" height="2" rx="1"></rect>
+                          </svg>
+                        </button>
+                        <button type="button" class="align-tab is-active" data-value="center" aria-label="가운데">
+                          <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <rect x="6" y="6" width="12" height="2" rx="1"></rect>
+                            <rect x="4" y="11" width="16" height="2" rx="1"></rect>
+                            <rect x="7" y="16" width="10" height="2" rx="1"></rect>
+                          </svg>
+                        </button>
+                        <button type="button" class="align-tab" data-value="right" aria-label="오른쪽">
+                          <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <rect x="8" y="6" width="12" height="2" rx="1"></rect>
+                            <rect x="4" y="11" width="16" height="2" rx="1"></rect>
+                            <rect x="10" y="16" width="10" height="2" rx="1"></rect>
+                          </svg>
+                        </button>
+                        <button type="button" class="align-tab" data-value="top" aria-label="상단">
+                          <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <rect x="4" y="6" width="16" height="2" rx="1"></rect>
+                            <rect x="6" y="11" width="12" height="2" rx="1"></rect>
+                            <rect x="8" y="16" width="8" height="2" rx="1"></rect>
+                          </svg>
+                        </button>
+                      </div>
+                      <select id="slideAlign" class="hidden-select">
+                        <option value="center">가운데</option>
+                        <option value="left">왼쪽</option>
+                        <option value="right">오른쪽</option>
+                        <option value="top">상단</option>
+                      </select>
+                    </label>
+                  </div>
                 </div>
               </div>
 
-              <div id="uploadSettingsMode" style="display:none;">
+              <div class="settings-section" id="adBackgroundSettings" style="display:none;">
+                <div class="field">
+                  <span>배경이미지</span>
+                  <div class="radio-group">
+                    <label><input type="radio" name="adBgSource" value="none" checked> 없음</label>
+                    <label><input type="radio" name="adBgSource" value="file"> 파일 업로드</label>
+                    <label><input type="radio" name="adBgSource" value="url"> URL 입력</label>
+                  </div>
+                </div>
+
+                <div id="adBgFileMode" style="display:none;">
+                  <label class="field">
+                    <span>이미지 파일</span>
+                    <input id="adBgImageFile" type="file" accept="image/jpeg,image/png" />
+                  </label>
+                  <p class="hint">JPEG, PNG 형식만 지원합니다. (최대 5MB)</p>
+                </div>
+
+                <div id="adBgUrlMode" style="display:none;">
+                  <label class="field">
+                    <span>이미지 URL</span>
+                    <input id="adBgImageUrl" type="text" placeholder="https://example.com/image.jpg" disabled />
+                  </label>
+                </div>
+
                 <label class="field">
-                  <span>PPTX 파일 업로드</span>
-                  <input type="file" id="userPptxFile" accept=".ppt,.pptx" />
+                  <span>배경 투명도</span>
+                  <div style="display:flex; gap:8px; align-items:center;">
+                    <input id="adBgOpacity" type="range" min="0" max="100" value="30" style="flex:1;" />
+                    <span id="adBgOpacityValue" style="min-width:40px;">30%</span>
+                  </div>
                 </label>
-                <p class="hint">사용자가 제작한 PPTX를 그대로 사용합니다.</p>
+              </div>
+
+              <div id="uploadSettingsMode" style="display:none;">
+                <div class="settings-section">
+                  <label class="field">
+                    <span>PPTX 파일 업로드</span>
+                    <input type="file" id="userPptxFile" accept=".ppt,.pptx" />
+                  </label>
+                  <p class="hint">사용자가 제작한 PPTX를 그대로 사용합니다.</p>
+                </div>
               </div>
             </div>
 
             <!-- Hymn Settings -->
             <div id="hymnSlideSettings" class="settings-group" style="display:none;">
-              <div class="field">
-                <span>찬송가 장수</span>
-                <div style="display:flex; gap:8px;">
-                  <input id="hymnNumber" type="number" placeholder="예: 1" style="flex:1;">
-                  <button id="hymnLoadBtn" type="button" class="ghost" style="white-space:nowrap;">로드</button>
+              <div class="settings-section">
+                <div class="field">
+                  <span>찬송가 장수</span>
+                  <div style="display:flex; gap:8px;">
+                    <input id="hymnNumber" type="number" placeholder="예: 1" style="flex:1;">
+                    <button id="hymnLoadBtn" type="button" class="ghost" style="white-space:nowrap;">로드</button>
+                  </div>
+                  <p class="hint">RickC.online에서 한영 찬송가(PPT)를 다운로드합니다.</p>
                 </div>
-                <p class="hint">RickC.online에서 한영 찬송가(PPT)를 다운로드합니다.</p>
               </div>
             </div>
 
-            <!-- Ad Settings -->
-            <div id="adSlideSettings" class="settings-group" style="display:none;">
-              <label class="field">
-                <span>제목</span>
-                <input id="adTitle" type="text" placeholder="광고 제목을 입력하세요" />
-              </label>
-
-              <div class="split-fields">
-                <label class="field">
-                  <span>제목 크기</span>
-                  <select id="adTitleSize">
-                    <option value="large">대</option>
-                    <option value="medium" selected>중</option>
-                    <option value="small">소</option>
-                  </select>
-                </label>
-                <label class="field">
-                  <span>제목 정렬</span>
-                  <select id="adTitleAlign">
-                    <option value="left">왼쪽</option>
-                    <option value="center" selected>가운데</option>
-                    <option value="right">오른쪽</option>
-                  </select>
-                </label>
-              </div>
-
-              <div class="field">
-                <span>배경 이미지</span>
-                <div class="radio-group">
-                  <label><input type="radio" name="adBgSource" value="none" checked> 없음</label>
-                  <label><input type="radio" name="adBgSource" value="file"> 파일 업로드</label>
-                  <label><input type="radio" name="adBgSource" value="url"> URL 입력</label>
-                </div>
-              </div>
-
-              <div id="adBgFileMode" style="display:none;">
-                <label class="field">
-                  <span>이미지 파일</span>
-                  <input id="adBgImageFile" type="file" accept="image/jpeg,image/png" />
-                </label>
-                <p class="hint">JPEG, PNG 형식만 지원합니다. (최대 5MB)</p>
-              </div>
-
-              <div id="adBgUrlMode" style="display:none;">
-                <label class="field">
-                  <span>이미지 URL</span>
-                  <input id="adBgImageUrl" type="text" placeholder="https://example.com/image.jpg" />
-                </label>
-              </div>
-
-              <label class="field">
-                <span>배경 투명도</span>
-                <div style="display:flex; gap:8px; align-items:center;">
-                  <input id="adBgOpacity" type="range" min="0" max="100" value="30" style="flex:1;" />
-                  <span id="adBgOpacityValue" style="min-width:40px;">30%</span>
-                </div>
-              </label>
-            </div>
           </form>
 
           <div class="preview-area">

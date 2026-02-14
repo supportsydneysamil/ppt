@@ -380,6 +380,9 @@ const slideFontSelect = document.getElementById("slideFont");
 const slideBgSelect = document.getElementById("slideBg");
 const slideAlignSelect = document.getElementById("slideAlign");
 const slidePreview = document.getElementById("slidePreview");
+const bgTabs = document.querySelectorAll(".bg-tab");
+const alignTabs = document.querySelectorAll(".align-tab");
+const bgTabsContainer = document.querySelector(".bg-tabs");
 const sourceRadios = document.querySelectorAll('input[name="sourceType"]');
 const basicSettingsMode = document.getElementById("basicSettingsMode");
 const uploadSettingsMode = document.getElementById("uploadSettingsMode");
@@ -397,6 +400,7 @@ const adBgImageFile = document.getElementById("adBgImageFile");
 const adBgImageUrl = document.getElementById("adBgImageUrl");
 const adBgOpacity = document.getElementById("adBgOpacity");
 const adBgOpacityValue = document.getElementById("adBgOpacityValue");
+const adBackgroundSettings = document.getElementById("adBackgroundSettings");
 
 // State
 let slides = [];
@@ -405,20 +409,7 @@ let hasUnsavedChanges = false;
 
 // --- Event Listeners for Hymn Type ---
 slideTypeSelect.addEventListener('change', () => {
-  const type = slideTypeSelect.value;
-  if (type === 'hymn') {
-    simpleSlideSettings.style.display = 'none';
-    hymnSlideSettings.style.display = 'block';
-    adSlideSettings.style.display = 'none';
-  } else if (type === 'ad') {
-    simpleSlideSettings.style.display = 'block';
-    hymnSlideSettings.style.display = 'none';
-    adSlideSettings.style.display = 'block';
-  } else {
-    simpleSlideSettings.style.display = 'block';
-    hymnSlideSettings.style.display = 'none';
-    adSlideSettings.style.display = 'none';
-  }
+  updateSettingsVisibility();
   hasUnsavedChanges = true;
   renderPreview();
 });
@@ -941,6 +932,7 @@ function renderPreview(slideOverride) {
     container.className = "preview-content";
     container.style.position = "relative";
     container.style.overflow = "hidden";
+    container.style.fontFamily = data.font;
     
     // Background image
     if (data.adBgSource === 'file' && data.adBgImageFile) {
@@ -974,7 +966,6 @@ function renderPreview(slideOverride) {
     const contentWrapper = document.createElement("div");
     contentWrapper.style.position = "relative";
     contentWrapper.style.zIndex = "1";
-    contentWrapper.style.padding = "20px";
     contentWrapper.style.height = "100%";
     contentWrapper.style.display = "flex";
     contentWrapper.style.flexDirection = "column";
@@ -1000,7 +991,6 @@ function renderPreview(slideOverride) {
     content.style.display = "flex";
     content.style.alignItems = "center";
     content.style.justifyContent = "center";
-    content.style.fontFamily = data.font;
     content.style.color = data.bg === "black" ? "white" : "black";
     content.style.textAlign = data.align;
     
@@ -1009,7 +999,6 @@ function renderPreview(slideOverride) {
       const p = document.createElement("div");
       p.textContent = line;
       p.style.fontSize = `${data.fontSize || 40}px`;
-      p.style.fontWeight = "bold";
       p.style.lineHeight = "1.2";
       content.appendChild(p);
     });
@@ -1115,6 +1104,8 @@ function populateEditor(slide) {
     slideFontSizeSelect.value = slide.fontSize || "40";
     slideBgSelect.value = slide.bg;
     slideAlignSelect.value = slide.align;
+    syncBgTabs(slide.bg);
+    syncAlignTabs(slide.align);
 
     sourceRadios.forEach(r => {
       r.checked = r.value === slide.sourceType;
@@ -1151,6 +1142,8 @@ function populateEditor(slide) {
     slideFontSizeSelect.value = slide.fontSize || "40";
     slideBgSelect.value = slide.bg;
     slideAlignSelect.value = slide.align;
+    syncBgTabs(slide.bg);
+    syncAlignTabs(slide.align);
 
     // Set source type radio logic only for simple slides
     sourceRadios.forEach(r => {
@@ -1163,28 +1156,101 @@ function populateEditor(slide) {
   userPptxFile.value = '';
 }
 
+function syncBgTabs(value) {
+  bgTabs.forEach((tab) => {
+    tab.classList.toggle("is-active", tab.dataset.value === value);
+  });
+  if (bgTabsContainer) {
+    bgTabsContainer.dataset.active = value;
+  }
+}
+
+function syncAlignTabs(value) {
+  alignTabs.forEach((tab) => {
+    tab.classList.toggle("is-active", tab.dataset.value === value);
+  });
+}
+
+function setBgValue(value, markDirty = true) {
+  slideBgSelect.value = value;
+  syncBgTabs(value);
+  if (markDirty) {
+    hasUnsavedChanges = true;
+    renderPreview();
+  }
+}
+
+function setAlignValue(value, markDirty = true) {
+  slideAlignSelect.value = value;
+  syncAlignTabs(value);
+  if (markDirty) {
+    hasUnsavedChanges = true;
+    renderPreview();
+  }
+}
+
 function toggleSettingsMode(mode) {
-  if (mode === "basic") {
-    basicSettingsMode.style.display = "block";
-    uploadSettingsMode.style.display = "none";
-  } else {
+  updateSettingsVisibility(mode);
+}
+
+function updateSettingsVisibility(overrideMode) {
+  const type = slideTypeSelect.value;
+  const sourceType =
+    overrideMode ||
+    (document.querySelector('input[name="sourceType"]:checked') || {}).value ||
+    "basic";
+
+  if (type === "hymn") {
+    simpleSlideSettings.style.display = "none";
+    hymnSlideSettings.style.display = "block";
+    adSlideSettings.style.display = "none";
+    return;
+  }
+
+  simpleSlideSettings.style.display = "block";
+  hymnSlideSettings.style.display = "none";
+
+  if (type === "ad") {
+    if (sourceType === "upload") {
+      adSlideSettings.style.display = "none";
+      if (adBackgroundSettings) adBackgroundSettings.style.display = "none";
+      basicSettingsMode.style.display = "none";
+      uploadSettingsMode.style.display = "block";
+    } else {
+      adSlideSettings.style.display = "block";
+      if (adBackgroundSettings) adBackgroundSettings.style.display = "block";
+      basicSettingsMode.style.display = "block";
+      uploadSettingsMode.style.display = "none";
+    }
+    return;
+  }
+
+  adSlideSettings.style.display = "none";
+  if (sourceType === "upload") {
     basicSettingsMode.style.display = "none";
     uploadSettingsMode.style.display = "block";
+  } else {
+    basicSettingsMode.style.display = "block";
+    uploadSettingsMode.style.display = "none";
   }
 }
 
 function toggleAdBgMode(source) {
   const adBgFileMode = document.getElementById("adBgFileMode");
   const adBgUrlMode = document.getElementById("adBgUrlMode");
+  const adBgImageUrlInput = document.getElementById("adBgImageUrl");
   if (source === "file") {
     adBgFileMode.style.display = "block";
     adBgUrlMode.style.display = "none";
+    if (adBgImageUrlInput) adBgImageUrlInput.disabled = true;
   } else if (source === "url") {
     adBgFileMode.style.display = "none";
     adBgUrlMode.style.display = "block";
+    if (adBgImageUrlInput) adBgImageUrlInput.disabled = false;
   } else {
     adBgFileMode.style.display = "none";
     adBgUrlMode.style.display = "none";
+    if (adBgImageUrlInput) adBgImageUrlInput.disabled = true;
   }
 }
 
@@ -1202,7 +1268,7 @@ function updateButtonsState(slide) {
   if (slide.saved) {
     editorDownloadBtn.style.display = "inline-flex";
     editorDeleteBtn.style.display = "inline-flex";
-    editorCancelBtn.style.display = "none";
+    editorCancelBtn.style.display = "inline-flex";
   } else {
     editorDownloadBtn.style.display = "none";
     editorDeleteBtn.style.display = "none";
@@ -1659,6 +1725,18 @@ sourceRadios.forEach(radio => {
     toggleSettingsMode(e.target.value);
     renderPreview();
   })
+});
+
+bgTabs.forEach((tab) => {
+  tab.addEventListener("click", () => {
+    setBgValue(tab.dataset.value);
+  });
+});
+
+alignTabs.forEach((tab) => {
+  tab.addEventListener("click", () => {
+    setAlignValue(tab.dataset.value);
+  });
 });
 
 adBgSourceRadios.forEach(radio => {
