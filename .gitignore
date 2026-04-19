@@ -8,3 +8,5 @@ uploads/
 debug_pptx.js
 .env
 data/slides.json
+.claude/
+test_bongdok.js

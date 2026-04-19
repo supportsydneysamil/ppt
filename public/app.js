@@ -8,16 +8,49 @@ const outputText = document.getElementById("outputText");
 const source = document.getElementById("source");
 const downloadBtn = document.getElementById("downloadBtn");
 const downloadPptxBtn = document.getElementById("downloadPptxBtn");
+const previewBtn = document.getElementById("previewBtn");
+const preview2Btn = document.getElementById("preview2Btn");
+const webViewBtn = document.getElementById("webViewBtn");
+const exportToPptGeneratorBtn = document.getElementById(
+  "exportToPptGeneratorBtn"
+);
 const resetBtn = document.getElementById("resetBtn");
 const koVersionSelect = document.getElementById("koVersionSelect");
 const enVersionSelect = document.getElementById("enVersionSelect");
+const stepperButtons = document.querySelectorAll(".stepper-btn");
 const uiThemeSelect = document.getElementById("uiThemeSelect");
 const pptxThemeSelect = document.getElementById("pptxThemeSelect");
-const pptxImageToggle = document.getElementById("pptxImageToggle");
 const pptxImageInput = document.getElementById("pptxImageInput");
+const pptxImageClearBtn = document.getElementById("pptxImageClearBtn");
+const pptxImageStatus = document.getElementById("pptxImageStatus");
 const settingsAccordion = document.getElementById("settingsAccordion");
+const appSettingsBtn = document.getElementById("appSettingsBtn");
+const appSettingsModal = document.getElementById("appSettingsModal");
+const appSettingsCloseBtn = document.getElementById("appSettingsCloseBtn");
+const currentAppThemeLabel = document.getElementById("currentAppThemeLabel");
+const appThemeOptionButtons = document.querySelectorAll("[data-theme-value]");
+const scriptureExportModal = document.getElementById("scriptureExportModal");
+const scriptureExportForm = document.getElementById("scriptureExportForm");
+const scriptureExportCancelBtn = document.getElementById(
+  "scriptureExportCancelBtn"
+);
+const scriptureExportCloseBtn = document.getElementById(
+  "scriptureExportCloseBtn"
+);
+const scriptureExportConfirmBtn = document.getElementById(
+  "scriptureExportConfirmBtn"
+);
+const exportSlideNameInput = document.getElementById("exportSlideName");
+const exportIncludeTitleSlideInput = document.getElementById(
+  "exportIncludeTitleSlide"
+);
+const titleSlideTypeGroup = document.getElementById("titleSlideTypeGroup");
 
 let dataCache = null;
+let lastVersePayload = null;
+let lastVerseRequest = null;
+let lastPreviewSessionId = null;
+let lastPreviewSignature = "";
 
 async function loadBooks() {
   const resp = await fetch("/api/books");
@@ -91,6 +124,10 @@ async function handleSubmit(event) {
   outputText.textContent = "불러오는 중...";
   source.textContent = "";
   setDownloadState(false);
+  lastVersePayload = null;
+  lastVerseRequest = null;
+  lastPreviewSessionId = null;
+  lastPreviewSignature = "";
 
   if (!koVersionSelect.value && !enVersionSelect.value) {
     outputText.textContent = "번역을 하나 이상 선택하세요.";
@@ -99,6 +136,7 @@ async function handleSubmit(event) {
 
   try {
     const params = buildParams();
+    const requestSnapshot = buildVerseRequestSnapshot(params);
     const resp = await fetch(`/api/verses?${params.toString()}`);
     const payload = await resp.json();
 
@@ -109,10 +147,19 @@ async function handleSubmit(event) {
 
     outputText.textContent = formatOutput(payload.lines);
     source.textContent = formatSources(payload.sourceUrl);
+    lastVersePayload = payload;
+    lastVerseRequest = requestSnapshot;
     setDownloadState(Boolean(outputText.textContent.trim()));
   } catch (err) {
     outputText.textContent = "네트워크 오류가 발생했습니다.";
   }
+}
+
+function buildVerseRequestSnapshot(params) {
+  const snapshot = Object.fromEntries(params.entries());
+  snapshot.koVersion = koVersionSelect.value || "";
+  snapshot.enVersion = enVersionSelect.value || "";
+  return snapshot;
 }
 
 function formatOutput(linesByLang) {
@@ -154,15 +201,99 @@ function getKoLabel() {
   }
 }
 
+function parsePositiveNumber(value) {
+  const parsed = Number.parseInt(String(value || "").trim(), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function syncVerseRange(changedInput) {
+  const startValue = parsePositiveNumber(startInput.value);
+  const endValue = parsePositiveNumber(endInput.value);
+
+  if (changedInput === startInput && startValue !== null) {
+    if (endValue !== null && endValue < startValue) {
+      endInput.value = String(startValue);
+    }
+    return;
+  }
+
+  if (changedInput === endInput && endValue !== null) {
+    if (startValue !== null && endValue < startValue) {
+      startInput.value = String(endValue);
+    }
+  }
+}
+
+function normalizeNumberInput(input) {
+  const value = parsePositiveNumber(input.value);
+  if (input.value.trim() === "") {
+    return;
+  }
+  if (value === null) {
+    input.value = input.min || "1";
+  } else {
+    input.value = String(value);
+  }
+
+  if (input === startInput || input === endInput) {
+    syncVerseRange(input);
+  }
+}
+
+function handleStepperButtonClick(event) {
+  const button = event.currentTarget;
+  const targetId = button.dataset.stepTarget;
+  const direction = button.dataset.stepDirection;
+  const input = document.getElementById(targetId);
+  if (!(input instanceof HTMLInputElement)) {
+    return;
+  }
+
+  const currentValue = parsePositiveNumber(input.value) ?? parsePositiveNumber(input.min) ?? 1;
+  const nextValue = direction === "down" ? Math.max(1, currentValue - 1) : currentValue + 1;
+  input.value = String(nextValue);
+
+  if (input === startInput || input === endInput) {
+    syncVerseRange(input);
+  }
+
+  input.focus();
+  input.select();
+}
+
 testamentSelect.addEventListener("change", renderBooks);
 form.addEventListener("submit", handleSubmit);
 downloadBtn.addEventListener("click", handleDownload);
 downloadPptxBtn.addEventListener("click", handlePptxDownload);
+previewBtn.addEventListener("click", handleOpenPptxPreview);
+preview2Btn.addEventListener("click", handleOpenPptxPreview2);
+webViewBtn.addEventListener("click", handleOpenWebView);
+exportToPptGeneratorBtn.addEventListener("click", openScriptureExportModal);
 resetBtn.addEventListener("click", handleReset);
-pptxImageToggle.addEventListener("change", handleImageToggle);
+pptxImageInput.addEventListener("change", handleImageFileChange);
+pptxImageClearBtn.addEventListener("click", clearImageSelection);
 uiThemeSelect.addEventListener("change", handleThemeChange);
 pptxThemeSelect.addEventListener("change", handlePptxThemeChange);
 settingsAccordion.addEventListener("toggle", handleSettingsToggle);
+appSettingsBtn.addEventListener("click", openAppSettingsModal);
+appSettingsCloseBtn.addEventListener("click", closeAppSettingsModal);
+appSettingsModal.addEventListener("click", handleAppSettingsBackdropClick);
+appThemeOptionButtons.forEach((button) => {
+  button.addEventListener("click", handleAppThemeOptionClick);
+});
+scriptureExportForm.addEventListener("submit", handleExportToPptGenerator);
+scriptureExportCancelBtn.addEventListener("click", closeScriptureExportModal);
+scriptureExportCloseBtn.addEventListener("click", closeScriptureExportModal);
+exportIncludeTitleSlideInput.addEventListener("change", () => {
+  titleSlideTypeGroup.classList.toggle("hidden", !exportIncludeTitleSlideInput.checked);
+});
+stepperButtons.forEach((button) => {
+  button.addEventListener("click", handleStepperButtonClick);
+});
+[chapterInput, startInput, endInput].forEach((input) => {
+  input.addEventListener("change", () => normalizeNumberInput(input));
+  input.addEventListener("blur", () => normalizeNumberInput(input));
+});
 
 loadBooks().catch(() => {
   outputText.textContent = "도서 목록을 불러오지 못했습니다.";
@@ -171,6 +302,7 @@ setDownloadState(false);
 initTheme();
 initPptxTheme();
 handleSettingsToggle();
+syncImageSelectionUI();
 
 function handleReset() {
   if (!dataCache) {
@@ -185,11 +317,13 @@ function handleReset() {
   enVersionSelect.value = "";
   pptxThemeSelect.value = "dark";
   localStorage.setItem("biblics-pptx-theme", "dark");
-  pptxImageToggle.checked = false;
-  pptxImageInput.value = "";
-  pptxImageInput.disabled = true;
+  clearImageSelection();
   outputText.textContent = "원하는 범위를 입력하고 실행하세요.";
   source.textContent = "";
+  lastVersePayload = null;
+  lastVerseRequest = null;
+  lastPreviewSessionId = null;
+  lastPreviewSignature = "";
   setDownloadState(false);
 }
 
@@ -217,6 +351,32 @@ async function handlePptxDownload() {
 
   try {
     const payload = await buildPptxPayload();
+    const signature = JSON.stringify(payload);
+
+    if (lastPreviewSessionId && lastPreviewSignature === signature) {
+      const resp = await fetch(
+        `/api/scripture/pptx-preview-file/${encodeURIComponent(
+          lastPreviewSessionId
+        )}?download=1`
+      );
+      if (!resp.ok) {
+        throw new Error("기존 preview 파일을 가져오지 못했습니다.");
+      }
+
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download =
+        getFilenameFromDisposition(resp.headers.get("content-disposition")) ||
+        buildFilename("pptx");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      return;
+    }
+
     const resp = await fetch("/api/pptx", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -246,10 +406,13 @@ async function handlePptxDownload() {
 }
 
 function buildFilename(extension) {
-  const bookLabel = bookSelect.selectedOptions[0]?.textContent || "bible";
-  const chapter = chapterInput.value.trim() || "chapter";
-  const start = startInput.value.trim();
-  const end = endInput.value.trim();
+  const bookLabel =
+    lastVersePayload?.meta?.bookEntry?.name ||
+    bookSelect.selectedOptions[0]?.textContent ||
+    "bible";
+  const chapter = lastVerseRequest?.chapter || chapterInput.value.trim() || "chapter";
+  const start = lastVerseRequest?.start || startInput.value.trim();
+  const end = lastVerseRequest?.end || endInput.value.trim();
   const langLabel = buildLanguageLabel();
   const range = start && end ? `${start}-${end}` : start || end || "all";
   const ext = extension || "txt";
@@ -259,13 +422,17 @@ function buildFilename(extension) {
 }
 
 function buildLanguageLabel() {
-  if (koVersionSelect.value && enVersionSelect.value) {
+  const activeLangs = (lastVerseRequest?.lang || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (activeLangs.includes("ko") && activeLangs.includes("en")) {
     return "KO-EN";
   }
-  if (koVersionSelect.value) {
+  if (activeLangs.includes("ko")) {
     return "KO";
   }
-  if (enVersionSelect.value) {
+  if (activeLangs.includes("en")) {
     return "EN";
   }
   return "LANG";
@@ -294,19 +461,20 @@ function sanitizeFilename(value) {
 function setDownloadState(enabled) {
   downloadBtn.disabled = !enabled;
   downloadPptxBtn.disabled = !enabled;
+  previewBtn.disabled = !enabled;
+  preview2Btn.disabled = !enabled;
+  webViewBtn.disabled = !enabled;
+  exportToPptGeneratorBtn.disabled = !enabled;
 }
 
 function initTheme() {
   const saved = localStorage.getItem("biblics-theme");
   const theme = saved || uiThemeSelect.value || "dark";
-  uiThemeSelect.value = theme;
-  document.body.dataset.theme = theme;
+  applyTheme(theme);
 }
 
 function handleThemeChange() {
-  const theme = uiThemeSelect.value;
-  document.body.dataset.theme = theme;
-  localStorage.setItem("biblics-theme", theme);
+  applyTheme(uiThemeSelect.value);
 }
 
 function initPptxTheme() {
@@ -319,11 +487,21 @@ function handlePptxThemeChange() {
   localStorage.setItem("biblics-pptx-theme", pptxThemeSelect.value);
 }
 
-function handleImageToggle() {
-  pptxImageInput.disabled = !pptxImageToggle.checked;
-  if (!pptxImageToggle.checked) {
-    pptxImageInput.value = "";
-  }
+function syncImageSelectionUI() {
+  const file = pptxImageInput.files?.[0];
+  pptxImageStatus.textContent = file
+    ? `선택된 이미지: ${file.name}`
+    : "선택한 이미지 없음";
+  pptxImageClearBtn.hidden = !file;
+}
+
+function clearImageSelection() {
+  pptxImageInput.value = "";
+  syncImageSelectionUI();
+}
+
+function handleImageFileChange() {
+  syncImageSelectionUI();
 }
 
 function handleSettingsToggle() {
@@ -336,15 +514,64 @@ function handleSettingsToggle() {
   }
 }
 
-async function buildPptxPayload() {
-  const params = buildParams();
-  const payload = Object.fromEntries(params.entries());
-  payload.themeId = pptxThemeSelect.value;
-  payload.useCustomImage = pptxImageToggle.checked;
-  payload.koVersion = koVersionSelect.value || "";
-  payload.enVersion = enVersionSelect.value || "";
+function openAppSettingsModal() {
+  appSettingsModal.showModal();
+}
 
-  if (pptxImageToggle.checked) {
+function closeAppSettingsModal() {
+  appSettingsModal.close();
+}
+
+function handleAppSettingsBackdropClick(event) {
+  if (event.target === appSettingsModal) {
+    closeAppSettingsModal();
+  }
+}
+
+function handleAppThemeOptionClick(event) {
+  const theme = event.currentTarget.dataset.themeValue;
+  if (!theme) {
+    return;
+  }
+  uiThemeSelect.value = theme;
+  applyTheme(theme);
+}
+
+function applyTheme(theme) {
+  uiThemeSelect.value = theme;
+  document.body.dataset.theme = theme;
+  localStorage.setItem("biblics-theme", theme);
+  syncThemePickerUI(theme);
+}
+
+function syncThemePickerUI(theme) {
+  appThemeOptionButtons.forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.themeValue === theme);
+  });
+  if (currentAppThemeLabel) {
+    currentAppThemeLabel.textContent = getThemeLabel(theme);
+  }
+}
+
+function getThemeLabel(theme) {
+  const option = uiThemeSelect.querySelector(`option[value="${theme}"]`);
+  return option ? option.textContent : "다크 (시그니처)";
+}
+
+async function buildPptxPayload() {
+  if (!lastVerseRequest) {
+    throw new Error("먼저 텍스트를 불러오세요.");
+  }
+
+  const payload = {
+    ...lastVerseRequest,
+    koVersion: lastVerseRequest.koVersion || "",
+    enVersion: lastVerseRequest.enVersion || "",
+  };
+  payload.themeId = pptxThemeSelect.value;
+  payload.useCustomImage = Boolean(pptxImageInput.files?.[0]);
+
+  if (payload.useCustomImage) {
     const file = pptxImageInput.files?.[0];
     if (!file) {
       throw new Error("배경 이미지를 선택하세요.");
@@ -355,15 +582,214 @@ async function buildPptxPayload() {
   return payload;
 }
 
+function openScriptureExportModal() {
+  if (!lastVerseRequest) {
+    alert("먼저 성경 텍스트를 불러오세요.");
+    return;
+  }
+
+  exportSlideNameInput.value = buildFilename("pptx").replace(/\.pptx$/i, "");
+  exportIncludeTitleSlideInput.checked = true;
+  titleSlideTypeGroup.classList.remove("hidden");
+
+  if (typeof scriptureExportModal.showModal === "function") {
+    scriptureExportModal.showModal();
+  } else {
+    scriptureExportModal.setAttribute("open", "open");
+  }
+}
+
+function closeScriptureExportModal() {
+  if (typeof scriptureExportModal.close === "function") {
+    scriptureExportModal.close();
+  } else {
+    scriptureExportModal.removeAttribute("open");
+  }
+}
+
+async function handleOpenWebView() {
+  let popup = null;
+
+  try {
+    popup = window.open("", "_blank", "width=1440,height=900");
+    if (!popup) {
+      throw new Error("새 창을 열 수 없습니다. 팝업 차단을 확인하세요.");
+    }
+
+    popup.document.write(
+      "<!doctype html><html lang='ko'><head><meta charset='utf-8'><title>Web View 준비 중...</title></head><body style='margin:0;display:grid;place-items:center;min-height:100vh;background:#0b0f16;color:#f3f0ea;font-family:Work Sans, sans-serif;'>Web View를 준비하고 있습니다...</body></html>"
+    );
+    popup.document.close();
+
+    const payload = await buildPptxPayload();
+    const resp = await fetch("/api/scripture/web-view-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const sessionPayload = await resp.json();
+
+    if (!resp.ok) {
+      throw new Error(sessionPayload.error || "Web View 생성에 실패했습니다.");
+    }
+
+    popup.location = `/scripture-web-view.html?session=${encodeURIComponent(
+      sessionPayload.sessionId
+    )}`;
+  } catch (err) {
+    if (popup && !popup.closed) {
+      popup.close();
+    }
+    alert(err?.message || "Web View를 여는 중 오류가 발생했습니다.");
+  }
+}
+
+async function handleOpenPptxPreview() {
+  let popup = null;
+
+  try {
+    popup = window.open("", "_blank", "width=1440,height=960");
+    if (!popup) {
+      throw new Error("새 창을 열 수 없습니다. 팝업 차단을 확인하세요.");
+    }
+
+    popup.document.write(
+      "<!doctype html><html lang='ko'><head><meta charset='utf-8'><title>PPTX Preview 준비 중...</title></head><body style='margin:0;display:grid;place-items:center;min-height:100vh;background:#0b0f16;color:#f3f0ea;font-family:Work Sans, sans-serif;'>PPTX Preview를 준비하고 있습니다...</body></html>"
+    );
+    popup.document.close();
+
+    const sessionId = await ensurePptxPreviewSession();
+    popup.location = `/scripture-pptx-preview.html?session=${encodeURIComponent(
+      sessionId
+    )}`;
+  } catch (err) {
+    if (popup && !popup.closed) {
+      popup.close();
+    }
+    alert(err?.message || "PPTX Preview를 여는 중 오류가 발생했습니다.");
+  }
+}
+
+async function handleOpenPptxPreview2() {
+  let popup = null;
+
+  try {
+    popup = window.open("", "_blank", "width=1440,height=960");
+    if (!popup) {
+      throw new Error("새 창을 열 수 없습니다. 팝업 차단을 확인하세요.");
+    }
+
+    popup.document.write(
+      "<!doctype html><html lang='ko'><head><meta charset='utf-8'><title>PPTX Preview 2 준비 중...</title></head><body style='margin:0;display:grid;place-items:center;min-height:100vh;background:#000;color:#f3f0ea;font-family:Work Sans, sans-serif;'>PPTX Preview 2를 준비하고 있습니다...</body></html>"
+    );
+    popup.document.close();
+
+    const sessionId = await ensurePptxPreviewSession();
+    popup.location = `/scripture-pptx-preview-plain.html?session=${encodeURIComponent(
+      sessionId
+    )}`;
+  } catch (err) {
+    if (popup && !popup.closed) {
+      popup.close();
+    }
+    alert(err?.message || "PPTX Preview 2를 여는 중 오류가 발생했습니다.");
+  }
+}
+
+async function ensurePptxPreviewSession() {
+  const payload = await buildPptxPayload();
+  const signature = JSON.stringify(payload);
+
+  if (lastPreviewSessionId && lastPreviewSignature === signature) {
+    return lastPreviewSessionId;
+  }
+
+  const resp = await fetch("/api/scripture/pptx-preview-session", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const sessionPayload = await resp.json();
+
+  if (!resp.ok) {
+    throw new Error(sessionPayload.error || "PPTX Preview 생성에 실패했습니다.");
+  }
+
+  lastPreviewSessionId = sessionPayload.sessionId;
+  lastPreviewSignature = signature;
+  return sessionPayload.sessionId;
+}
+
+async function handleExportToPptGenerator(event) {
+  event.preventDefault();
+
+  const requestedName = exportSlideNameInput.value.trim();
+  if (!requestedName) {
+    alert("슬라이드 제목을 입력하세요.");
+    exportSlideNameInput.focus();
+    return;
+  }
+
+  scriptureExportConfirmBtn.disabled = true;
+  scriptureExportConfirmBtn.textContent = "Export 중...";
+
+  try {
+    const payload = await buildPptxPayload();
+    payload.slideName = requestedName;
+    payload.includeTitleSlide = exportIncludeTitleSlideInput.checked;
+    const selectedType = document.querySelector('input[name="titleSlideType"]:checked');
+    payload.titleSlideType = selectedType ? selectedType.value : "말씀";
+
+    const resp = await fetch("/api/scripture/export-slide", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const responsePayload = await resp.json();
+
+    if (!resp.ok) {
+      throw new Error(responsePayload.error || "슬라이드 export에 실패했습니다.");
+    }
+
+    mainSlides.push(cloneSlide(responsePayload.slide));
+    closeScriptureExportModal();
+    switchView("ppt");
+    activeTemplateId = null;
+    loadWorkspaceSlides(mainSlides);
+    selectSlide(responsePayload.slide.id);
+    alert(`슬라이드가 추가되었습니다: ${responsePayload.slide.name}`);
+  } catch (err) {
+    alert(err?.message || "슬라이드 export 중 오류가 발생했습니다.");
+  } finally {
+    scriptureExportConfirmBtn.disabled = false;
+    scriptureExportConfirmBtn.textContent = "Export";
+  }
+}
+
 const navExtractor = document.getElementById("navExtractor");
 const navPpt = document.getElementById("navPpt");
 const viewExtractor = document.getElementById("view-extractor");
 const viewPpt = document.getElementById("view-ppt");
 
 const slideListContainer = document.getElementById("slideListContainer");
+const selectAllSlidesCheckbox = document.getElementById("selectAllSlidesCheckbox");
+const clearSelectionBtn = document.getElementById("clearSelectionBtn");
+const selectedCountBadge = document.getElementById("selectedCountBadge");
+const slideModeBtn = document.getElementById("slideModeBtn");
+const templateMenuBtn = document.getElementById("templateMenuBtn");
+const templateMenuDropdown = document.getElementById("templateMenuDropdown");
+const templateMenuList = document.getElementById("templateMenuList");
+const bulkActionMenuBtn = document.getElementById("bulkActionMenuBtn");
+const bulkActionDropdown = document.getElementById("bulkActionDropdown");
+const bulkDeleteBtn = document.getElementById("bulkDeleteBtn");
+const bulkTemplateBtn = document.getElementById("bulkTemplateBtn");
+const bulkDownloadBtn = document.getElementById("bulkDownloadBtn");
+const templateSaveBtn = document.getElementById("templateSaveBtn");
+const templateDeleteBtn = document.getElementById("templateDeleteBtn");
 const slideEditor = document.getElementById("slideEditor");
 const emptyEditorState = document.getElementById("emptyEditorState");
 const addSlideBtn = document.getElementById("addSlideBtn");
+const slideListTitle = document.getElementById("slideListTitle");
 const editorSaveBtn = document.getElementById("editorSaveBtn");
 const editorResetBtn = document.getElementById("editorResetBtn");
 const editorCancelBtn = document.getElementById("editorCancelBtn");
@@ -390,22 +816,231 @@ const simpleSlideSettings = document.getElementById("simpleSlideSettings");
 const hymnSlideSettings = document.getElementById("hymnSlideSettings");
 const hymnNumberInput = document.getElementById("hymnNumber");
 const hymnLoadBtn = document.getElementById("hymnLoadBtn");
+const hymnIncludeTitle = document.getElementById("hymnIncludeTitle");
+const hymnTitleFields = document.getElementById("hymnTitleFields");
+const hymnKorTitleInput = document.getElementById("hymnKorTitle");
+const hymnEngTitleInput = document.getElementById("hymnEngTitle");
 const userPptxFile = document.getElementById("userPptxFile");
-const adSlideSettings = document.getElementById("adSlideSettings");
+const adContentSettings = document.getElementById("adContentSettings");
 const adTitleInput = document.getElementById("adTitle");
 const adTitleSizeSelect = document.getElementById("adTitleSize");
 const adTitleAlignSelect = document.getElementById("adTitleAlign");
+const adBodyContent = document.getElementById("adBodyContent");
+const adBodyFont = document.getElementById("adBodyFont");
+const adBodyFontSize = document.getElementById("adBodyFontSize");
+const adBodyAlign = document.getElementById("adBodyAlign");
+const adTextColor = document.getElementById("adTextColor");
+const adTextColorTabs = document.querySelectorAll(".ad-text-tab");
 const adBgSourceRadios = document.querySelectorAll('input[name="adBgSource"]');
 const adBgImageFile = document.getElementById("adBgImageFile");
 const adBgImageUrl = document.getElementById("adBgImageUrl");
 const adBgOpacity = document.getElementById("adBgOpacity");
 const adBgOpacityValue = document.getElementById("adBgOpacityValue");
-const adBackgroundSettings = document.getElementById("adBackgroundSettings");
+const bgSettings = document.getElementById("bgSettings");
+const dimOverlayRow = document.getElementById("dimOverlayRow");
 
 // State
 let slides = [];
+let mainSlides = [];
+let templates = [];
+let activeTemplateId = null;
+let hasPendingTemplateChanges = false;
 let currentSlideId = null;
 let hasUnsavedChanges = false;
+let selectedSlideIds = new Set();
+let draggedSlideId = null;
+
+function generateClientId(prefix = "slide") {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function cloneSlide(slide, options = {}) {
+  const { regenerateId = false } = options;
+  const cloned = {
+    ...buildSerializableSlide(slide),
+  };
+
+  if (regenerateId || !cloned.id) {
+    cloned.id = generateClientId("slide");
+  }
+
+  return cloned;
+}
+
+function cloneTemplate(template) {
+  return {
+    ...template,
+    slides: Array.isArray(template?.slides)
+      ? template.slides.map((slide) => cloneSlide(slide))
+      : [],
+    slideCount: Array.isArray(template?.slides)
+      ? template.slides.length
+      : template?.slideCount || 0,
+  };
+}
+
+function isTemplateMode() {
+  return Boolean(activeTemplateId);
+}
+
+function getActiveTemplate() {
+  return templates.find((template) => template.id === activeTemplateId) || null;
+}
+
+function syncWorkingSlidesToState() {
+  if (isTemplateMode()) {
+    const templateIndex = templates.findIndex((template) => template.id === activeTemplateId);
+    if (templateIndex !== -1) {
+      templates[templateIndex] = {
+        ...templates[templateIndex],
+        slides: slides.map((slide) => cloneSlide(slide)),
+        slideCount: slides.length,
+      };
+    }
+    return;
+  }
+
+  mainSlides = slides.map((slide) => cloneSlide(slide));
+}
+
+function markTemplateDirty() {
+  if (!isTemplateMode()) {
+    return;
+  }
+  syncWorkingSlidesToState();
+  hasPendingTemplateChanges = true;
+  updateTemplateManagementUi();
+}
+
+function resetEditorSelection() {
+  currentSlideId = null;
+  hasUnsavedChanges = false;
+  emptyEditorState.style.display = "flex";
+  slideEditor.style.display = "none";
+}
+
+function confirmLeavingDirtyWorkspace() {
+  if (isTemplateMode() && hasPendingTemplateChanges) {
+    if (!confirm("템플릿에 저장되지 않은 변경사항이 있습니다. 저장하지 않고 이동하시겠습니까?")) {
+      return false;
+    }
+  }
+
+  if (!currentSlideId) {
+    return true;
+  }
+
+  const currentSlide = slides.find((slide) => slide.id === currentSlideId);
+  if (currentSlide && !currentSlide.saved) {
+    if (!confirm("이 슬라이드는 저장되지 않았습니다. 이동하면 삭제됩니다. 계속하시겠습니까?")) {
+      return false;
+    }
+  } else if (hasUnsavedChanges) {
+    if (!confirm("저장하지 않은 변경사항이 있습니다. 무시하고 이동하시겠습니까?")) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function loadWorkspaceSlides(nextSlides) {
+  slides = (Array.isArray(nextSlides) ? nextSlides : []).map((slide) => cloneSlide(slide));
+  selectedSlideIds.clear();
+  resetEditorSelection();
+  renderSlideList();
+}
+
+function updateTemplateManagementUi() {
+  const activeTemplate = getActiveTemplate();
+
+  if (slideListTitle) {
+    slideListTitle.textContent = activeTemplate ? activeTemplate.name : "슬라이드 목록";
+    slideListTitle.classList.toggle("is-template-title", Boolean(activeTemplate));
+    slideListTitle.title = activeTemplate ? "클릭해서 템플릿 이름 수정" : "";
+  }
+
+  if (slideModeBtn) {
+    slideModeBtn.classList.toggle("active", !activeTemplate);
+  }
+
+  if (templateMenuBtn) {
+    templateMenuBtn.classList.toggle("active", Boolean(activeTemplate) || !templateMenuDropdown.hidden);
+  }
+
+  if (templateSaveBtn) {
+    templateSaveBtn.hidden = !activeTemplate;
+    templateSaveBtn.disabled = !activeTemplate || !hasPendingTemplateChanges;
+  }
+
+  if (templateDeleteBtn) {
+    templateDeleteBtn.hidden = !activeTemplate;
+  }
+}
+
+function renderTemplateSubmenu() {
+  const templateListTargets = [templateMenuList].filter(Boolean);
+  if (templateListTargets.length === 0) {
+    return;
+  }
+
+  templateListTargets.forEach((target) => {
+    target.innerHTML = "";
+  });
+
+  templates.forEach((template) => {
+    templateListTargets.forEach((target) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `bulk-dropdown-item${template.id === activeTemplateId ? " is-active-template" : ""}`;
+      button.textContent = `${template.name} (${(template.slides || []).length})`;
+      button.addEventListener("click", () => {
+        closeBulkDropdown();
+        openTemplateWorkspace(template.id);
+      });
+      target.appendChild(button);
+    });
+  });
+}
+
+function openMainSlidesWorkspace() {
+  if (!confirmLeavingDirtyWorkspace()) {
+    return;
+  }
+
+  activeTemplateId = null;
+  hasPendingTemplateChanges = false;
+  loadWorkspaceSlides(mainSlides);
+  updateTemplateManagementUi();
+}
+
+function openTemplateWorkspace(templateId) {
+  const template = templates.find((entry) => entry.id === templateId);
+  if (!template) {
+    return;
+  }
+
+  if (!confirmLeavingDirtyWorkspace()) {
+    return;
+  }
+
+  activeTemplateId = templateId;
+  hasPendingTemplateChanges = false;
+  loadWorkspaceSlides(template.slides || []);
+  updateTemplateManagementUi();
+}
+
+function cleanupPreviewResources() {
+  const state = slidePreview.__pptxPreviewState;
+  if (!state) return;
+
+  if (state.fitInterval) clearInterval(state.fitInterval);
+  if (state.resizeObserver) state.resizeObserver.disconnect();
+  if (state.rafId) cancelAnimationFrame(state.rafId);
+  if (state.objectUrl) URL.revokeObjectURL(state.objectUrl);
+
+  slidePreview.__pptxPreviewState = null;
+}
 
 // --- Event Listeners for Hymn Type ---
 slideTypeSelect.addEventListener('change', () => {
@@ -440,6 +1075,24 @@ hymnLoadBtn.addEventListener('click', async () => {
       current.thumbnail = null;
       current.type = 'hymn';
       current.sourceType = 'upload'; // Vital for renderPreview logic
+    }
+
+    // Fetch title BEFORE rendering so title slide is included
+    if (hymnIncludeTitle.checked) {
+      await fetchAndFillHymnTitle(number);
+    }
+
+    if (current) {
+      // Sync title fields into current so renderPreview(current) has full data
+      current.includeTitle = hymnIncludeTitle.checked;
+      current.hymnKorTitle = hymnKorTitleInput.value.trim();
+      current.hymnEngTitle = hymnEngTitleInput.value.trim();
+
+      // Clear URL cache so title slide is re-rendered
+      if (slidePreview) {
+        slidePreview.dataset.lastRenderedUrl = '';
+        slidePreview.dataset.lastRenderedPath = '';
+      }
 
       renderPreview(current);
       hasUnsavedChanges = true;
@@ -451,6 +1104,39 @@ hymnLoadBtn.addEventListener('click', async () => {
     hymnLoadBtn.disabled = false;
     hymnLoadBtn.textContent = "로드";
   }
+});
+
+async function fetchAndFillHymnTitle(number) {
+  if (!number) return;
+  try {
+    const res = await fetch(`/api/hymn/title/${number}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    hymnKorTitleInput.value = data.kor || '';
+    hymnEngTitleInput.value = data.eng || '';
+  } catch (e) {
+    // silently ignore
+  }
+}
+
+hymnNumberInput.addEventListener('change', () => {
+  if (hymnIncludeTitle.checked && hymnNumberInput.value) {
+    fetchAndFillHymnTitle(hymnNumberInput.value);
+  }
+});
+
+hymnIncludeTitle.addEventListener('change', async () => {
+  hymnTitleFields.style.display = hymnIncludeTitle.checked ? 'block' : 'none';
+  if (hymnIncludeTitle.checked && hymnNumberInput.value) {
+    await fetchAndFillHymnTitle(hymnNumberInput.value);
+  }
+  // Force preview re-render by clearing cache
+  if (slidePreview) {
+    slidePreview.dataset.lastRenderedUrl = '';
+    slidePreview.dataset.lastRenderedPath = '';
+  }
+  renderPreview();
+  hasUnsavedChanges = true;
 });
 
 // --- Navigation ---
@@ -478,10 +1164,16 @@ function switchView(viewName) {
 
 navExtractor.addEventListener("click", () => switchView("extractor"));
 navPpt.addEventListener("click", () => switchView("ppt"));
-
-// --- Storage ---
-
-// --- Storage ---
+slideModeBtn.addEventListener("click", () => {
+  closeBulkDropdown();
+  openMainSlidesWorkspace();
+});
+slideListTitle.addEventListener("click", () => {
+  if (!isTemplateMode()) {
+    return;
+  }
+  renameActiveTemplate();
+});
 
 // --- Storage (Server Side) ---
 
@@ -494,24 +1186,220 @@ async function saveSlidesToServer() {
     });
     if (!resp.ok) {
       console.error("Failed to save slides");
+      return false;
     }
+    mainSlides = slides.map((slide) => cloneSlide(slide));
+    return true;
   } catch (e) {
     console.error("Network error saving slides", e);
+    return false;
   }
+}
+
+async function saveActiveTemplateToServer() {
+  const activeTemplate = getActiveTemplate();
+  if (!activeTemplate) {
+    return false;
+  }
+
+  try {
+    const resp = await fetch(`/api/templates/${encodeURIComponent(activeTemplate.id)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: activeTemplate.name,
+        slides: slides.map(buildSerializableSlide),
+      }),
+    });
+
+    const payload = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      throw new Error(payload.error || "템플릿 저장에 실패했습니다.");
+    }
+
+    const nextTemplate = cloneTemplate(payload.template);
+    templates = templates.map((template) =>
+      template.id === nextTemplate.id ? nextTemplate : template
+    );
+    hasPendingTemplateChanges = false;
+    updateTemplateManagementUi();
+    renderTemplateSubmenu();
+    return true;
+  } catch (e) {
+    console.error("Failed to save template", e);
+    alert(e.message || "템플릿 저장에 실패했습니다.");
+    return false;
+  }
+}
+
+async function persistCurrentWorkspace() {
+  return saveSlidesToServer();
 }
 
 async function loadSlidesFromServer() {
   try {
     const resp = await fetch("/api/slides");
     if (resp.ok) {
-      slides = await resp.json();
-      if (!Array.isArray(slides)) slides = [];
-      renderSlideList();
+      mainSlides = await resp.json();
+      if (!Array.isArray(mainSlides)) mainSlides = [];
     }
   } catch (e) {
     console.error("Failed to load slides", e);
-    slides = [];
+    mainSlides = [];
   }
+}
+
+async function loadTemplatesFromServer() {
+  try {
+    const resp = await fetch("/api/templates");
+    if (resp.ok) {
+      const payload = await resp.json();
+      templates = Array.isArray(payload) ? payload.map(cloneTemplate) : [];
+    }
+  } catch (e) {
+    console.error("Failed to load templates", e);
+    templates = [];
+  }
+}
+
+async function loadPptDataFromServer() {
+  await Promise.all([loadSlidesFromServer(), loadTemplatesFromServer()]);
+  hasPendingTemplateChanges = false;
+
+  const activeTemplate = getActiveTemplate();
+  if (activeTemplate) {
+    loadWorkspaceSlides(activeTemplate.slides || []);
+  } else {
+    loadWorkspaceSlides(mainSlides);
+  }
+
+  renderTemplateSubmenu();
+  updateTemplateManagementUi();
+}
+
+function syncSelectedSlideIds() {
+  const validIds = new Set(slides.map((slide) => slide.id));
+  selectedSlideIds = new Set(
+    [...selectedSlideIds].filter((id) => validIds.has(id))
+  );
+}
+
+function getSelectedSlides() {
+  return slides.filter((slide) => selectedSlideIds.has(slide.id));
+}
+
+function hasPendingSelectionEdits() {
+  return getSelectedSlides().some((slide) => !slide.saved);
+}
+
+function updateSlideListControls() {
+  const total = slides.length;
+  const selectedCount = selectedSlideIds.size;
+  const allSelected = total > 0 && selectedCount === total;
+  const someSelected = selectedCount > 0 && selectedCount < total;
+  const hasSelection = selectedCount > 0;
+
+  if (selectAllSlidesCheckbox) {
+    selectAllSlidesCheckbox.checked = allSelected;
+    selectAllSlidesCheckbox.indeterminate = someSelected;
+    selectAllSlidesCheckbox.disabled = total === 0;
+  }
+
+  if (selectedCountBadge) {
+    selectedCountBadge.textContent = `${selectedCount}개 선택`;
+  }
+
+  if (clearSelectionBtn) {
+    clearSelectionBtn.hidden = !hasSelection;
+  }
+
+  if (bulkActionMenuBtn) {
+    if (hasSelection) {
+      bulkActionMenuBtn.removeAttribute("disabled");
+    } else {
+      bulkActionMenuBtn.setAttribute("disabled", "");
+      closeBulkDropdown();
+    }
+  }
+}
+
+function closeBulkDropdown() {
+  if (bulkActionDropdown) bulkActionDropdown.hidden = true;
+  if (bulkActionMenuBtn) bulkActionMenuBtn.classList.remove("open");
+  if (templateMenuDropdown) templateMenuDropdown.hidden = true;
+  updateTemplateManagementUi();
+}
+
+function toggleSlideSelection(id, forceValue) {
+  const shouldSelect =
+    typeof forceValue === "boolean"
+      ? forceValue
+      : !selectedSlideIds.has(id);
+
+  if (shouldSelect) {
+    selectedSlideIds.add(id);
+  } else {
+    selectedSlideIds.delete(id);
+  }
+  renderSlideList();
+}
+
+function setAllSlidesSelected(checked) {
+  if (checked) {
+    selectedSlideIds = new Set(slides.map((slide) => slide.id));
+  } else {
+    selectedSlideIds.clear();
+  }
+  renderSlideList();
+}
+
+function clearSlideSelection() {
+  if (selectedSlideIds.size === 0) {
+    return;
+  }
+  selectedSlideIds.clear();
+  renderSlideList();
+}
+
+function moveSlideToIndex(slideId, targetIndex) {
+  const fromIndex = slides.findIndex((slide) => slide.id === slideId);
+  if (fromIndex === -1) {
+    return false;
+  }
+
+  const boundedIndex = Math.max(0, Math.min(targetIndex, slides.length - 1));
+  if (fromIndex === boundedIndex) {
+    return false;
+  }
+
+  const [movedSlide] = slides.splice(fromIndex, 1);
+  slides.splice(boundedIndex, 0, movedSlide);
+  renderSlideList();
+  if (isTemplateMode()) {
+    markTemplateDirty();
+  } else {
+    syncWorkingSlidesToState();
+    persistCurrentWorkspace();
+  }
+  return true;
+}
+
+function moveSlideByOffset(slideId, offset) {
+  const fromIndex = slides.findIndex((slide) => slide.id === slideId);
+  if (fromIndex === -1) {
+    return;
+  }
+  moveSlideToIndex(slideId, fromIndex + offset);
+}
+
+function getSlideTypeLabel(slide) {
+  if (slide.type === "hymn") {
+    return "찬송가";
+  }
+  if (slide.type === "ad") {
+    return slide.sourceType === "upload" ? "광고 업로드" : "광고";
+  }
+  return slide.sourceType === "upload" ? "업로드 슬라이드" : "단순 슬라이드";
 }
 
 // ... (loadSlidesFromStorage) ...
@@ -578,34 +1466,84 @@ function base64ToBlob(base64, mimeType = "application/vnd.openxmlformats-officed
 
 // ... (renderSlideList) ...
 
+function buildHymnTitleSlidePreview(hymnNumber, korTitle, engTitle) {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:relative;width:100%;aspect-ratio:16/9;overflow:hidden;margin-bottom:8px;border-radius:4px;';
+
+  // Dark background
+  const bg = document.createElement('div');
+  bg.style.cssText = `position:absolute;inset:0;background:url('/assets/hymn-title-bg.png') center/cover no-repeat;`;
+  wrap.appendChild(bg);
+
+  // Navy bottom band (~23% height)
+  const band = document.createElement('div');
+  band.style.cssText = `position:absolute;bottom:0;left:0;right:0;height:23%;background:url('/assets/hymn-title-band.png') center/cover no-repeat;display:flex;align-items:center;justify-content:center;`;
+  wrap.appendChild(band);
+
+  // 찬/송 decorative characters
+  const chanEl = document.createElement('div');
+  chanEl.textContent = '찬';
+  chanEl.style.cssText = 'position:absolute;left:41%;top:27%;font-family:Batang,serif;font-size:6.5cqi;font-weight:bold;color:#fff;text-shadow:2px 2px 8px rgba(0,0,0,0.5);container-type:inline-size;';
+  wrap.appendChild(chanEl);
+
+  const songEl = document.createElement('div');
+  songEl.textContent = '송';
+  songEl.style.cssText = 'position:absolute;left:51%;top:33%;font-family:Batang,serif;font-size:6.5cqi;font-weight:bold;color:#fff;text-shadow:2px 2px 8px rgba(0,0,0,0.5);';
+  wrap.appendChild(songEl);
+
+  // Decorative line
+  const line = document.createElement('div');
+  line.style.cssText = 'position:absolute;left:39%;top:54%;width:24%;height:1px;background:#fff;';
+  wrap.appendChild(line);
+
+  // HYMN label
+  const hymnLabel = document.createElement('div');
+  hymnLabel.textContent = 'H Y M N';
+  hymnLabel.style.cssText = 'position:absolute;left:39%;top:57%;width:24%;text-align:center;font-family:Arial,sans-serif;font-size:1.2cqi;font-weight:bold;color:#fff;letter-spacing:0.3em;';
+  wrap.appendChild(hymnLabel);
+
+  // Title text in band
+  const titleEl = document.createElement('div');
+  let titleText = hymnNumber ? `${hymnNumber}.` : '';
+  if (korTitle) titleText += ` ${korTitle}`;
+  if (engTitle) titleText += `\n(${engTitle})`;
+  titleEl.style.cssText = 'text-align:center;font-family:"Malgun Gothic",sans-serif;font-size:1.6cqi;font-weight:bold;color:#fff;white-space:pre-line;line-height:1.3;padding:0 8px;';
+  titleEl.textContent = titleText.trim();
+  band.appendChild(titleEl);
+
+  // container-type for cqi units
+  wrap.style.containerType = 'inline-size';
+
+  return wrap;
+}
+
 function renderPreview(slideOverride) {
-  // Use override if provided (for loading initial state), otherwise build from inputs
+  if (!slidePreview) return;
+
   let data = slideOverride;
-  // Note: if doing "Live Preview" (data is null), we are reading form inputs.
-  // The user might have selected a file in the input, but not saved it yet.
 
   if (!data) {
-    // Live preview from inputs
     const type = slideTypeSelect.value;
     if (type === 'hymn') {
       data = {
+        ...((slides.find(s => s.id === currentSlideId) || {})),
         type: 'hymn',
         hymnNumber: hymnNumberInput.value,
-        // Try to find if we have file info in current slide
-        ...((slides.find(s => s.id === currentSlideId) || {}))
+        includeTitle: hymnIncludeTitle.checked,
+        hymnKorTitle: hymnKorTitleInput.value.trim(),
+        hymnEngTitle: hymnEngTitleInput.value.trim(),
       };
-      // Explicitly set source type to upload-like behavior for renderer
       data.sourceType = 'upload';
     } else if (type === 'ad') {
       data = {
         name: slideNameInput.value,
         type: 'ad',
         sourceType: document.querySelector('input[name="sourceType"]:checked').value,
-        content: slideContentInput.value,
-        font: slideFontSelect.value,
-        fontSize: slideFontSizeSelect.value,
-        bg: slideBgSelect.value,
-        align: slideAlignSelect.value,
+        content: adBodyContent.value,
+        font: adBodyFont.value,
+        fontSize: adBodyFontSize.value,
+        bg: adTextColor.value,
+        align: adBodyAlign.value,
         adTitle: adTitleInput.value,
         adTitleSize: adTitleSizeSelect.value,
         adTitleAlign: adTitleAlignSelect.value,
@@ -623,9 +1561,12 @@ function renderPreview(slideOverride) {
         content: slideContentInput.value,
         font: slideFontSelect.value,
         fontSize: slideFontSizeSelect.value,
-        bg: slideBgSelect.value,
+        bg: adTextColor.value,
         align: slideAlignSelect.value,
-        // For preview, we check the INPUT element directly
+        adBgSource: document.querySelector('input[name="adBgSource"]:checked').value,
+        adBgImageUrl: adBgImageUrl.value,
+        adBgImageFile: adBgImageFile.files[0],
+        adBgOpacity: parseInt(adBgOpacity.value),
         file: userPptxFile.files[0]
       };
     }
@@ -652,8 +1593,6 @@ function renderPreview(slideOverride) {
       }
     }
   }
-
-  console.log("renderPreview called with data:", data);
 
   // Optimization: Prevent iframe reload on name change (Comprehensive)
   let skipRender = false;
@@ -690,15 +1629,14 @@ function renderPreview(slideOverride) {
     return;
   }
 
+  cleanupPreviewResources();
+
   // Clear caches before render
   slidePreview.dataset.lastRenderedUrl = "";
   slidePreview.dataset.lastRenderedFile = "";
   slidePreview.dataset.lastRenderedPath = "";
 
   slidePreview.innerHTML = "";
-
-  // Ensure slidePreview is visible (just in case)
-  if (!slidePreview) return;
 
   if (data.sourceType === 'upload') {
     slidePreview.classList.add('preview-scroll-mode'); // Enable scroll layout
@@ -763,6 +1701,14 @@ function renderPreview(slideOverride) {
     } else if (fileUrl && window.jQuery && window.jQuery.fn.pptxToHtml) {
       ph.appendChild(pptxContainer);
 
+      const previewState = {
+        fitInterval: null,
+        objectUrl: data.file && !data.file.name.toLowerCase().endsWith('.ppt') ? fileUrl : null,
+        rafId: 0,
+        resizeObserver: null
+      };
+      slidePreview.__pptxPreviewState = previewState;
+
       // Update Cache State
       if (data.file) {
         slidePreview.dataset.lastRenderedFile = data.file.name + ':' + data.file.size + ':' + data.file.lastModified;
@@ -773,6 +1719,8 @@ function renderPreview(slideOverride) {
 
       // Render
       setTimeout(() => {
+        if (slidePreview.__pptxPreviewState !== previewState) return;
+
         try {
           window.jQuery(`#${pptxContainerId}`).pptxToHtml({
             pptxFileUrl: fileUrl,
@@ -784,8 +1732,30 @@ function renderPreview(slideOverride) {
           // Zoom State
           let manualZoomMultiplier = 1.0;
 
-          // Helper: Apply Zoom
-          const applyZoom = () => {
+          const ensureSlideFrame = (slide) => {
+            let frame = slide.parentElement;
+            if (frame && frame.classList.contains('pptx-slide-frame')) {
+              return frame;
+            }
+
+            frame = document.createElement('div');
+            frame.className = 'pptx-slide-frame';
+            slide.parentNode.insertBefore(frame, slide);
+            frame.appendChild(slide);
+            return frame;
+          };
+
+          const scheduleScale = () => {
+            if (slidePreview.__pptxPreviewState !== previewState) return;
+            if (previewState.rafId) cancelAnimationFrame(previewState.rafId);
+            previewState.rafId = requestAnimationFrame(() => {
+              previewState.rafId = 0;
+              applyScale();
+            });
+          };
+
+          // Helper: Apply stable scale without feeding layout changes back into ResizeObserver
+          const applyScale = () => {
             const container = document.getElementById(pptxContainerId);
             if (!container) return;
 
@@ -797,14 +1767,20 @@ function renderPreview(slideOverride) {
             const availableWidth = (container.offsetWidth - paddingX) || 400;
 
             slides.forEach(slide => {
-              const slideWidth = slide.offsetWidth || slide.scrollWidth || 500;
-              // Base fit: (Available / Slide) * 0.99 for safety
-              // Then multiply by manualZoomMultiplier
-              const baseZoom = (availableWidth / slideWidth) * 0.99;
-              const finalZoom = baseZoom * manualZoomMultiplier;
+              const frame = ensureSlideFrame(slide);
+              const naturalWidth = parseFloat(slide.dataset.naturalWidth || "0") || slide.offsetWidth || slide.scrollWidth || 500;
+              const naturalHeight = parseFloat(slide.dataset.naturalHeight || "0") || slide.offsetHeight || slide.scrollHeight || 281;
+              slide.dataset.naturalWidth = String(naturalWidth);
+              slide.dataset.naturalHeight = String(naturalHeight);
 
-              slide.style.zoom = finalZoom;
-              slide.style.marginBottom = '20px';
+              const baseScale = (availableWidth / naturalWidth) * 0.99;
+              const finalScale = Math.max(0.2, baseScale * manualZoomMultiplier);
+
+              frame.style.width = `${naturalWidth * finalScale}px`;
+              frame.style.height = `${naturalHeight * finalScale}px`;
+              slide.style.transform = `scale(${finalScale})`;
+              slide.style.transformOrigin = 'top left';
+              slide.style.margin = '0';
               slide.style.borderRadius = "4px";
               slide.style.overflow = "hidden";
             });
@@ -826,48 +1802,52 @@ function renderPreview(slideOverride) {
           slidePreview.appendChild(controls); // Fixed position, not inside scroll area
 
           // Event Listeners for Zoom
-          setTimeout(() => {
-            const btnIn = document.getElementById(`zoom-in-${pptxContainerId}`);
-            const btnOut = document.getElementById(`zoom-out-${pptxContainerId}`);
-            const btnReset = document.getElementById(`zoom-reset-${pptxContainerId}`);
+          const btnIn = document.getElementById(`zoom-in-${pptxContainerId}`);
+          const btnOut = document.getElementById(`zoom-out-${pptxContainerId}`);
+          const btnReset = document.getElementById(`zoom-reset-${pptxContainerId}`);
 
-            if (btnIn) btnIn.onclick = (e) => {
-              e.stopPropagation();
-              manualZoomMultiplier = Math.min(manualZoomMultiplier + 0.1, 3.0);
-              applyZoom();
-            };
-            if (btnOut) btnOut.onclick = (e) => {
-              e.stopPropagation();
-              manualZoomMultiplier = Math.max(manualZoomMultiplier - 0.1, 0.2);
-              applyZoom();
-            };
-            if (btnReset) btnReset.onclick = (e) => {
-              e.stopPropagation();
-              manualZoomMultiplier = 1.0;
-              applyZoom();
-            };
-          }, 100);
+          if (btnIn) btnIn.onclick = (e) => {
+            e.stopPropagation();
+            manualZoomMultiplier = Math.min(manualZoomMultiplier + 0.1, 3.0);
+            scheduleScale();
+          };
+          if (btnOut) btnOut.onclick = (e) => {
+            e.stopPropagation();
+            manualZoomMultiplier = Math.max(manualZoomMultiplier - 0.1, 0.2);
+            scheduleScale();
+          };
+          if (btnReset) btnReset.onclick = (e) => {
+            e.stopPropagation();
+            manualZoomMultiplier = 1.0;
+            scheduleScale();
+          };
 
           // Post-render: poll for slides and apply zoom to fit container
           let checks = 0;
-          const fitInterval = setInterval(() => {
+          previewState.fitInterval = setInterval(() => {
             checks++;
             const container = document.getElementById(pptxContainerId);
-            if (!container) { clearInterval(fitInterval); return; }
+            if (!container || slidePreview.__pptxPreviewState !== previewState) {
+              clearInterval(previewState.fitInterval);
+              previewState.fitInterval = null;
+              return;
+            }
 
             const slides = container.querySelectorAll('.slide');
             if (slides.length > 0) {
-              clearInterval(fitInterval);
-              applyZoom(); // Initial apply
+              scheduleScale();
             }
-            if (checks > 30) clearInterval(fitInterval);
+            if (checks > 30) {
+              clearInterval(previewState.fitInterval);
+              previewState.fitInterval = null;
+            }
           }, 100);
 
-          // Window resize listener
-          const resizeObserver = new ResizeObserver(() => {
-            requestAnimationFrame(applyZoom);
+          // Observe the stable outer shell, not transformed slide nodes.
+          previewState.resizeObserver = new ResizeObserver(() => {
+            scheduleScale();
           });
-          resizeObserver.observe(pptxContainer);
+          previewState.resizeObserver.observe(slidePreview);
 
         } catch (e) {
           console.error("PPTXjs error:", e);
@@ -912,6 +1892,16 @@ function renderPreview(slideOverride) {
     slidePreview.style.position = 'relative'; // Ensure overlays can be positioned
     slidePreview.innerHTML = "";
 
+    // Hymn title slide preview — inserted AFTER final innerHTML clear
+    if (data.type === 'hymn' && data.includeTitle) {
+      const titleEl = buildHymnTitleSlidePreview(
+        data.hymnNumber,
+        data.hymnKorTitle,
+        data.hymnEngTitle
+      );
+      slidePreview.appendChild(titleEl);
+    }
+
     // Add filename badge at end of scrollable content (for sticky positioning)
     const displayName = data.file ? data.file.name : (data.fileName || data.currentFileName);
     if (displayName) {
@@ -925,84 +1915,98 @@ function renderPreview(slideOverride) {
     return;
   }
 
-  // Ad Slide Render
-  if (data.type === 'ad' && data.sourceType === 'basic') {
+  // Ad + Simple Slide Render
+  if ((data.type === 'ad' || data.type === 'simple') && data.sourceType === 'basic') {
     slidePreview.classList.remove('preview-scroll-mode');
+    const previewWidth = slidePreview.offsetWidth || 400;
+    const scale = previewWidth / 960;
+
     const container = document.createElement("div");
     container.className = "preview-content";
     container.style.position = "relative";
     container.style.overflow = "hidden";
     container.style.fontFamily = data.font;
-    
-    // Background image
-    if (data.adBgSource === 'file' && data.adBgImageFile) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        container.style.backgroundImage = `url(${e.target.result})`;
+
+    const applyBg = () => {
+      if (data.adBgSource === 'file' && data.adBgImageFile) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          container.style.backgroundImage = `url(${e.target.result})`;
+          container.style.backgroundSize = "cover";
+          container.style.backgroundPosition = "center";
+        };
+        reader.readAsDataURL(data.adBgImageFile);
+      } else if (data.adBgSource === 'file' && data.adBgImagePath) {
+        container.style.backgroundImage = `url(${data.adBgImagePath})`;
         container.style.backgroundSize = "cover";
         container.style.backgroundPosition = "center";
-      };
-      reader.readAsDataURL(data.adBgImageFile);
-    } else if (data.adBgSource === 'url' && data.adBgImageUrl) {
-      container.style.backgroundImage = `url(${data.adBgImageUrl})`;
-      container.style.backgroundSize = "cover";
-      container.style.backgroundPosition = "center";
-    } else {
-      container.style.backgroundColor = data.bg === "black" ? "black" : "white";
-    }
-    
-    // Overlay
+      } else if (data.adBgSource === 'url' && data.adBgImageUrl) {
+        container.style.backgroundImage = `url(${data.adBgImageUrl})`;
+        container.style.backgroundSize = "cover";
+        container.style.backgroundPosition = "center";
+      } else {
+        container.style.backgroundColor = data.bg === "white" ? "white" : "black";
+      }
+    };
+    applyBg();
+
     const overlay = document.createElement("div");
-    overlay.style.position = "absolute";
-    overlay.style.top = "0";
-    overlay.style.left = "0";
-    overlay.style.width = "100%";
-    overlay.style.height = "100%";
-    overlay.style.backgroundColor = `rgba(0,0,0,${data.adBgOpacity / 100})`;
-    overlay.style.pointerEvents = "none";
+    overlay.style.cssText = "position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;";
+    overlay.style.backgroundColor = `rgba(0,0,0,${(data.adBgOpacity ?? 30) / 100})`;
     container.appendChild(overlay);
-    
-    // Content wrapper
+
     const contentWrapper = document.createElement("div");
-    contentWrapper.style.position = "relative";
-    contentWrapper.style.zIndex = "1";
-    contentWrapper.style.height = "100%";
-    contentWrapper.style.display = "flex";
-    contentWrapper.style.flexDirection = "column";
-    
-    // Title
+    contentWrapper.style.cssText = "position:relative;z-index:1;height:100%;display:flex;flex-direction:column;padding:5%;box-sizing:border-box;";
+
+    const textColor = data.bg === "white" ? "black" : "white";
+
     if (data.adTitle) {
+      const titleSizePt = { large: 60, medium: 40, small: 24 };
+      const titlePx = Math.round((titleSizePt[data.adTitleSize] || 40) * 1.333 * scale);
       const title = document.createElement("div");
       title.textContent = data.adTitle;
       title.style.fontWeight = "bold";
-      title.style.color = data.bg === "black" ? "white" : "black";
+      title.style.color = textColor;
       title.style.textAlign = data.adTitleAlign || "center";
-      title.style.marginBottom = "20px";
-      
-      const titleSizeMap = { large: "24px", medium: "18px", small: "14px" };
-      title.style.fontSize = titleSizeMap[data.adTitleSize] || "18px";
-      
+      title.style.fontSize = `${titlePx}px`;
+      title.style.lineHeight = "1.2";
+      title.style.marginBottom = `${Math.round(10 * scale)}px`;
+      title.style.flexShrink = "0";
       contentWrapper.appendChild(title);
     }
-    
-    // Content
+
+    const bodyPx = Math.round((Number(data.fontSize) || 40) * 1.333 * scale);
     const content = document.createElement("div");
     content.style.flex = "1";
     content.style.display = "flex";
-    content.style.alignItems = "center";
-    content.style.justifyContent = "center";
-    content.style.color = data.bg === "black" ? "white" : "black";
-    content.style.textAlign = data.align;
-    
-    const lines = data.content ? data.content.split('\n') : ["내용을 입력하세요"];
-    lines.forEach(line => {
-      const p = document.createElement("div");
-      p.textContent = line;
-      p.style.fontSize = `${data.fontSize || 40}px`;
-      p.style.lineHeight = "1.2";
-      content.appendChild(p);
-    });
-    
+    content.style.flexDirection = "column";
+    content.style.width = "100%";
+    content.style.color = textColor;
+
+    const align = data.align || "center";
+    if (align === "top") {
+      content.style.justifyContent = "flex-start";
+      content.style.alignItems = "flex-start";
+    } else if (align === "left") {
+      content.style.justifyContent = "center";
+      content.style.alignItems = "flex-start";
+    } else if (align === "right") {
+      content.style.justifyContent = "center";
+      content.style.alignItems = "flex-end";
+    } else {
+      content.style.justifyContent = "center";
+      content.style.alignItems = "center";
+    }
+
+    const textBlock = document.createElement("div");
+    textBlock.textContent = data.content || "내용을 입력하세요";
+    textBlock.style.fontSize = `${bodyPx}px`;
+    textBlock.style.lineHeight = "1.3";
+    textBlock.style.whiteSpace = "pre-wrap";
+    textBlock.style.textAlign = align === "top" ? "left" : align;
+    textBlock.style.width = "100%";
+    content.appendChild(textBlock);
+
     contentWrapper.appendChild(content);
     container.appendChild(contentWrapper);
     slidePreview.appendChild(container);
@@ -1027,15 +2031,16 @@ function renderPreview(slideOverride) {
     container.style.justifyContent = 'center';
   }
 
-  // Content split by newline
-  const lines = data.content ? data.content.split('\n') : ["내용을 입력하세요"];
+  const previewWidth = slidePreview.offsetWidth || 400;
+  const scaleFactor = previewWidth / 960;
+  const bodyPx = Math.round((Number(data.fontSize) || 40) * 1.333 * scaleFactor);
 
+  const lines = data.content ? data.content.split('\n') : ["내용을 입력하세요"];
   lines.forEach(line => {
     const p = document.createElement("div");
     p.textContent = line;
-    p.style.fontSize = `${data.fontSize || 40}px`;
-    p.style.fontWeight = "bold";
-    p.style.lineHeight = "1.2";
+    p.style.fontSize = `${bodyPx}px`;
+    p.style.lineHeight = "1.3";
     p.style.whiteSpace = "pre-wrap";
     container.appendChild(p);
   });
@@ -1089,63 +2094,72 @@ function populateEditor(slide) {
   slideTypeSelect.value = slide.type;
 
   hymnNumberInput.value = slide.hymnNumber || '';
+  hymnIncludeTitle.checked = !!slide.includeTitle;
+  hymnTitleFields.style.display = slide.includeTitle ? 'block' : 'none';
+  hymnKorTitleInput.value = slide.hymnKorTitle || '';
+  hymnEngTitleInput.value = slide.hymnEngTitle || '';
 
   if (slide.type === 'hymn') {
     simpleSlideSettings.style.display = 'none';
     hymnSlideSettings.style.display = 'block';
-    adSlideSettings.style.display = 'none';
   } else if (slide.type === 'ad') {
     simpleSlideSettings.style.display = 'block';
     hymnSlideSettings.style.display = 'none';
-    adSlideSettings.style.display = 'block';
-
-    slideContentInput.value = slide.content;
-    slideFontSelect.value = slide.font;
-    slideFontSizeSelect.value = slide.fontSize || "40";
-    slideBgSelect.value = slide.bg;
-    slideAlignSelect.value = slide.align;
-    syncBgTabs(slide.bg);
-    syncAlignTabs(slide.align);
 
     sourceRadios.forEach(r => {
       r.checked = r.value === slide.sourceType;
     });
     toggleSettingsMode(slide.sourceType);
 
-    // Load ad-specific properties
+    // Ad title panel
     adTitleInput.value = slide.adTitle || '';
     adTitleSizeSelect.value = slide.adTitleSize || 'medium';
     adTitleAlignSelect.value = slide.adTitleAlign || 'center';
-    adBgOpacity.value = slide.adBgOpacity || 30;
-    adBgOpacityValue.textContent = slide.adBgOpacity || 30;
+    syncRteSizeBtns('adTitleSize', adTitleSizeSelect.value);
+    syncRteAlignBtns('adTitleAlign', adTitleAlignSelect.value);
 
-     // Set background source radio
-     adBgSourceRadios.forEach(r => {
-       r.checked = r.value === (slide.adBgSource || 'none');
-     });
-     toggleAdBgMode(slide.adBgSource || 'none');
-     
-     // Load background image URL if available
-     if (slide.adBgImageUrl) {
-       adBgImageUrl.value = slide.adBgImageUrl;
-     }
-     
-     // Clear file input to avoid showing stale filename
-     adBgImageFile.value = '';
+    // Ad body panel
+    adBodyContent.value = slide.content || '';
+    adBodyFont.value = slide.font || 'Malgun Gothic';
+    adBodyFontSize.value = slide.fontSize || '40';
+    adBodyAlign.value = slide.align || 'center';
+    syncRteAlignBtns('adBodyAlign', adBodyAlign.value);
+
+    // Ad background settings
+    adTextColor.value = slide.bg || 'black';
+    syncAdTextColorTabs(adTextColor.value);
+    adBgOpacity.value = slide.adBgOpacity ?? 30;
+    adBgOpacityValue.textContent = `${slide.adBgOpacity ?? 30}%`;
+
+    adBgSourceRadios.forEach(r => {
+      r.checked = r.value === (slide.adBgSource || 'none');
+    });
+    toggleBgMode(slide.adBgSource || 'none');
+
+    adBgImageUrl.value = slide.adBgImageUrl || '';
+    adBgImageFile.value = '';
   } else {
     simpleSlideSettings.style.display = 'block';
     hymnSlideSettings.style.display = 'none';
-    adSlideSettings.style.display = 'none';
 
     slideContentInput.value = slide.content;
     slideFontSelect.value = slide.font;
     slideFontSizeSelect.value = slide.fontSize || "40";
-    slideBgSelect.value = slide.bg;
     slideAlignSelect.value = slide.align;
-    syncBgTabs(slide.bg);
     syncAlignTabs(slide.align);
 
-    // Set source type radio logic only for simple slides
+    // bgSettings (shared with ad)
+    adTextColor.value = slide.bg || 'black';
+    syncAdTextColorTabs(adTextColor.value);
+    adBgOpacity.value = slide.adBgOpacity ?? 30;
+    adBgOpacityValue.textContent = `${slide.adBgOpacity ?? 30}%`;
+    adBgSourceRadios.forEach(r => {
+      r.checked = r.value === (slide.adBgSource || 'none');
+    });
+    toggleBgMode(slide.adBgSource || 'none');
+    adBgImageUrl.value = slide.adBgImageUrl || '';
+    adBgImageFile.value = '';
+
     sourceRadios.forEach(r => {
       r.checked = r.value === slide.sourceType;
     });
@@ -1172,7 +2186,7 @@ function syncAlignTabs(value) {
 }
 
 function setBgValue(value, markDirty = true) {
-  slideBgSelect.value = value;
+  if (slideBgSelect) slideBgSelect.value = value;
   syncBgTabs(value);
   if (markDirty) {
     hasUnsavedChanges = true;
@@ -1189,6 +2203,26 @@ function setAlignValue(value, markDirty = true) {
   }
 }
 
+// --- Ad content panel helpers ---
+
+function syncRteSizeBtns(targetId, value) {
+  document.querySelectorAll(`.rte-size-btn[data-target="${targetId}"]`).forEach(btn => {
+    btn.classList.toggle('is-active', btn.dataset.value === value);
+  });
+}
+
+function syncRteAlignBtns(targetId, value) {
+  document.querySelectorAll(`.rte-align-btn[data-target="${targetId}"]`).forEach(btn => {
+    btn.classList.toggle('is-active', btn.dataset.value === value);
+  });
+}
+
+function syncAdTextColorTabs(value) {
+  adTextColorTabs.forEach(tab => {
+    tab.classList.toggle('is-active', tab.dataset.value === value);
+  });
+}
+
 function toggleSettingsMode(mode) {
   updateSettingsVisibility(mode);
 }
@@ -1203,55 +2237,52 @@ function updateSettingsVisibility(overrideMode) {
   if (type === "hymn") {
     simpleSlideSettings.style.display = "none";
     hymnSlideSettings.style.display = "block";
-    adSlideSettings.style.display = "none";
     return;
   }
 
   simpleSlideSettings.style.display = "block";
   hymnSlideSettings.style.display = "none";
 
-  if (type === "ad") {
-    if (sourceType === "upload") {
-      adSlideSettings.style.display = "none";
-      if (adBackgroundSettings) adBackgroundSettings.style.display = "none";
-      basicSettingsMode.style.display = "none";
-      uploadSettingsMode.style.display = "block";
-    } else {
-      adSlideSettings.style.display = "block";
-      if (adBackgroundSettings) adBackgroundSettings.style.display = "block";
-      basicSettingsMode.style.display = "block";
-      uploadSettingsMode.style.display = "none";
-    }
+  if (sourceType === "upload") {
+    adContentSettings.style.display = "none";
+    basicSettingsMode.style.display = "none";
+    if (bgSettings) bgSettings.style.display = "none";
+    uploadSettingsMode.style.display = "block";
     return;
   }
 
-  adSlideSettings.style.display = "none";
-  if (sourceType === "upload") {
+  uploadSettingsMode.style.display = "none";
+
+  if (type === "ad") {
+    adContentSettings.style.display = "grid";
     basicSettingsMode.style.display = "none";
-    uploadSettingsMode.style.display = "block";
   } else {
+    adContentSettings.style.display = "none";
     basicSettingsMode.style.display = "block";
-    uploadSettingsMode.style.display = "none";
   }
+
+  if (bgSettings) bgSettings.style.display = "block";
 }
 
-function toggleAdBgMode(source) {
-  const adBgFileMode = document.getElementById("adBgFileMode");
-  const adBgUrlMode = document.getElementById("adBgUrlMode");
+function toggleBgMode(source) {
+  const adBgFileModeEl = document.getElementById("adBgFileMode");
+  const adBgUrlModeEl = document.getElementById("adBgUrlMode");
   const adBgImageUrlInput = document.getElementById("adBgImageUrl");
+  const hasImage = source === "file" || source === "url";
   if (source === "file") {
-    adBgFileMode.style.display = "block";
-    adBgUrlMode.style.display = "none";
+    adBgFileModeEl.style.display = "block";
+    adBgUrlModeEl.style.display = "none";
     if (adBgImageUrlInput) adBgImageUrlInput.disabled = true;
   } else if (source === "url") {
-    adBgFileMode.style.display = "none";
-    adBgUrlMode.style.display = "block";
+    adBgFileModeEl.style.display = "none";
+    adBgUrlModeEl.style.display = "block";
     if (adBgImageUrlInput) adBgImageUrlInput.disabled = false;
   } else {
-    adBgFileMode.style.display = "none";
-    adBgUrlMode.style.display = "none";
+    adBgFileModeEl.style.display = "none";
+    adBgUrlModeEl.style.display = "none";
     if (adBgImageUrlInput) adBgImageUrlInput.disabled = true;
   }
+  if (dimOverlayRow) dimOverlayRow.style.display = hasImage ? "block" : "none";
 }
 
 function resetCurrentSlide() {
@@ -1277,22 +2308,155 @@ function updateButtonsState(slide) {
 }
 
 function renderSlideList() {
+  syncSelectedSlideIds();
+  renderTemplateSubmenu();
+  updateTemplateManagementUi();
   slideListContainer.innerHTML = "";
-  slides.forEach((slide) => {
+  slides.forEach((slide, index) => {
     const card = document.createElement("div");
-    card.className = `slide-card ${slide.id === currentSlideId ? "active" : ""}`;
+    const isActive = slide.id === currentSlideId;
+    const isSelected = selectedSlideIds.has(slide.id);
+
+    card.className = `slide-card${isActive ? " active" : ""}${isSelected ? " selected" : ""}`;
+    card.draggable = true;
+    card.dataset.slideId = slide.id;
     card.onclick = () => selectSlide(slide.id);
+    card.addEventListener("dragstart", (event) => {
+      draggedSlideId = slide.id;
+      card.classList.add("dragging");
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", slide.id);
+      }
+    });
+    card.addEventListener("dragend", () => {
+      draggedSlideId = null;
+      card.classList.remove("dragging", "drag-over-top", "drag-over-bottom");
+      slideListContainer
+        .querySelectorAll(".slide-card")
+        .forEach((item) =>
+          item.classList.remove("drag-over-top", "drag-over-bottom")
+        );
+    });
+    card.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      if (!draggedSlideId || draggedSlideId === slide.id) {
+        return;
+      }
+      const rect = card.getBoundingClientRect();
+      const placeAfter = event.clientY - rect.top > rect.height / 2;
+      card.classList.toggle("drag-over-top", !placeAfter);
+      card.classList.toggle("drag-over-bottom", placeAfter);
+    });
+    card.addEventListener("dragleave", () => {
+      card.classList.remove("drag-over-top", "drag-over-bottom");
+    });
+    card.addEventListener("drop", (event) => {
+      event.preventDefault();
+      card.classList.remove("drag-over-top", "drag-over-bottom");
+      if (!draggedSlideId || draggedSlideId === slide.id) {
+        return;
+      }
+      const draggedIndex = slides.findIndex((item) => item.id === draggedSlideId);
+      const rect = card.getBoundingClientRect();
+      const placeAfter = event.clientY - rect.top > rect.height / 2;
+      const targetIndex = slides.findIndex((item) => item.id === slide.id);
+      let nextIndex = targetIndex;
+
+      if (placeAfter) {
+        nextIndex = draggedIndex < targetIndex ? targetIndex : targetIndex + 1;
+      } else if (draggedIndex < targetIndex) {
+        nextIndex = targetIndex - 1;
+      }
+
+      moveSlideToIndex(draggedSlideId, nextIndex);
+    });
+
+    const header = document.createElement("div");
+    header.className = "slide-card-header";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.className = "slide-card-select";
+    checkbox.checked = isSelected;
+    checkbox.setAttribute("aria-label", `${slide.name} 선택`);
+    checkbox.addEventListener("click", (event) => event.stopPropagation());
+    checkbox.addEventListener("change", (event) => {
+      event.stopPropagation();
+      toggleSlideSelection(slide.id, checkbox.checked);
+    });
+
+    const main = document.createElement("div");
+    main.className = "slide-card-main";
 
     const title = document.createElement("h4");
     title.textContent = slide.name;
     const desc = document.createElement("p");
-    desc.textContent =
-      slide.type === "simple" ? "단순 슬라이드" : slide.type;
+    desc.textContent = `${index + 1}. ${getSlideTypeLabel(slide)}`;
+    main.appendChild(title);
+    main.appendChild(desc);
 
-    card.appendChild(title);
-    card.appendChild(desc);
+    const actions = document.createElement("div");
+    actions.className = "slide-card-actions";
+
+    const handle = document.createElement("button");
+    handle.type = "button";
+    handle.className = "slide-card-handle";
+    handle.title = "드래그해서 순서 바꾸기";
+    handle.textContent = "⋮⋮";
+    handle.addEventListener("click", (event) => event.stopPropagation());
+
+    const moveUpBtn = document.createElement("button");
+    moveUpBtn.type = "button";
+    moveUpBtn.className = "slide-move-btn";
+    moveUpBtn.title = "위로 이동";
+    moveUpBtn.disabled = index === 0;
+    moveUpBtn.innerHTML =
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6l-6 6h12z"></path></svg>';
+    moveUpBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      moveSlideByOffset(slide.id, -1);
+    });
+
+    const moveDownBtn = document.createElement("button");
+    moveDownBtn.type = "button";
+    moveDownBtn.className = "slide-move-btn";
+    moveDownBtn.title = "아래로 이동";
+    moveDownBtn.disabled = index === slides.length - 1;
+    moveDownBtn.innerHTML =
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 18l6-6H6z"></path></svg>';
+    moveDownBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      moveSlideByOffset(slide.id, 1);
+    });
+
+    actions.appendChild(handle);
+    actions.appendChild(moveUpBtn);
+    actions.appendChild(moveDownBtn);
+
+    header.appendChild(checkbox);
+    header.appendChild(main);
+    header.appendChild(actions);
+
+    const meta = document.createElement("div");
+    meta.className = "slide-card-meta";
+
+    const typeBadge = document.createElement("span");
+    typeBadge.className = "slide-type-badge";
+    typeBadge.textContent = slide.type === "ad" ? "AD" : slide.sourceType === "upload" ? "PPT/PPTX" : "TEXT";
+
+    const saveBadge = document.createElement("span");
+    saveBadge.className = `slide-save-badge${slide.saved ? "" : " unsaved"}`;
+    saveBadge.textContent = slide.saved ? "저장됨" : "미저장";
+
+    meta.appendChild(typeBadge);
+    meta.appendChild(saveBadge);
+
+    card.appendChild(header);
+    card.appendChild(meta);
     slideListContainer.appendChild(card);
   });
+  updateSlideListControls();
 }
 
 async function uploadFile(file) {
@@ -1311,14 +2475,12 @@ async function uploadFile(file) {
 }
 
 async function saveCurrentSlide() {
-  console.log("saveCurrentSlide called. currentSlideId:", currentSlideId);
   if (!currentSlideId) {
     console.error("No currentSlideId!");
     return;
   }
 
   const name = slideNameInput.value.trim();
-  console.log("Saving name:", name);
 
   if (!name) {
     alert("슬라이드 이름을 입력하세요.");
@@ -1382,6 +2544,9 @@ async function saveCurrentSlide() {
         slide.hymnNumber = number;
       }
       slide.sourceType = 'upload';
+      slide.includeTitle = hymnIncludeTitle.checked;
+      slide.hymnKorTitle = hymnKorTitleInput.value.trim();
+      slide.hymnEngTitle = hymnEngTitleInput.value.trim();
       slide.saved = true;
 
     } else if (slide.type === 'ad') {
@@ -1389,11 +2554,18 @@ async function saveCurrentSlide() {
       slide.adTitle = adTitleInput.value;
       slide.adTitleSize = adTitleSizeSelect.value;
       slide.adTitleAlign = adTitleAlignSelect.value;
+
+      slide.content = adBodyContent.value;
+      slide.font = adBodyFont.value;
+      slide.fontSize = adBodyFontSize.value;
+      slide.align = adBodyAlign.value;
+      slide.bg = adTextColor.value;
+
       slide.adBgOpacity = parseInt(adBgOpacity.value);
-      
+
       const bgSource = document.querySelector('input[name="adBgSource"]:checked').value;
       slide.adBgSource = bgSource;
-      
+
       // Handle background image file upload
       if (bgSource === 'file' && adBgImageFile.files[0]) {
         const saveBtnMsg = document.getElementById('editorSaveBtn');
@@ -1419,13 +2591,6 @@ async function saveCurrentSlide() {
         slide.adBgImagePath = null;
         slide.adBgImageUrl = null;
       }
-      
-      // Save simple slide properties (ad slides reuse these)
-      slide.content = slideContentInput.value;
-      slide.font = slideFontSelect.value;
-      slide.fontSize = slideFontSizeSelect.value;
-      slide.bg = slideBgSelect.value;
-      slide.align = slideAlignSelect.value;
       
       const sourceType = document.querySelector('input[name="sourceType"]:checked').value;
       slide.sourceType = sourceType;
@@ -1469,8 +2634,34 @@ async function saveCurrentSlide() {
       slide.content = slideContentInput.value;
       slide.font = slideFontSelect.value;
       slide.fontSize = slideFontSizeSelect.value;
-      slide.bg = slideBgSelect.value;
+      slide.bg = adTextColor.value;
       slide.align = slideAlignSelect.value;
+      slide.adBgOpacity = parseInt(adBgOpacity.value);
+
+      const bgSrc = document.querySelector('input[name="adBgSource"]:checked').value;
+      slide.adBgSource = bgSrc;
+      if (bgSrc === 'file' && adBgImageFile.files[0]) {
+        const saveBtnMsg = document.getElementById('editorSaveBtn');
+        const originalText = saveBtnMsg ? saveBtnMsg.textContent : "저장";
+        if (saveBtnMsg) saveBtnMsg.textContent = "업로드 중...";
+        try {
+          const uploadResult = await uploadFile(adBgImageFile.files[0]);
+          slide.adBgImagePath = uploadResult.path;
+          slide.adBgImageUrl = null;
+        } catch (e) {
+          alert("배경 이미지 업로드 실패: " + e.message);
+          if (saveBtnMsg) saveBtnMsg.textContent = originalText;
+          return;
+        } finally {
+          if (saveBtnMsg) saveBtnMsg.textContent = originalText;
+        }
+      } else if (bgSrc === 'url') {
+        slide.adBgImageUrl = adBgImageUrl.value;
+        slide.adBgImagePath = null;
+      } else {
+        slide.adBgImagePath = null;
+        slide.adBgImageUrl = null;
+      }
       slide.saved = true;
 
       // Handle File Upload
@@ -1501,9 +2692,15 @@ async function saveCurrentSlide() {
       }
     }
 
-    // Save full list to server
-    console.log("Saving slide data:", slide);
-    await saveSlidesToServer();
+    if (isTemplateMode()) {
+      markTemplateDirty();
+    } else {
+      const saved = await persistCurrentWorkspace();
+      if (!saved) {
+        return;
+      }
+      syncWorkingSlidesToState();
+    }
 
     hasUnsavedChanges = false;
     updateButtonsState(slide);
@@ -1577,7 +2774,11 @@ async function downloadSlide() {
           font: slide.font,
           fontSize: slide.fontSize,
           bg: slide.bg,
-          align: slide.align
+          align: slide.align,
+          adBgSource: slide.adBgSource,
+          adBgImagePath: slide.adBgImagePath,
+          adBgImageUrl: slide.adBgImageUrl,
+          adBgOpacity: slide.adBgOpacity,
         })
       });
 
@@ -1642,6 +2843,239 @@ async function downloadSlide() {
   }
 }
 
+function buildSerializableSlide(slide) {
+  return {
+    id: slide.id,
+    name: slide.name,
+    type: slide.type,
+    sourceType: slide.sourceType,
+    content: slide.content,
+    font: slide.font,
+    fontSize: slide.fontSize,
+    bg: slide.bg,
+    align: slide.align,
+    fileName: slide.fileName,
+    fileSaved: slide.fileSaved,
+    saved: slide.saved,
+    serverFilePath: slide.serverFilePath,
+    thumbnail: slide.thumbnail,
+    hymnNumber: slide.hymnNumber,
+    includeTitle: slide.includeTitle,
+    hymnKorTitle: slide.hymnKorTitle,
+    hymnEngTitle: slide.hymnEngTitle,
+    originalUrl: slide.originalUrl,
+    adTitle: slide.adTitle,
+    adTitleSize: slide.adTitleSize,
+    adTitleAlign: slide.adTitleAlign,
+    adBgSource: slide.adBgSource,
+    adBgImagePath: slide.adBgImagePath,
+    adBgImageUrl: slide.adBgImageUrl,
+    adBgOpacity: slide.adBgOpacity,
+  };
+}
+
+function getBulkActionSlides() {
+  const selectedSlides = getSelectedSlides();
+  if (selectedSlides.length === 0) {
+    alert("슬라이드를 하나 이상 선택하세요.");
+    return [];
+  }
+
+  if (hasPendingSelectionEdits()) {
+    alert("선택한 슬라이드 중 저장되지 않은 항목이 있습니다. 먼저 저장한 뒤 다시 시도하세요.");
+    return [];
+  }
+
+  return selectedSlides;
+}
+
+async function deleteSelectedSlides() {
+  const selectedSlides = getSelectedSlides();
+  if (selectedSlides.length === 0) {
+    alert("삭제할 슬라이드를 선택하세요.");
+    return;
+  }
+
+  if (!confirm(`선택한 ${selectedSlides.length}개 슬라이드를 삭제하시겠습니까?`)) {
+    return;
+  }
+
+  const selectedIds = selectedSlides.map((slide) => slide.id);
+
+  try {
+    if (isTemplateMode()) {
+      slides = slides.filter((slide) => !selectedIds.includes(slide.id));
+      selectedSlideIds.clear();
+
+      if (currentSlideId && selectedIds.includes(currentSlideId)) {
+        resetEditorSelection();
+      }
+
+      markTemplateDirty();
+      renderSlideList();
+      return;
+    }
+
+    const resp = await fetch("/api/slides/bulk-delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ids: selectedIds,
+        slides: selectedSlides.map(buildSerializableSlide),
+      }),
+    });
+
+    if (!resp.ok) {
+      const payload = await resp.json().catch(() => ({}));
+      throw new Error(payload.error || "삭제에 실패했습니다.");
+    }
+
+    slides = slides.filter((slide) => !selectedSlideIds.has(slide.id));
+    selectedSlideIds.clear();
+    syncWorkingSlidesToState();
+
+    if (currentSlideId && selectedIds.includes(currentSlideId)) {
+      resetEditorSelection();
+    }
+
+    renderSlideList();
+  } catch (err) {
+    alert(err.message || "선택 삭제 중 오류가 발생했습니다.");
+  }
+}
+
+async function createTemplateFromSelection() {
+  const selectedSlides = getBulkActionSlides();
+  if (selectedSlides.length === 0) {
+    return;
+  }
+
+  const defaultName =
+    selectedSlides.length === 1
+      ? `${selectedSlides[0].name} 템플릿`
+      : `선택 슬라이드 ${selectedSlides.length}개 템플릿`;
+  const templateName = prompt("템플릿 이름을 입력하세요.", defaultName);
+
+  if (!templateName) {
+    return;
+  }
+
+  try {
+    const resp = await fetch("/api/templates", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: templateName.trim(),
+        slides: selectedSlides.map(buildSerializableSlide),
+      }),
+    });
+
+    const payload = await resp.json();
+    if (!resp.ok) {
+      throw new Error(payload.error || "템플릿 저장에 실패했습니다.");
+    }
+
+    templates.push(cloneTemplate(payload.template));
+    renderTemplateSubmenu();
+    openTemplateWorkspace(payload.template.id);
+    alert(`템플릿이 저장되었습니다: ${payload.template.name}`);
+  } catch (err) {
+    alert(err.message || "템플릿 저장 중 오류가 발생했습니다.");
+  }
+}
+
+async function deleteActiveTemplate() {
+  const activeTemplate = getActiveTemplate();
+  if (!activeTemplate) {
+    return;
+  }
+
+  if (!confirm(`'${activeTemplate.name}' 템플릿을 삭제하시겠습니까?`)) {
+    return;
+  }
+
+  try {
+    const resp = await fetch(`/api/templates/${encodeURIComponent(activeTemplate.id)}`, {
+      method: "DELETE",
+    });
+    const payload = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      throw new Error(payload.error || "템플릿 삭제에 실패했습니다.");
+    }
+
+    templates = templates.filter((template) => template.id !== activeTemplate.id);
+    activeTemplateId = null;
+    hasPendingTemplateChanges = false;
+    loadWorkspaceSlides(mainSlides);
+    renderTemplateSubmenu();
+    updateTemplateManagementUi();
+  } catch (err) {
+    alert(err.message || "템플릿 삭제 중 오류가 발생했습니다.");
+  }
+}
+
+async function renameActiveTemplate() {
+  const activeTemplate = getActiveTemplate();
+  if (!activeTemplate) {
+    return;
+  }
+
+  const nextName = prompt("템플릿 이름을 입력하세요.", activeTemplate.name);
+  if (!nextName) {
+    return;
+  }
+
+  const trimmedName = nextName.trim();
+  if (!trimmedName || trimmedName === activeTemplate.name) {
+    return;
+  }
+
+  templates = templates.map((template) =>
+    template.id === activeTemplate.id
+      ? { ...template, name: trimmedName }
+      : template
+  );
+  hasPendingTemplateChanges = true;
+  updateTemplateManagementUi();
+  renderTemplateSubmenu();
+}
+
+async function downloadSelectedSlidesBundle() {
+  const selectedSlides = getBulkActionSlides();
+  if (selectedSlides.length === 0) {
+    return;
+  }
+
+  try {
+    const resp = await fetch("/api/slides/export-pptx", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        slides: selectedSlides.map(buildSerializableSlide),
+      }),
+    });
+
+    if (!resp.ok) {
+      const payload = await resp.json().catch(() => ({}));
+      throw new Error(payload.error || "선택 슬라이드 묶음 생성에 실패했습니다.");
+    }
+
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download =
+      getFilenameFromDisposition(resp.headers.get("content-disposition")) ||
+      `selected_slides_${selectedSlides.length}.pptx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    alert(err.message || "선택 슬라이드 다운로드 중 오류가 발생했습니다.");
+  }
+}
+
 
 // --- Event Listeners ---
 
@@ -1660,15 +3094,17 @@ async function deleteCurrentSlide() {
 
   // Call API
   try {
+    if (isTemplateMode()) {
+      slides = slides.filter((slide) => slide.id !== currentSlideId);
+      markTemplateDirty();
+      resetEditorSelection();
+      renderSlideList();
+      return;
+    }
+
     await fetch(`/api/slides/${currentSlideId}`, { method: 'DELETE' });
-    // Refresh
     await loadSlidesFromServer();
-
-    currentSlideId = null;
-    hasUnsavedChanges = false;
-
-    emptyEditorState.style.display = "flex";
-    slideEditor.style.display = "none";
+    loadWorkspaceSlides(mainSlides);
     renderSlideList();
   } catch (e) {
     alert("삭제 실패");
@@ -1703,6 +3139,80 @@ function cancelEdit() {
 
 editorDeleteBtn.addEventListener("click", deleteCurrentSlide);
 editorDownloadBtn.addEventListener("click", downloadSlide);
+selectAllSlidesCheckbox.addEventListener("change", () => {
+  setAllSlidesSelected(selectAllSlidesCheckbox.checked);
+});
+clearSelectionBtn.addEventListener("click", clearSlideSelection);
+
+bulkActionMenuBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  const isOpen = !bulkActionDropdown.hidden;
+  if (isOpen) {
+    closeBulkDropdown();
+  } else {
+    closeBulkDropdown();
+    bulkActionDropdown.hidden = false;
+    bulkActionMenuBtn.classList.add("open");
+  }
+});
+
+templateMenuBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  const isOpen = !templateMenuDropdown.hidden;
+  if (isOpen) {
+    closeBulkDropdown();
+  } else {
+    closeBulkDropdown();
+    templateMenuDropdown.hidden = false;
+    templateMenuBtn.classList.add("active");
+  }
+});
+
+document.addEventListener("click", (e) => {
+  if (bulkActionDropdown && !bulkActionDropdown.hidden) {
+    if (!bulkActionMenuBtn.contains(e.target) && !bulkActionDropdown.contains(e.target)) {
+      closeBulkDropdown();
+    }
+  }
+  if (templateMenuDropdown && !templateMenuDropdown.hidden) {
+    if (!templateMenuBtn.contains(e.target) && !templateMenuDropdown.contains(e.target)) {
+      closeBulkDropdown();
+    }
+  }
+});
+
+document.addEventListener("click", (e) => {
+  if (!currentSlideId) return;
+  if (e.target.closest(".slide-card")) return;
+  if (e.target.closest(".slide-editor-panel")) return;
+  if (e.target.closest(".sub-nav")) return;
+
+  const currentSlide = slides.find(s => s.id === currentSlideId);
+  if (currentSlide && !currentSlide.saved) {
+    if (!confirm("이 슬라이드는 저장되지 않았습니다. 이동하면 삭제됩니다. 계속하시겠습니까?")) {
+      e.stopPropagation();
+      return;
+    }
+    slides = slides.filter(s => s.id !== currentSlideId);
+  } else if (hasUnsavedChanges) {
+    if (!confirm("저장하지 않은 변경사항이 있습니다. 무시하고 이동하시겠습니까?")) {
+      e.stopPropagation();
+      return;
+    }
+  }
+
+  currentSlideId = null;
+  hasUnsavedChanges = false;
+  emptyEditorState.style.display = "flex";
+  slideEditor.style.display = "none";
+  renderSlideList();
+}, true);
+
+bulkDeleteBtn.addEventListener("click", () => { closeBulkDropdown(); deleteSelectedSlides(); });
+bulkTemplateBtn.addEventListener("click", () => { closeBulkDropdown(); createTemplateFromSelection(); });
+bulkDownloadBtn.addEventListener("click", () => { closeBulkDropdown(); downloadSelectedSlidesBundle(); });
+templateSaveBtn.addEventListener("click", saveActiveTemplateToServer);
+templateDeleteBtn.addEventListener("click", deleteActiveTemplate);
 
 [
   slideNameInput,
@@ -1710,7 +3220,6 @@ editorDownloadBtn.addEventListener("click", downloadSlide);
   slideContentInput,
   slideFontSelect,
   slideFontSizeSelect,
-  slideBgSelect,
   slideAlignSelect,
 ].forEach((el) => {
   el.addEventListener("input", () => {
@@ -1742,13 +3251,101 @@ alignTabs.forEach((tab) => {
 adBgSourceRadios.forEach(radio => {
   radio.addEventListener('change', (e) => {
     hasUnsavedChanges = true;
-    toggleAdBgMode(e.target.value);
+    toggleBgMode(e.target.value);
     renderPreview();
-  })
+  });
+});
+
+// rte-size-btn: title size toggle
+document.querySelectorAll('.rte-size-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const targetId = btn.dataset.target;
+    document.getElementById(targetId).value = btn.dataset.value;
+    syncRteSizeBtns(targetId, btn.dataset.value);
+    hasUnsavedChanges = true;
+    renderPreview();
+  });
+});
+
+// rte-align-btn: title/body align toggle
+document.querySelectorAll('.rte-align-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    if (btn.dataset.list) return; // handled by list button handler
+    const targetId = btn.dataset.target;
+    if (!targetId) return;
+    document.getElementById(targetId).value = btn.dataset.value;
+    syncRteAlignBtns(targetId, btn.dataset.value);
+    hasUnsavedChanges = true;
+    renderPreview();
+  });
+});
+
+// list buttons: bullet / numbered
+function applyListPrefix(textarea, type) {
+  const start = textarea.selectionStart;
+  const end = textarea.selectionEnd;
+  const value = textarea.value;
+
+  const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+  const lineEndIdx = value.indexOf('\n', end);
+  const lineEnd = lineEndIdx === -1 ? value.length : lineEndIdx;
+
+  const selectedText = value.substring(lineStart, lineEnd);
+  const lines = selectedText.split('\n');
+
+  let newLines;
+  if (type === 'bullet') {
+    const allBulleted = lines.every(l => l.startsWith('• '));
+    newLines = allBulleted
+      ? lines.map(l => l.slice(2))
+      : lines.map(l => '• ' + l.replace(/^• /, '').replace(/^\d+\.\s*/, ''));
+  } else {
+    const allNumbered = lines.every(l => /^\d+\.\s/.test(l));
+    newLines = allNumbered
+      ? lines.map(l => l.replace(/^\d+\.\s*/, ''))
+      : lines.map((l, i) => `${i + 1}. ` + l.replace(/^• /, '').replace(/^\d+\.\s*/, ''));
+  }
+
+  const newSelected = newLines.join('\n');
+  textarea.value = value.substring(0, lineStart) + newSelected + value.substring(lineEnd);
+  textarea.selectionStart = lineStart;
+  textarea.selectionEnd = lineStart + newSelected.length;
+  textarea.dispatchEvent(new Event('input'));
+}
+
+document.querySelectorAll('[data-list]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const textarea = document.getElementById(btn.dataset.target);
+    if (!textarea) return;
+    applyListPrefix(textarea, btn.dataset.list);
+  });
+});
+
+// ad text color tabs
+adTextColorTabs.forEach(tab => {
+  tab.addEventListener('click', () => {
+    adTextColor.value = tab.dataset.value;
+    syncAdTextColorTabs(tab.dataset.value);
+    hasUnsavedChanges = true;
+    renderPreview();
+  });
+});
+
+// ad body inputs: live preview
+[adBodyContent, adBodyFont, adBodyFontSize, adTitleInput].forEach(el => {
+  el.addEventListener('input', () => {
+    hasUnsavedChanges = true;
+    renderPreview();
+  });
+});
+
+adBgImageUrl.addEventListener('input', () => {
+  hasUnsavedChanges = true;
+  renderPreview();
 });
 
 adBgOpacity.addEventListener('input', () => {
-  adBgOpacityValue.textContent = adBgOpacity.value;
+  adBgOpacityValue.textContent = `${adBgOpacity.value}%`;
   hasUnsavedChanges = true;
   renderPreview();
 });
@@ -1785,7 +3382,7 @@ userPptxFile.addEventListener('change', async () => {
 });
 
 // Load slides on init
-loadSlidesFromServer();
+loadPptDataFromServer();
 
 // Helpers
 function readFileAsDataUrl(file) {

@@ -1,21 +1,32 @@
 import express from "express";
 import fs from "fs/promises";
 import path from "path";
-import { fileURLToPath } from "url";
+import os from "os";
+import { fileURLToPath, pathToFileURL } from "url";
 import PptxGenJS from "pptxgenjs";
 import multer from "multer";
 import AdmZip from "adm-zip";
 import https from "https";
 import http from "http";
 import { createWriteStream } from "fs";
-import { exec } from "child_process";
+import { exec, execFile } from "child_process";
 import { promisify } from "util";
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3000;
+const BUNDLED_NODE_MODULES = path.join(
+  os.homedir(),
+  ".cache",
+  "codex-runtimes",
+  "codex-primary-runtime",
+  "dependencies",
+  "node",
+  "node_modules"
+);
 const BASE_URLS = {
   ko: "https://biblics.com/ko/성경",
   en: "https://biblics.com/en/bible/new-international-version",
@@ -25,16 +36,573 @@ const KO_TRANSLATIONS = new Set(["새번역", "개역한글", "현대인의-성�
 
 const booksPath = path.join(__dirname, "data", "books.json");
 const slidesPath = path.join(__dirname, "data", "slides.json");
+const templatesPath = path.join(__dirname, "data", "templates.json");
+const hymnsPath = path.join(__dirname, "data", "hymns.json");
 const uploadsDir = path.join(__dirname, "uploads");
+const scriptureTitleTopImagePath = path.join(
+  __dirname,
+  "public",
+  "assets",
+  "scriptures",
+  "title-top.png"
+);
+const scriptureTitleBottomImagePath = path.join(
+  __dirname,
+  "public",
+  "assets",
+  "scriptures",
+  "title-bottom.png"
+);
+const hymnTitleBgImagePath = path.join(
+  __dirname,
+  "public",
+  "assets",
+  "hymn-title-bg.png"
+);
+const hymnTitleBandImagePath = path.join(
+  __dirname,
+  "public",
+  "assets",
+  "hymn-title-band.png"
+);
+const SOFFICE_PATH = "/opt/homebrew/bin/soffice";
+const scriptureSessions = new Map();
 
 // Ensure structure exists
 (async () => {
   try { await fs.access(uploadsDir); } catch { await fs.mkdir(uploadsDir, { recursive: true }); }
   try { await fs.access(path.dirname(slidesPath)); } catch { await fs.mkdir(path.dirname(slidesPath), { recursive: true }); }
   try { await fs.access(slidesPath); } catch { await fs.writeFile(slidesPath, "[]", "utf-8"); }
+  try { await fs.access(templatesPath); } catch { await fs.writeFile(templatesPath, "[]", "utf-8"); }
 })();
 
 const booksData = JSON.parse(await fs.readFile(booksPath, "utf-8"));
+const hymnsData = JSON.parse(await fs.readFile(hymnsPath, "utf-8"));
+let pdfRenderDepsPromise = null;
+
+function getWideLayoutSize() {
+  return { width: 13.333, height: 7.5 };
+}
+
+function sanitizeSlideForTemplate(slide) {
+  return {
+    id: slide.id,
+    name: slide.name,
+    type: slide.type,
+    sourceType: slide.sourceType,
+    content: slide.content || "",
+    font: slide.font || "Malgun Gothic",
+    fontSize: slide.fontSize || "40",
+    bg: slide.bg || "black",
+    align: slide.align || "center",
+    fileName: slide.fileName || null,
+    fileSaved: Boolean(slide.fileSaved),
+    saved: slide.saved !== false,
+    serverFilePath: slide.serverFilePath || null,
+    thumbnail: slide.thumbnail || null,
+    hymnNumber: slide.hymnNumber || null,
+    originalUrl: slide.originalUrl || null,
+    adTitle: slide.adTitle || "",
+    adTitleSize: slide.adTitleSize || "medium",
+    adTitleAlign: slide.adTitleAlign || "center",
+    adBgSource: slide.adBgSource || "none",
+    adBgImagePath: slide.adBgImagePath || null,
+    adBgImageUrl: slide.adBgImageUrl || null,
+    adBgOpacity:
+      typeof slide.adBgOpacity === "number" ? slide.adBgOpacity : 30,
+  };
+}
+
+function sanitizeTemplateName(value) {
+  const trimmed = (value || "").trim();
+  return trimmed || "새 템플릿";
+}
+
+function createEntityId(prefix) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+async function readTemplates() {
+  try {
+    return JSON.parse((await fs.readFile(templatesPath, "utf-8")) || "[]");
+  } catch (err) {
+    if (err.code === "ENOENT") {
+      return [];
+    }
+    throw err;
+  }
+}
+
+async function writeTemplates(templates) {
+  await fs.writeFile(templatesPath, JSON.stringify(templates, null, 2));
+}
+
+async function cleanupScriptureSessions() {
+  const now = Date.now();
+  const deletions = [];
+
+  scriptureSessions.forEach((entry, key) => {
+    if (entry.expiresAt <= now) {
+      scriptureSessions.delete(key);
+      if (entry.filePath) {
+        deletions.push(fs.unlink(entry.filePath).catch(() => {}));
+      }
+      if (entry.renderDir) {
+        deletions.push(
+          fs.rm(entry.renderDir, { recursive: true, force: true }).catch(() => {})
+        );
+      }
+    }
+  });
+
+  if (deletions.length) {
+    await Promise.all(deletions);
+  }
+}
+
+function createScriptureWebViewSession(payload) {
+  cleanupScriptureSessions().catch(() => {});
+  const sessionId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  scriptureSessions.set(sessionId, {
+    payload,
+    expiresAt: Date.now() + 1000 * 60 * 30,
+  });
+  return sessionId;
+}
+
+function createScripturePptxPreviewSession(
+  payload,
+  filePath,
+  filename,
+  renderDir,
+  imagePaths
+) {
+  cleanupScriptureSessions().catch(() => {});
+  const sessionId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  scriptureSessions.set(sessionId, {
+    payload,
+    filePath,
+    filename,
+    renderDir,
+    imagePaths,
+    expiresAt: Date.now() + 1000 * 60 * 30,
+  });
+  return sessionId;
+}
+
+function resolveUploadedFilePath(serverFilePath) {
+  if (!serverFilePath || typeof serverFilePath !== "string") {
+    return null;
+  }
+  if (!serverFilePath.startsWith("/uploads/")) {
+    return null;
+  }
+  const relativePath = serverFilePath.replace(/^\/uploads\//, "");
+  return path.join(uploadsDir, relativePath);
+}
+
+async function cloneUploadedAsset(serverFilePath) {
+  const sourcePath = resolveUploadedFilePath(serverFilePath);
+  if (!sourcePath) {
+    return serverFilePath || null;
+  }
+
+  try {
+    await fs.access(sourcePath);
+  } catch {
+    return serverFilePath || null;
+  }
+
+  const ext = path.extname(sourcePath);
+  const base = path.basename(sourcePath, ext);
+  const cloneName = `${base}-clone-${Date.now()}-${Math.random()
+    .toString(36)
+    .slice(2, 8)}${ext}`;
+  const targetPath = path.join(uploadsDir, cloneName);
+
+  await fs.copyFile(sourcePath, targetPath);
+  return `/uploads/${cloneName}`;
+}
+
+async function cloneSlideForTemplate(slide) {
+  const cloned = sanitizeSlideForTemplate(slide);
+  cloned.id = createEntityId("slide");
+  cloned.serverFilePath = await cloneUploadedAsset(cloned.serverFilePath);
+  cloned.thumbnail = await cloneUploadedAsset(cloned.thumbnail);
+  cloned.adBgImagePath = await cloneUploadedAsset(cloned.adBgImagePath);
+  return cloned;
+}
+
+async function deleteSlideAsset(slide) {
+  const assetPaths = [
+    slide?.serverFilePath,
+    slide?.thumbnail,
+    slide?.adBgImagePath,
+  ].filter(Boolean);
+
+  const uniqueResolvedPaths = [...new Set(assetPaths)]
+    .map(resolveUploadedFilePath)
+    .filter(Boolean);
+
+  await Promise.all(
+    uniqueResolvedPaths.map(async (assetPath) => {
+      try {
+        await fs.unlink(assetPath);
+      } catch (err) {
+        console.warn("Failed to delete accompanying file:", err.message);
+      }
+    })
+  );
+}
+
+async function loadPdfRenderDeps() {
+  if (pdfRenderDepsPromise) {
+    return pdfRenderDepsPromise;
+  }
+
+  pdfRenderDepsPromise = (async () => {
+    try {
+      const canvasMod = await import("@napi-rs/canvas");
+      const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
+      return { createCanvas: canvasMod.createCanvas, pdfjsLib };
+    } catch (err) {
+      const canvasUrl = pathToFileURL(
+        path.join(BUNDLED_NODE_MODULES, "@napi-rs", "canvas", "index.js")
+      ).href;
+      const pdfUrl = pathToFileURL(
+        path.join(BUNDLED_NODE_MODULES, "pdfjs-dist", "legacy", "build", "pdf.mjs")
+      ).href;
+      const canvasMod = await import(canvasUrl);
+      const pdfjsLib = await import(pdfUrl);
+      return { createCanvas: canvasMod.createCanvas, pdfjsLib };
+    }
+  })();
+
+  return pdfRenderDepsPromise;
+}
+
+async function convertPresentationToPdf(inputPath, outputDir) {
+  await execFileAsync(SOFFICE_PATH, [
+    "--headless",
+    "--convert-to",
+    "pdf",
+    "--outdir",
+    outputDir,
+    inputPath,
+  ]);
+
+  const pdfPath = path.join(
+    outputDir,
+    `${path.basename(inputPath, path.extname(inputPath))}.pdf`
+  );
+
+  await fs.access(pdfPath);
+  return pdfPath;
+}
+
+async function renderPdfPagesToImages(pdfPath, outputDir) {
+  const { createCanvas, pdfjsLib } = await loadPdfRenderDeps();
+  const pdfData = await fs.readFile(pdfPath);
+  const loadingTask = pdfjsLib.getDocument({
+    data: new Uint8Array(pdfData),
+    useWorkerFetch: false,
+    isEvalSupported: false,
+    useSystemFonts: true,
+  });
+  const pdf = await loadingTask.promise;
+  const renderedImages = [];
+
+  for (let pageIndex = 1; pageIndex <= pdf.numPages; pageIndex += 1) {
+    const page = await pdf.getPage(pageIndex);
+    const viewport = page.getViewport({ scale: 1.5 });
+    const canvas = createCanvas(
+      Math.ceil(viewport.width),
+      Math.ceil(viewport.height)
+    );
+    const ctx = canvas.getContext("2d");
+    await page.render({ canvasContext: ctx, viewport }).promise;
+
+    const imagePath = path.join(
+      outputDir,
+      `${path.basename(pdfPath, ".pdf")}-page-${pageIndex}.png`
+    );
+    await fs.writeFile(imagePath, canvas.toBuffer("image/png"));
+    renderedImages.push(imagePath);
+  }
+
+  return renderedImages;
+}
+
+async function appendSimpleSlide(pptx, slideData) {
+  const slide = pptx.addSlide();
+  const bgColor = slideData.bg === "white" ? "FFFFFF" : "000000";
+  const textColor = slideData.bg === "white" ? "000000" : "FFFFFF";
+  const safeFont = slideData.font || "Malgun Gothic";
+  const safeFontSize = Number.parseInt(slideData.fontSize, 10) || 24;
+  const safeAlign = slideData.align || "center";
+
+  if (slideData.adBgSource === "file" && slideData.adBgImagePath) {
+    const imagePath = path.join(__dirname, slideData.adBgImagePath);
+    const imageBuffer = await fs.readFile(imagePath);
+    const imageData = imageBuffer.toString("base64");
+    const ext = path.extname(slideData.adBgImagePath).toLowerCase();
+    const mimeType = ext === ".png" ? "image/png" : "image/jpeg";
+    slide.addImage({ data: `data:${mimeType};base64,${imageData}`, x: 0, y: 0, w: "100%", h: "100%" });
+  } else if (slideData.adBgSource === "url" && slideData.adBgImageUrl) {
+    const imageData = await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error("URL fetch timeout")), 10000);
+      const protocol = slideData.adBgImageUrl.startsWith("https") ? https : http;
+      protocol.get(slideData.adBgImageUrl, (response) => {
+        const chunks = [];
+        response.on("data", (chunk) => chunks.push(chunk));
+        response.on("end", () => { clearTimeout(timeout); resolve(Buffer.concat(chunks).toString("base64")); });
+      }).on("error", (error) => { clearTimeout(timeout); reject(error); });
+    });
+    slide.addImage({ data: `data:image/jpeg;base64,${imageData}`, x: 0, y: 0, w: "100%", h: "100%" });
+  } else {
+    slide.background = { color: bgColor };
+  }
+
+  if (slideData.adBgSource === "file" || slideData.adBgSource === "url") {
+    slide.addShape(pptx.ShapeType.rect, {
+      x: 0, y: 0, w: "100%", h: "100%",
+      fill: { color: "000000", transparency: 100 - (slideData.adBgOpacity ?? 30) },
+      line: { color: "000000", transparency: 100 },
+    });
+  }
+
+  slide.addText(slideData.content || "", {
+    x: "5%",
+    y: safeAlign === "top" ? "5%" : "10%",
+    w: "90%",
+    h: "80%",
+    fontSize: safeFontSize,
+    fontFace: safeFont,
+    color: textColor,
+    align: safeAlign === "top" ? "left" : safeAlign,
+    valign: safeAlign === "top" ? "top" : "middle",
+    wrap: true,
+  });
+}
+
+async function appendAdSlide(pptx, slideData) {
+  const slide = pptx.addSlide();
+  const bgColor = slideData.bg === "white" ? "FFFFFF" : "000000";
+  const textColor = slideData.bg === "white" ? "000000" : "FFFFFF";
+
+  if (slideData.adBgSource === "file" && slideData.adBgImagePath) {
+    const imagePath = path.join(__dirname, slideData.adBgImagePath);
+    const imageBuffer = await fs.readFile(imagePath);
+    const imageData = imageBuffer.toString("base64");
+    const ext = path.extname(slideData.adBgImagePath).toLowerCase();
+    const mimeType = ext === ".png" ? "image/png" : "image/jpeg";
+    slide.addImage({
+      data: `data:${mimeType};base64,${imageData}`,
+      x: 0,
+      y: 0,
+      w: "100%",
+      h: "100%",
+    });
+  } else if (slideData.adBgSource === "url" && slideData.adBgImageUrl) {
+    const imageData = await new Promise((resolve, reject) => {
+      const timeout = setTimeout(
+        () => reject(new Error("URL fetch timeout")),
+        10000
+      );
+      const protocol = slideData.adBgImageUrl.startsWith("https") ? https : http;
+
+      protocol
+        .get(slideData.adBgImageUrl, (response) => {
+          const chunks = [];
+          response.on("data", (chunk) => chunks.push(chunk));
+          response.on("end", () => {
+            clearTimeout(timeout);
+            resolve(Buffer.concat(chunks).toString("base64"));
+          });
+        })
+        .on("error", (error) => {
+          clearTimeout(timeout);
+          reject(error);
+        });
+    });
+
+    slide.addImage({
+      data: `data:image/jpeg;base64,${imageData}`,
+      x: 0,
+      y: 0,
+      w: "100%",
+      h: "100%",
+    });
+  } else {
+    slide.background = { color: bgColor };
+  }
+
+  slide.addShape(pptx.ShapeType.rect, {
+    x: 0,
+    y: 0,
+    w: "100%",
+    h: "100%",
+    fill: {
+      color: "000000",
+      transparency: 100 - (slideData.adBgOpacity ?? 30),
+    },
+    line: { color: "000000", transparency: 100 },
+  });
+
+  const hasTitle = !!slideData.adTitle;
+  if (hasTitle) {
+    const titleSizeMap = { large: 60, medium: 40, small: 24 };
+    slide.addText(slideData.adTitle, {
+      x: "5%",
+      y: "5%",
+      w: "90%",
+      h: "15%",
+      fontSize: titleSizeMap[slideData.adTitleSize] || 40,
+      bold: true,
+      color: textColor,
+      align: slideData.adTitleAlign || "center",
+      valign: "top",
+    });
+  }
+
+  slide.addText(slideData.content || "", {
+    x: "5%",
+    y: hasTitle ? "25%" : "5%",
+    w: "90%",
+    h: hasTitle ? "65%" : "85%",
+    fontSize: Number.parseInt(slideData.fontSize, 10) || 24,
+    fontFace: slideData.font || "Malgun Gothic",
+    color: textColor,
+    align: slideData.align || "center",
+    valign: "middle",
+    wrap: true,
+  });
+}
+
+function appendImageSlide(pptx, imagePath) {
+  const layout = getWideLayoutSize();
+  const slide = pptx.addSlide();
+  slide.addImage({
+    path: imagePath,
+    x: 0,
+    y: 0,
+    w: layout.width,
+    h: layout.height,
+  });
+}
+
+async function appendUploadedSlideDeck(pptx, slideData, tempDirs) {
+  const sourcePath = resolveUploadedFilePath(slideData.serverFilePath);
+  if (!sourcePath) {
+    throw new Error(`업로드 파일 경로가 없습니다: ${slideData.name}`);
+  }
+
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "samil-export-"));
+  tempDirs.push(tempDir);
+
+  const pdfPath = await convertPresentationToPdf(sourcePath, tempDir);
+  const imagePaths = await renderPdfPagesToImages(pdfPath, tempDir);
+
+  if (imagePaths.length === 0) {
+    throw new Error("렌더링된 슬라이드 이미지가 없습니다.");
+  }
+
+  imagePaths.forEach((imagePath) => appendImageSlide(pptx, imagePath));
+}
+
+function addHymnTitleSlide(pptx, hymnNumber, korTitle, engTitle) {
+  const layout = getWideLayoutSize();
+  const slide = pptx.addSlide();
+
+  slide.addImage({ path: hymnTitleBgImagePath, x: 0, y: 0, w: layout.width, h: layout.height });
+  slide.addImage({ path: hymnTitleBandImagePath, x: 0, y: 5.767, w: layout.width, h: 1.735 });
+
+  slide.addText("찬", {
+    x: 5.385, y: 2.078, w: 1.0, h: 0.731,
+    fontFace: "Batang", fontSize: 105, bold: true,
+    color: "FFFFFF", align: "center", valign: "mid", margin: 0,
+  });
+  slide.addText("송", {
+    x: 6.720, y: 2.476, w: 1.0, h: 0.731,
+    fontFace: "Batang", fontSize: 105, bold: true,
+    color: "FFFFFF", align: "center", valign: "mid", margin: 0,
+  });
+
+  slide.addShape(pptx.ShapeType.line, {
+    x: 5.127, y: 4.047, w: 3.191, h: 0,
+    line: { color: "FFFFFF", width: 1 },
+  });
+  slide.addShape(pptx.ShapeType.ellipse, {
+    x: 5.10, y: 4.02, w: 0.07, h: 0.07,
+    fill: { color: "FFFFFF" }, line: { color: "FFFFFF", transparency: 100 },
+  });
+  slide.addShape(pptx.ShapeType.ellipse, {
+    x: 8.28, y: 4.02, w: 0.07, h: 0.07,
+    fill: { color: "FFFFFF" }, line: { color: "FFFFFF", transparency: 100 },
+  });
+
+  slide.addText("HYMN", {
+    x: 4.789, y: 4.23, w: 3.757, h: 0.437,
+    fontFace: "Arial", fontSize: 20, bold: true,
+    color: "FFFFFF", align: "center", valign: "mid",
+    charSpace: 8, margin: 0,
+  });
+
+  let titleLine1 = hymnNumber ? `${hymnNumber}.` : "";
+  if (korTitle) titleLine1 += ` ${korTitle}`;
+  const titleParts = [{ text: titleLine1.trim(), options: { breakLine: true } }];
+  if (engTitle) titleParts.push({ text: `(${engTitle})` });
+
+  slide.addText(titleParts, {
+    x: 0, y: 5.82, w: layout.width, h: 1.08,
+    fontFace: "Malgun Gothic", fontSize: 28, bold: true,
+    color: "FFFFFF", align: "center", valign: "mid", margin: 0,
+  });
+}
+
+async function appendSlideDefinitionToDeck(pptx, slideData, tempDirs) {
+  if (slideData.type === "hymn" && slideData.includeTitle) {
+    addHymnTitleSlide(pptx, slideData.hymnNumber, slideData.hymnKorTitle, slideData.hymnEngTitle);
+  }
+
+  if (slideData.sourceType === "upload") {
+    await appendUploadedSlideDeck(pptx, slideData, tempDirs);
+    return;
+  }
+
+  if (slideData.type === "ad") {
+    await appendAdSlide(pptx, slideData);
+    return;
+  }
+
+  await appendSimpleSlide(pptx, slideData);
+}
+
+async function buildCombinedSlidesDeck(slides) {
+  const pptx = new PptxGenJS();
+  pptx.layout = "LAYOUT_WIDE";
+  const tempDirs = [];
+
+  try {
+    for (const rawSlide of slides) {
+      await appendSlideDefinitionToDeck(
+        pptx,
+        sanitizeSlideForTemplate(rawSlide),
+        tempDirs
+      );
+    }
+
+    let buffer = await pptx.write({ outputType: "nodebuffer" });
+    buffer = injectThumbnail(buffer);
+    return buffer;
+  } finally {
+    await Promise.all(
+      tempDirs.map((tempDir) =>
+        fs.rm(tempDir, { recursive: true, force: true })
+      )
+    );
+  }
+}
 
 // Multer Setup
 const storage = multer.diskStorage({
@@ -87,6 +655,130 @@ app.post("/api/slides", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to save slides" });
+  }
+});
+
+app.post("/api/slides/bulk-delete", async (req, res) => {
+  try {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+    const requestSlides = Array.isArray(req.body?.slides) ? req.body.slides : [];
+    if (ids.length === 0) {
+      return res.status(400).json({ error: "No slide ids provided" });
+    }
+
+    const data = JSON.parse((await fs.readFile(slidesPath, "utf-8")) || "[]");
+    const slidesToDelete = data.filter((slide) => ids.includes(slide.id));
+    const requestedAssets = requestSlides
+      .filter((slide) => ids.includes(slide.id))
+      .map(sanitizeSlideForTemplate);
+    const assetTargets = [
+      ...slidesToDelete,
+      ...requestedAssets.filter(
+        (slide) => !slidesToDelete.some((savedSlide) => savedSlide.id === slide.id)
+      ),
+    ];
+
+    await Promise.all(assetTargets.map(deleteSlideAsset));
+
+    const nextSlides = data.filter((slide) => !ids.includes(slide.id));
+    await fs.writeFile(slidesPath, JSON.stringify(nextSlides, null, 2));
+    res.json({ success: true, deleted: slidesToDelete.length });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to delete selected slides" });
+  }
+});
+
+app.get("/api/templates", async (req, res) => {
+  try {
+    res.json(await readTemplates());
+  } catch (err) {
+    res.status(500).json({ error: "Failed to load templates" });
+  }
+});
+
+app.post("/api/templates", async (req, res) => {
+  try {
+    const name = sanitizeTemplateName(req.body?.name);
+    const rawSlides = Array.isArray(req.body?.slides) ? req.body.slides : [];
+
+    if (rawSlides.length === 0) {
+      return res.status(400).json({ error: "No slides provided" });
+    }
+
+    const templates = await readTemplates();
+    const template = {
+      id: createEntityId("template"),
+      name,
+      createdAt: new Date().toISOString(),
+      slideCount: rawSlides.length,
+      slides: await Promise.all(rawSlides.map(cloneSlideForTemplate)),
+    };
+
+    templates.push(template);
+    await writeTemplates(templates);
+    res.json({ success: true, template });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to create template" });
+  }
+});
+
+app.put("/api/templates/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const templates = await readTemplates();
+    const templateIndex = templates.findIndex((template) => template.id === id);
+
+    if (templateIndex === -1) {
+      return res.status(404).json({ error: "Template not found" });
+    }
+
+    const name = sanitizeTemplateName(req.body?.name || templates[templateIndex].name);
+    const rawSlides = Array.isArray(req.body?.slides) ? req.body.slides : [];
+    const nextSlides = rawSlides.map(sanitizeSlideForTemplate);
+    const previousSlides = Array.isArray(templates[templateIndex].slides)
+      ? templates[templateIndex].slides
+      : [];
+    const nextIds = new Set(nextSlides.map((slide) => slide.id));
+    const removedSlides = previousSlides.filter((slide) => !nextIds.has(slide.id));
+
+    await Promise.all(removedSlides.map(deleteSlideAsset));
+
+    const nextTemplate = {
+      ...templates[templateIndex],
+      name,
+      slideCount: nextSlides.length,
+      slides: nextSlides,
+    };
+
+    templates[templateIndex] = nextTemplate;
+    await writeTemplates(templates);
+    res.json({ success: true, template: nextTemplate });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to update template" });
+  }
+});
+
+app.delete("/api/templates/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const templates = await readTemplates();
+    const template = templates.find((entry) => entry.id === id);
+
+    if (!template) {
+      return res.status(404).json({ error: "Template not found" });
+    }
+
+    await Promise.all((template.slides || []).map(deleteSlideAsset));
+
+    const nextTemplates = templates.filter((entry) => entry.id !== id);
+    await writeTemplates(nextTemplates);
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to delete template" });
   }
 });
 
@@ -157,6 +849,13 @@ app.post("/api/upload", upload.single('file'), async (req, res) => {
   });
 });
 
+// Get hymn title by number
+app.get("/api/hymn/title/:number", (req, res) => {
+  const hymn = hymnsData[req.params.number];
+  if (!hymn) return res.status(404).json({ error: "Hymn not found" });
+  res.json(hymn);
+});
+
 // Download Hymn from External Source
 app.post("/api/hymn/download", async (req, res) => {
   try {
@@ -220,18 +919,7 @@ app.delete("/api/slides/:id", async (req, res) => {
 
     // Find slide to check for file deletion
     const slide = data.find(s => s.id === id);
-    if (slide && slide.serverFilePath) {
-      // Try to delete the file
-      try {
-        // serverFilePath is like "/uploads/filename.pptx"
-        // We need absolute path
-        const relativePath = slide.serverFilePath.replace(/^\/uploads\//, '');
-        const absPath = path.join(uploadsDir, relativePath);
-        await fs.unlink(absPath);
-      } catch (e) {
-        console.warn("Failed to delete accompanying file:", e.message);
-      }
-    }
+    await deleteSlideAsset(slide);
 
     const newData = data.filter(s => s.id !== id);
     await fs.writeFile(slidesPath, JSON.stringify(newData, null, 2));
@@ -282,67 +970,16 @@ app.get("/api/pptx", async (req, res) => {
 
 app.post("/api/create-slide-pptx", async (req, res) => {
   try {
-    const { content, font, fontSize, bg, align } = req.body;
-
-    // Create PPTX
     const pptx = new PptxGenJS();
-    pptx.layout = "LAYOUT_WIDE"; // 16:9
-
-    // Define colors based on background selection
-    const bgColor = bg === 'white' ? 'FFFFFF' : '000000';
-    const textColor = bg === 'white' ? '000000' : 'FFFFFF';
-
-    // Clean inputs
-    const safeContent = content || "";
-    const safeFont = font || "Malgun Gothic";
-    const safeFontSize = parseInt(fontSize, 10) || 24;
-    const safeAlign = align || "center";
-    // align map: 'left'|'center'|'right'|'justify'
-
-    const slide = pptx.addSlide();
-    slide.background = { color: bgColor };
-
-    // Determine position based on alignment
-    let yPos = "10%";
-    let valign = "middle";
-
-    if (safeAlign === 'top') {
-      yPos = "5%";
-      valign = "top";
-    }
-
-    // Map horizontal align
-    let hAlign = safeAlign === 'top' ? 'left' : safeAlign;
-
-    slide.addText(safeContent, {
-      x: "5%",
-      y: yPos,
-      w: "90%",
-      h: "80%",
-      fontSize: safeFontSize,
-      fontFace: safeFont,
-      color: textColor,
-      align: hAlign,
-      valign: valign,
-      wrap: true,
-      autoFit: false
-    });
-
+    pptx.layout = "LAYOUT_WIDE";
+    await appendSimpleSlide(pptx, req.body);
     let buffer = await pptx.write({ outputType: "nodebuffer" });
-    buffer = injectThumbnail(buffer); // Inject thumbnail
+    buffer = injectThumbnail(buffer);
     const filename = `slide_${Date.now()}.pptx`;
     const asciiFilename = sanitizeAsciiFilename(filename);
-
-    res.setHeader(
-      "Content-Type",
-      "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-    );
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="${asciiFilename}"`
-    );
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
+    res.setHeader("Content-Disposition", `attachment; filename="${asciiFilename}"`);
     return res.send(buffer);
-
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -350,125 +987,52 @@ app.post("/api/create-slide-pptx", async (req, res) => {
 
 app.post("/api/create-ad-slide-pptx", async (req, res) => {
   try {
-    const { content, font, fontSize, bg, align, adTitle, adTitleSize, adTitleAlign, adBgSource, adBgImagePath, adBgImageUrl, adBgOpacity } = req.body;
-
-    // Create PPTX
     const pptx = new PptxGenJS();
-    pptx.layout = "LAYOUT_WIDE"; // 16:9
-
-    const slide = pptx.addSlide();
-
-    // Background image handling
-    if (adBgSource === 'file' && adBgImagePath) {
-      const imagePath = path.join(__dirname, adBgImagePath);
-      const imageBuffer = await fs.readFile(imagePath);
-      const imageData = imageBuffer.toString('base64');
-      const ext = path.extname(adBgImagePath).toLowerCase();
-      const mimeType = ext === '.png' ? 'image/png' : 'image/jpeg';
-
-      slide.addImage({
-        data: `data:${mimeType};base64,${imageData}`,
-        x: 0,
-        y: 0,
-        w: '100%',
-        h: '100%'
-      });
-    } else if (adBgSource === 'url' && adBgImageUrl) {
-      // Fetch URL with timeout
-      const imageData = await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('URL fetch timeout')), 10000);
-        const protocol = adBgImageUrl.startsWith('https') ? https : http;
-
-        protocol.get(adBgImageUrl, (response) => {
-          const chunks = [];
-          response.on('data', chunk => chunks.push(chunk));
-          response.on('end', () => {
-            clearTimeout(timeout);
-            resolve(Buffer.concat(chunks).toString('base64'));
-          });
-        }).on('error', (e) => {
-          clearTimeout(timeout);
-          reject(e);
-        });
-      });
-
-      slide.addImage({
-        data: `data:image/jpeg;base64,${imageData}`,
-        x: 0,
-        y: 0,
-        w: '100%',
-        h: '100%'
-      });
-    } else {
-      // No background image - use solid color
-      const bgColor = bg === 'white' ? 'FFFFFF' : '000000';
-      slide.background = { color: bgColor };
-    }
-
-    // Overlay
-    slide.addShape(pptx.ShapeType.rect, {
-      x: 0,
-      y: 0,
-      w: '100%',
-      h: '100%',
-      fill: {
-        color: '000000',
-        transparency: 100 - adBgOpacity
-      },
-      line: { color: '000000', transparency: 100 }
-    });
-
-    // Title
-    if (adTitle) {
-      const titleSizeMap = { large: 60, medium: 40, small: 24 };
-      const titleSize = titleSizeMap[adTitleSize] || 40;
-      const textColor = bg === 'white' ? '000000' : 'FFFFFF';
-
-      slide.addText(adTitle, {
-        x: '5%',
-        y: '5%',
-        w: '90%',
-        h: '15%',
-        fontSize: titleSize,
-        bold: true,
-        color: textColor,
-        align: adTitleAlign || 'center',
-        valign: 'top'
-      });
-    }
-
-    // Content
-    const textColor = bg === 'white' ? '000000' : 'FFFFFF';
-    const safeContent = content || "";
-    const safeFont = font || "Malgun Gothic";
-    const safeFontSize = parseInt(fontSize, 10) || 24;
-    const safeAlign = align || "center";
-
-    slide.addText(safeContent, {
-      x: '5%',
-      y: '25%',
-      w: '90%',
-      h: '65%',
-      fontSize: safeFontSize,
-      fontFace: safeFont,
-      color: textColor,
-      align: safeAlign,
-      valign: 'middle',
-      wrap: true
-    });
-
+    pptx.layout = "LAYOUT_WIDE";
+    await appendAdSlide(pptx, req.body);
     let buffer = await pptx.write({ outputType: "nodebuffer" });
     buffer = injectThumbnail(buffer);
     const filename = `ad_slide_${Date.now()}.pptx`;
     const asciiFilename = sanitizeAsciiFilename(filename);
-
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
     res.setHeader("Content-Disposition", `attachment; filename="${asciiFilename}"`);
     return res.send(buffer);
-
   } catch (err) {
     console.error("Ad slide PPTX generation error:", err);
     return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/slides/export-pptx", async (req, res) => {
+  try {
+    const rawSlides = Array.isArray(req.body?.slides) ? req.body.slides : [];
+    if (rawSlides.length === 0) {
+      return res.status(400).json({ error: "No slides provided" });
+    }
+
+    const buffer = await buildCombinedSlidesDeck(rawSlides);
+    const filename = sanitizeFilename(
+      `selected_slides_${rawSlides.length}_${Date.now()}.pptx`
+    );
+    const asciiFilename = sanitizeAsciiFilename(filename);
+    const encodedFilename = encodeURIComponent(filename);
+
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    );
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`
+    );
+    return res.send(buffer);
+  } catch (err) {
+    console.error("Selected slides export error:", err);
+    return res.status(500).json({
+      error:
+        err?.message ||
+        "선택한 슬라이드를 하나의 PPTX로 묶는 중 오류가 발생했습니다.",
+    });
   }
 });
 
@@ -495,6 +1059,177 @@ app.post("/api/pptx", async (req, res) => {
     return res.send(buffer);
   } catch (err) {
     return res.status(err.statusCode || 502).json({ error: err.message });
+  }
+});
+
+app.post("/api/scripture/web-view-session", async (req, res) => {
+  try {
+    const payload = await getVersePayload(req.body);
+    const theme = resolvePptxTheme(req.body);
+    const sessionId = createScriptureWebViewSession(
+      buildScriptureWebViewPayload(payload, theme, req.body)
+    );
+
+    return res.json({ success: true, sessionId });
+  } catch (err) {
+    return res.status(err.statusCode || 502).json({ error: err.message });
+  }
+});
+
+app.get("/api/scripture/web-view-session/:sessionId", async (req, res) => {
+  await cleanupScriptureSessions();
+  const entry = scriptureSessions.get(req.params.sessionId);
+
+  if (!entry || !entry.payload) {
+    return res.status(404).json({ error: "Web View 세션을 찾을 수 없습니다." });
+  }
+
+  return res.json(entry.payload);
+});
+
+app.post("/api/scripture/pptx-preview-session", async (req, res) => {
+  try {
+    const payload = await getVersePayload(req.body);
+    const theme = resolvePptxTheme(req.body);
+    const pptx = buildPptx(payload, theme);
+    let buffer = await pptx.write({ outputType: "nodebuffer" });
+    buffer = injectThumbnail(buffer);
+
+    const filename = buildPptxFilename(req.body, payload);
+    const previewFilename = `preview-${Date.now()}-${sanitizeFilename(filename)}`;
+    const filePath = path.join(uploadsDir, previewFilename);
+    await fs.writeFile(filePath, buffer);
+    const renderDir = await fs.mkdtemp(path.join(os.tmpdir(), "samil-preview-"));
+    const pdfPath = await convertPresentationToPdf(filePath, renderDir);
+    const imagePaths = await renderPdfPagesToImages(pdfPath, renderDir);
+
+    const sessionId = createScripturePptxPreviewSession(
+      {
+        title: buildScriptureReferenceText(payload.meta, req.body),
+        filename,
+      },
+      filePath,
+      previewFilename,
+      renderDir,
+      imagePaths
+    );
+
+    return res.json({ success: true, sessionId });
+  } catch (err) {
+    return res.status(err.statusCode || 502).json({ error: err.message });
+  }
+});
+
+app.get("/api/scripture/pptx-preview-session/:sessionId", async (req, res) => {
+  await cleanupScriptureSessions();
+  const entry = scriptureSessions.get(req.params.sessionId);
+
+  if (!entry || !entry.filePath) {
+    return res.status(404).json({ error: "PPTX Preview 세션을 찾을 수 없습니다." });
+  }
+
+  return res.json({
+    title: entry.payload?.title || "PPTX Preview",
+    filename: entry.payload?.filename || entry.filename,
+    slideCount: Array.isArray(entry.imagePaths) ? entry.imagePaths.length : 0,
+    slides: Array.isArray(entry.imagePaths)
+      ? entry.imagePaths.map((_, index) =>
+          `/api/scripture/pptx-preview-image/${encodeURIComponent(
+            req.params.sessionId
+          )}/${index}`
+        )
+      : [],
+    downloadUrl: `/api/scripture/pptx-preview-file/${encodeURIComponent(
+      req.params.sessionId
+    )}?download=1`,
+  });
+});
+
+app.get("/api/scripture/pptx-preview-file/:sessionId", async (req, res) => {
+  await cleanupScriptureSessions();
+  const entry = scriptureSessions.get(req.params.sessionId);
+
+  if (!entry || !entry.filePath) {
+    return res.status(404).json({ error: "PPTX Preview 파일을 찾을 수 없습니다." });
+  }
+
+  const downloadName = entry.payload?.filename || entry.filename || "preview.pptx";
+  const asciiFilename = sanitizeAsciiFilename(downloadName);
+  const encodedFilename = encodeURIComponent(downloadName);
+
+  res.setHeader(
+    "Content-Type",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+  );
+  res.setHeader(
+    "Content-Disposition",
+    `${req.query.download === "1" ? "attachment" : "inline"}; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`
+  );
+
+  return res.sendFile(entry.filePath);
+});
+
+app.get("/api/scripture/pptx-preview-image/:sessionId/:index", async (req, res) => {
+  await cleanupScriptureSessions();
+  const entry = scriptureSessions.get(req.params.sessionId);
+  const index = Number.parseInt(req.params.index, 10);
+
+  if (!entry || !Array.isArray(entry.imagePaths) || !Number.isInteger(index)) {
+    return res.status(404).json({ error: "PPTX Preview 이미지를 찾을 수 없습니다." });
+  }
+
+  const imagePath = entry.imagePaths[index];
+  if (!imagePath) {
+    return res.status(404).json({ error: "PPTX Preview 이미지를 찾을 수 없습니다." });
+  }
+
+  return res.sendFile(imagePath);
+});
+
+app.post("/api/scripture/export-slide", async (req, res) => {
+  try {
+    const requestedName = (req.body?.slideName || "").trim();
+    if (!requestedName) {
+      return res.status(400).json({ error: "슬라이드 제목이 필요합니다." });
+    }
+
+    const includeTitleSlide =
+      req.body?.includeTitleSlide === true ||
+      req.body?.includeTitleSlide === "true";
+    const titleSlideType = req.body?.titleSlideType || "말씀";
+    const payload = await getVersePayload(req.body);
+    const theme = resolvePptxTheme(req.body);
+    const savedSlides = JSON.parse((await fs.readFile(slidesPath, "utf-8")) || "[]");
+    const finalSlideName = buildUniqueSlideName(requestedName, savedSlides);
+    const originalFilename = sanitizeFilename(`${finalSlideName}.pptx`);
+    const serverFilename = `${Date.now()}-${originalFilename}`;
+    const outputPath = path.join(uploadsDir, serverFilename);
+    const pptx = buildPptx(payload, theme, {
+      includeTitleSlide,
+      titleSlideType,
+      referenceText: buildScriptureReferenceText(payload.meta, req.body),
+    });
+
+    let buffer = await pptx.write({ outputType: "nodebuffer" });
+    buffer = injectThumbnail(buffer);
+    await fs.writeFile(outputPath, buffer);
+
+    const thumbnail = await extractThumbnail(outputPath, uploadsDir);
+    const slideRecord = buildUploadSlideRecord({
+      slideName: finalSlideName,
+      serverFilename,
+      originalFilename,
+      thumbnail,
+    });
+
+    savedSlides.push(slideRecord);
+    await fs.writeFile(slidesPath, JSON.stringify(savedSlides, null, 2));
+
+    return res.json({ success: true, slide: slideRecord });
+  } catch (err) {
+    return res.status(err.statusCode || 502).json({
+      error: err.message || "PPT 생성기 export 중 오류가 발생했습니다.",
+    });
   }
 });
 
@@ -677,10 +1412,7 @@ function buildPptxFilename(query, payload) {
   return sanitizeFilename(raw);
 }
 
-function buildPptx(payload, theme) {
-  const pptx = new PptxGenJS();
-  pptx.layout = "LAYOUT_WIDE";
-
+function buildScriptureLayout() {
   const layout = {
     width: 13.333,
     height: 7.5,
@@ -694,6 +1426,93 @@ function buildPptx(payload, theme) {
     h: layout.height - layout.marginY * 2,
   };
 
+  return { layout, safe };
+}
+
+function titleCaseWords(value) {
+  return (value || "")
+    .split(/[\s-]+/)
+    .filter(Boolean)
+    .map((part) =>
+      /^\d+$/.test(part)
+        ? part
+        : `${part.charAt(0).toUpperCase()}${part.slice(1).toLowerCase()}`
+    )
+    .join(" ");
+}
+
+function buildEnglishBookName(bookEntry) {
+  if (!bookEntry) {
+    return "Scripture";
+  }
+
+  const slug = bookEntry.slugEn || bookEntry.abbrEn || bookEntry.name || "Scripture";
+  return titleCaseWords(slug.replace(/_/g, "-"));
+}
+
+function buildScriptureReferenceText(meta, input) {
+  if (!meta?.bookEntry || !meta?.chapterNum) {
+    return "성경말씀";
+  }
+
+  const start = input?.start ? String(input.start).trim() : "";
+  const end = input?.end ? String(input.end).trim() : "";
+  const verseRange =
+    start && end ? `${start}-${end}` : start || end ? start || end : "";
+  const suffix = verseRange ? `${meta.chapterNum}:${verseRange}` : `${meta.chapterNum}`;
+
+  return `${meta.bookEntry.name} (${buildEnglishBookName(meta.bookEntry)}) ${suffix}`;
+}
+
+function buildUniqueSlideName(name, existingSlides) {
+  const baseName = (name || "").trim() || "성경말씀";
+  const existingNames = new Set(
+    (existingSlides || []).map((slide) => (slide?.name || "").trim()).filter(Boolean)
+  );
+
+  if (!existingNames.has(baseName)) {
+    return baseName;
+  }
+
+  let counter = 2;
+  while (existingNames.has(`${baseName} (${counter})`)) {
+    counter += 1;
+  }
+  return `${baseName} (${counter})`;
+}
+
+function buildUploadSlideRecord({
+  slideName,
+  serverFilename,
+  originalFilename,
+  thumbnail,
+}) {
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    name: slideName,
+    type: "simple",
+    sourceType: "upload",
+    content: "",
+    font: "Malgun Gothic",
+    fontSize: "40",
+    bg: "black",
+    align: "center",
+    file: null,
+    fileData: null,
+    fileName: originalFilename,
+    fileSaved: true,
+    saved: true,
+    serverFilePath: `/uploads/${serverFilename}`,
+    thumbnail,
+  };
+}
+
+function buildPptx(payload, theme, options = {}) {
+  const pptx = new PptxGenJS();
+  pptx.layout = "LAYOUT_WIDE";
+
+  const { layout, safe } = buildScriptureLayout();
+
   const linesByLang = payload.lines;
   const hasKo = Array.isArray(linesByLang.ko);
   const hasEn = Array.isArray(linesByLang.en);
@@ -703,6 +1522,14 @@ function buildPptx(payload, theme) {
   );
   const labelBox = buildLabelBox(safe, layout);
   const slideTheme = theme || getPptxTheme("dark");
+
+  if (options.includeTitleSlide) {
+    if (options.titleSlideType === "봉독") {
+      addScriptureBongdokTitleSlide(pptx, payload, layout, options.referenceText);
+    } else {
+      addScriptureTitleSlide(pptx, payload, layout, options.referenceText);
+    }
+  }
 
   if (hasKo && hasEn) {
     addBothSlides(pptx, linesByLang, safe, labelBox, labelText, slideTheme, layout);
@@ -841,6 +1668,301 @@ function addBothSlides(pptx, linesByLang, safe, labelBox, labelText, theme, layo
       });
     }
   });
+}
+
+function addScriptureTitleSlide(pptx, payload, layout, referenceText) {
+  const slide = pptx.addSlide();
+  const titleRef = referenceText || buildScriptureReferenceText(payload.meta, {});
+
+  slide.background = { color: "101114" };
+  slide.addImage({
+    path: scriptureTitleTopImagePath,
+    x: 0,
+    y: 0,
+    w: layout.width,
+    h: layout.height,
+  });
+  slide.addImage({
+    path: scriptureTitleBottomImagePath,
+    x: 0,
+    y: 5.767,
+    w: layout.width,
+    h: 1.735,
+  });
+
+  const titleLetters = [
+    { text: "성", x: 4.28, y: 2.29 },
+    { text: "경", x: 5.41, y: 2.74 },
+    { text: "말", x: 6.57, y: 2.29 },
+    { text: "씀", x: 7.74, y: 2.74 },
+  ];
+
+  titleLetters.forEach((item) => {
+    slide.addText(item.text, {
+      x: item.x,
+      y: item.y,
+      w: 1.0,
+      h: 0.72,
+      fontFace: "Batang",
+      fontSize: 96,
+      bold: true,
+      color: "FFFFFF",
+      align: "center",
+      valign: "mid",
+      margin: 0,
+      shadow: { type: "outer", color: "000000", opacity: 0.4, blur: 5, offset: 0, angle: 0 },
+    });
+  });
+
+  slide.addShape(pptx.ShapeType.line, {
+    x: 5.03,
+    y: 4.05,
+    w: 3.27,
+    h: 0,
+    line: { color: "FFFFFF", width: 1 },
+  });
+  slide.addShape(pptx.ShapeType.ellipse, {
+    x: 5.01,
+    y: 4.02,
+    w: 0.07,
+    h: 0.07,
+    line: { color: "FFFFFF", transparency: 100 },
+    fill: { color: "FFFFFF" },
+  });
+  slide.addShape(pptx.ShapeType.ellipse, {
+    x: 8.25,
+    y: 4.02,
+    w: 0.07,
+    h: 0.07,
+    line: { color: "FFFFFF", transparency: 100 },
+    fill: { color: "FFFFFF" },
+  });
+
+  slide.addText("SCRIPTURES", {
+    x: 3.1,
+    y: 4.18,
+    w: 7.15,
+    h: 0.38,
+    fontFace: "Arial",
+    fontSize: 16,
+    bold: true,
+    color: "FFFFFF",
+    align: "center",
+    valign: "mid",
+    charSpace: 3,
+    margin: 0,
+  });
+
+  slide.addText(titleRef, {
+    x: 0,
+    y: 5.80,
+    w: layout.width,
+    h: 1.74,
+    fontFace: "Malgun Gothic",
+    fontSize: 32,
+    bold: true,
+    color: "FFFFFF",
+    align: "center",
+    valign: "mid",
+    margin: 0,
+  });
+}
+
+function addScriptureBongdokTitleSlide(pptx, payload, layout, referenceText) {
+  const slide = pptx.addSlide();
+  const titleRef = referenceText || buildScriptureReferenceText(payload.meta, {});
+
+  slide.background = { color: "101114" };
+  slide.addImage({
+    path: scriptureTitleTopImagePath,
+    x: 0,
+    y: 0,
+    w: layout.width,
+    h: layout.height,
+  });
+  slide.addImage({
+    path: scriptureTitleBottomImagePath,
+    x: 0,
+    y: 5.767,
+    w: layout.width,
+    h: 1.735,
+  });
+
+  // Exact slide-coordinate positions derived from original XML group transforms
+  const titleLetters = [
+    { text: "성", x: 4.4441, y: 2.4016 },
+    { text: "경", x: 5.5428, y: 2.8333 },
+    { text: "봉", x: 6.7211, y: 2.3200 },
+    { text: "독", x: 7.8865, y: 2.7552 },
+  ];
+
+  titleLetters.forEach((item) => {
+    slide.addText(item.text, {
+      x: item.x,
+      y: item.y,
+      w: 1.0027,
+      h: 0.7312,
+      fontFace: "Batang",
+      fontSize: 100,
+      bold: true,
+      color: "FFFFFF",
+      align: "center",
+      valign: "mid",
+      margin: 0,
+      shadow: { type: "outer", color: "000000", opacity: 0.4, blur: 5, offset: 0, angle: 0 },
+    });
+  });
+
+  // Decorative line + endpoint dots (exact coords from group transform)
+  slide.addShape(pptx.ShapeType.line, {
+    x: 4.1516,
+    y: 4.1235,
+    w: 4.9788,
+    h: 0,
+    line: { color: "FFFFFF", width: 1.5 },
+  });
+  slide.addShape(pptx.ShapeType.ellipse, {
+    x: 4.1404,
+    y: 4.0923,
+    w: 0.0625,
+    h: 0.0625,
+    line: { color: "FFFFFF", transparency: 100 },
+    fill: { color: "FFFFFF" },
+  });
+  slide.addShape(pptx.ShapeType.ellipse, {
+    x: 9.1304,
+    y: 4.0923,
+    w: 0.0625,
+    h: 0.0625,
+    line: { color: "FFFFFF", transparency: 100 },
+    fill: { color: "FFFFFF" },
+  });
+
+  // Note: charSpacing (not charSpace) is the correct PptxGenJS parameter for letter spacing
+  slide.addText("SCRIPTURE READING", {
+    x: 3.7384,
+    y: 4.3074,
+    w: 5.8565,
+    h: 0.4376,
+    fontFace: "Arial",
+    fontSize: 20,
+    bold: true,
+    color: "FFFFFF",
+    align: "center",
+    valign: "mid",
+    charSpacing: 8,
+    margin: 0,
+  });
+
+  slide.addText(titleRef, {
+    x: 0,
+    y: 5.80,
+    w: layout.width,
+    h: 1.74,
+    fontFace: "Malgun Gothic",
+    fontSize: 32,
+    bold: true,
+    color: "FFFFFF",
+    align: "center",
+    valign: "mid",
+    margin: 0,
+  });
+}
+
+function buildScriptureWebViewPayload(payload, theme, input) {
+  const { layout, safe } = buildScriptureLayout();
+  const linesByLang = payload.lines;
+  const hasKo = Array.isArray(linesByLang.ko);
+  const hasEn = Array.isArray(linesByLang.en);
+  const labelText = buildSlideLabel(
+    payload.meta,
+    hasKo && !hasEn ? "ko" : hasEn && !hasKo ? "en" : "both"
+  );
+  const slides = [];
+  const slideTheme = theme || getPptxTheme("dark");
+
+  if (hasKo && hasEn) {
+    const koEntries = toEntries(linesByLang.ko || []);
+    const enEntries = toEntries(linesByLang.en || []);
+    const koMap = new Map(
+      koEntries.filter((entry) => entry.num !== null).map((entry) => [entry.num, entry.line])
+    );
+    const enMap = new Map(
+      enEntries.filter((entry) => entry.num !== null).map((entry) => [entry.num, entry.line])
+    );
+    const orderedNums = koEntries.length
+      ? koEntries.filter((entry) => entry.num !== null).map((entry) => entry.num)
+      : enEntries.filter((entry) => entry.num !== null).map((entry) => entry.num);
+
+    const topHeight = safe.h * 0.62;
+    const gap = safe.h * 0.04;
+    const bottomHeight = safe.h - topHeight - gap;
+    const topBox = { x: safe.x, y: safe.y, w: safe.w, h: topHeight };
+    const bottomBox = {
+      x: safe.x,
+      y: safe.y + topHeight + gap,
+      w: safe.w,
+      h: bottomHeight,
+    };
+    const enConfig = { ...getLanguageConfig("en"), maxFontSize: 36 };
+    const koConfig = getLanguageConfig("ko");
+
+    orderedNums.forEach((num) => {
+      const koText = koMap.get(num) || "";
+      const enText = enMap.get(num) || "";
+      const fittedKo = koText
+        ? fitText(insertWordJoiner(koText), topBox, koConfig)
+        : { text: "", fontSize: koConfig.maxFontSize };
+      const fittedEn = enText
+        ? fitText(enText, bottomBox, enConfig)
+        : { text: "", fontSize: enConfig.maxFontSize };
+
+      slides.push({
+        kind: "bilingual",
+        labelText,
+        koText: fittedKo.text,
+        koFontSize: fittedKo.fontSize,
+        enText: fittedEn.text,
+        enFontSize: fittedEn.fontSize,
+      });
+    });
+  } else {
+    const lang = hasEn ? "en" : "ko";
+    const config = getLanguageConfig(lang);
+    const entries = toEntries(linesByLang[lang] || []);
+    const textBlocks = entries.length ? entries.map((entry) => entry.line) : linesByLang[lang] || [];
+
+    textBlocks.forEach((text) => {
+      const processedText = lang === "ko" ? insertWordJoiner(text) : text;
+      fitTextToSlides(processedText, safe, config).forEach((slideItem) => {
+        slides.push({
+          kind: "single",
+          labelText,
+          lang,
+          text: slideItem.text,
+          fontSize: slideItem.fontSize,
+        });
+      });
+    });
+  }
+
+  return {
+    title: buildScriptureReferenceText(payload.meta, input),
+    slideCount: slides.length,
+    theme: {
+      id: slideTheme.id || "dark",
+      bgColor: slideTheme.bgColor || "000000",
+      textColor: slideTheme.textColor || "FFFFFF",
+      labelColor: slideTheme.labelColor || "EDEDED",
+      bgImageData: slideTheme.bgImageData || null,
+      overlayColor: slideTheme.overlayColor || null,
+      overlayTransparency:
+        typeof slideTheme.overlayTransparency === "number"
+          ? slideTheme.overlayTransparency
+          : null,
+    },
+    slides,
+  };
 }
 
 function getLanguageConfig(lang) {

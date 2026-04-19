@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Scripture Web View</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Work+Sans:wght@400;500;600;700&display=swap"
+    rel="stylesheet" />
+  <link rel="stylesheet" href="/scripture-web-view.css" />
+</head>
+
+<body>
+  <main class="webview-shell">
+    <header class="webview-topbar">
+      <div>
+        <p class="eyebrow">Web View</p>
+        <h1 id="deckTitle">성경말씀</h1>
+      </div>
+      <div class="topbar-actions">
+        <button id="prevBtn" type="button" class="nav-btn">이전</button>
+        <span id="slideCounter" class="slide-counter">0 / 0</span>
+        <button id="nextBtn" type="button" class="nav-btn">다음</button>
+      </div>
+    </header>
+
+    <section class="stage-shell">
+      <div id="stageViewport" class="stage-viewport">
+        <div id="stageCanvas" class="stage-canvas"></div>
+      </div>
+    </section>
+  </main>
+
+  <template id="singleSlideTemplate">
+    <section class="slide-frame">
+      <div class="slide-bg"></div>
+      <div class="slide-overlay"></div>
+      <div class="slide-label"></div>
+      <div class="slide-text slide-text-single"></div>
+    </section>
+  </template>
+
+  <template id="bilingualSlideTemplate">
+    <section class="slide-frame">
+      <div class="slide-bg"></div>
+      <div class="slide-overlay"></div>
+      <div class="slide-label"></div>
+      <div class="slide-text slide-text-ko"></div>
+      <div class="slide-text slide-text-en"></div>
+    </section>
+  </template>
+
+  <script src="/scripture-web-view.js"></script>
+</body>
+
+</html>

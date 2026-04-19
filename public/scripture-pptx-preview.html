@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PPTX Preview</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Work+Sans:wght@400;500;600;700&display=swap"
+    rel="stylesheet" />
+  <link rel="stylesheet" href="/scripture-pptx-preview.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/meshesha/PPTXjs@latest/css/pptxjs.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/meshesha/PPTXjs@latest/css/nv.d3.min.css" />
+</head>
+
+<body>
+  <main class="preview-shell">
+    <header class="preview-topbar">
+      <div>
+        <p class="eyebrow">PPTX Preview</p>
+        <h1 id="deckTitle">PPTX Preview</h1>
+        <p id="deckFilename" class="filename"></p>
+      </div>
+      <div class="toolbar">
+        <a id="downloadLink" class="download-link" href="#" target="_blank" rel="noopener">
+          이 파일 다운로드
+        </a>
+        <button id="prevBtn" type="button" class="nav-btn">이전</button>
+        <span id="slideCounter" class="slide-counter">0 / 0</span>
+        <button id="nextBtn" type="button" class="nav-btn">다음</button>
+      </div>
+    </header>
+
+    <section class="preview-stage-shell">
+      <div id="previewStage" class="preview-stage">
+        <div id="stateMessage" class="state-message"></div>
+        <img id="slideImage" class="slide-image" alt="PPTX slide preview" />
+      </div>
+    </section>
+  </main>
+
+  <script src="/scripture-pptx-preview.js"></script>
+</body>
+
+</html>

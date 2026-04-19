@@ -7,9 +7,11 @@
     "start": "node server.js"
   },
   "dependencies": {
+    "@napi-rs/canvas": "^0.1.80",
     "adm-zip": "^0.5.16",
     "express": "^4.19.2",
     "multer": "^2.0.2",
+    "pdfjs-dist": "^4.10.38",
     "pptxgenjs": "^4.0.1"
   }
 }

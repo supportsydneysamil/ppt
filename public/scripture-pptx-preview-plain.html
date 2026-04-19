@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PPTX Preview 2</title>
+  <link rel="stylesheet" href="/scripture-pptx-preview-plain.css" />
+</head>
+
+<body>
+  <main class="plain-shell">
+    <button id="leftHotspot" class="edge-hotspot edge-left" type="button" aria-label="이전 슬라이드">
+      <span class="edge-arrow">‹</span>
+    </button>
+    <img id="slideImage" class="plain-slide-image" alt="PPTX slide preview" />
+    <button id="rightHotspot" class="edge-hotspot edge-right" type="button" aria-label="다음 슬라이드">
+      <span class="edge-arrow">›</span>
+    </button>
+    <div id="stateMessage" class="plain-state-message"></div>
+    <div id="slideIndicator" class="slide-indicator">0 / 0</div>
+  </main>
+
+  <script src="/scripture-pptx-preview-plain.js"></script>
+</body>
+
+</html>

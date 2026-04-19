@@ -1,0 +1,203 @@
+:root {
+  --bg: #08101a;
+  --panel: rgba(9, 16, 28, 0.88);
+  --panel-border: rgba(255, 255, 255, 0.1);
+  --ink: #f6f1e6;
+  --muted: rgba(246, 241, 230, 0.72);
+  --accent: #d8b26a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: "Work Sans", "Apple SD Gothic Neo", sans-serif;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at top, rgba(88, 113, 161, 0.18), transparent 38%),
+    linear-gradient(180deg, #08101a 0%, #04070d 100%);
+}
+
+.webview-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 24px;
+  padding: 24px;
+}
+
+.webview-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 24px;
+  border: 1px solid var(--panel-border);
+  border-radius: 24px;
+  background: var(--panel);
+  backdrop-filter: blur(16px);
+}
+
+.eyebrow {
+  margin: 0 0 6px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.webview-topbar h1 {
+  margin: 0;
+  font-family: "Fraunces", serif;
+  font-size: clamp(24px, 3vw, 38px);
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.nav-btn {
+  border: 1px solid var(--panel-border);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 10px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.nav-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.slide-counter {
+  min-width: 80px;
+  text-align: center;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.stage-shell {
+  min-height: 0;
+  display: grid;
+}
+
+.stage-viewport {
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: 30px;
+  background: rgba(6, 10, 18, 0.76);
+  overflow: hidden;
+}
+
+.stage-canvas {
+  width: 1333px;
+  height: 750px;
+  position: relative;
+  transform-origin: top left;
+  box-shadow: 0 26px 80px rgba(0, 0, 0, 0.42);
+}
+
+.slide-frame {
+  width: 1333px;
+  height: 750px;
+  position: relative;
+  overflow: hidden;
+  background: #000;
+}
+
+.slide-bg,
+.slide-overlay {
+  position: absolute;
+  inset: 0;
+}
+
+.slide-bg {
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+.slide-overlay {
+  pointer-events: none;
+}
+
+.slide-label {
+  position: absolute;
+  left: 48px;
+  top: 14px;
+  max-width: 360px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.01em;
+}
+
+.slide-text {
+  position: absolute;
+  white-space: pre-wrap;
+  word-break: keep-all;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.slide-text-single {
+  left: 80px;
+  top: 45px;
+  width: 1173px;
+  height: 662px;
+}
+
+.slide-text-ko {
+  left: 80px;
+  top: 45px;
+  width: 1173px;
+  height: 393px;
+}
+
+.slide-text-en {
+  left: 80px;
+  top: 463px;
+  width: 1173px;
+  height: 216px;
+}
+
+.state-message {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  font-size: 18px;
+}
+
+@media (max-width: 900px) {
+  .webview-shell {
+    padding: 16px;
+  }
+
+  .webview-topbar {
+    padding: 18px;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .topbar-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
