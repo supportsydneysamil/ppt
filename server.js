@@ -28,11 +28,22 @@ const BUNDLED_NODE_MODULES = path.join(
   "node_modules"
 );
 const BASE_URLS = {
-  ko: "https://biblics.com/ko/성경",
-  en: "https://biblics.com/en/bible/new-international-version",
+  ko: "https://www.bskorea.or.kr/bible/korbibReadpage.php",
+  en: "https://bible-api.com",
 };
 
 const KO_TRANSLATIONS = new Set(["새번역", "개역한글", "현대인의-성경"]);
+
+// 대한성서공회(bskorea.or.kr) version codes. "현대인의-성경" has no
+// equivalent there (it's a different publisher), so it's intentionally absent.
+const BSKOREA_VERSION_CODES = {
+  "새번역": "SAENEW",
+  "개역한글": "HAN",
+};
+
+// NIV is copyrighted (Biblica) and unavailable through any free API, so
+// bible-api.com's public-domain translations are offered instead.
+const EN_TRANSLATIONS = new Set(["web", "kjv"]);
 
 const booksPath = path.join(__dirname, "data", "books.json");
 const slidesPath = path.join(__dirname, "data", "slides.json");
@@ -1238,18 +1249,42 @@ function buildUrl(
   testamentEntry,
   bookEntry,
   chapterNum,
-  koVersion
+  koVersion,
+  enVersion
 ) {
   if (language === "en") {
-    return `${BASE_URLS.en}/${encodeURIComponent(
-      testamentEntry.slugEn
-    )}/${encodeURIComponent(bookEntry.slugEn)}/${chapterNum}`;
+    const translation = enVersion || "web";
+    if (!EN_TRANSLATIONS.has(translation)) {
+      const err = new Error(`unsupported en translation source: ${translation}`);
+      err.statusCode = 501;
+      throw err;
+    }
+    // bible-api.com resolves book names loosely, so a hyphenated slug
+    // like "1-corinthians" or "song-of-solomon" just needs real spaces.
+    const bookQuery = bookEntry.slugEn.replace(/-/g, " ");
+    const reference = encodeURIComponent(`${bookQuery} ${chapterNum}`);
+    return `${BASE_URLS.en}/${reference}?translation=${translation}`;
   }
 
   const version = koVersion || "새번역";
-  return `${BASE_URLS.ko}/${encodeURIComponent(version)}/${encodeURIComponent(
-    testamentEntry.slugKo
-  )}/${encodeURIComponent(bookEntry.slugKo)}/${chapterNum}`;
+  const versionCode = BSKOREA_VERSION_CODES[version];
+  if (!versionCode) {
+    const err = new Error(`unsupported ko translation source: ${version}`);
+    err.statusCode = 501;
+    throw err;
+  }
+  if (!bookEntry.bskoreaCode) {
+    const err = new Error(`missing bskorea book code for ${bookEntry.name}`);
+    err.statusCode = 500;
+    throw err;
+  }
+
+  const params = new URLSearchParams({
+    version: versionCode,
+    book: bookEntry.bskoreaCode,
+    chap: String(chapterNum),
+  });
+  return `${BASE_URLS.ko}?${params.toString()}`;
 }
 
 function normalizeLanguages(raw) {
@@ -1279,8 +1314,21 @@ function normalizeKoVersion(value) {
   throw err;
 }
 
+function normalizeEnVersion(value) {
+  if (!value) {
+    return "web";
+  }
+  const normalized = value.toLowerCase();
+  if (EN_TRANSLATIONS.has(normalized)) {
+    return normalized;
+  }
+  const err = new Error("invalid en translation");
+  err.statusCode = 400;
+  throw err;
+}
+
 async function getVersePayload(query) {
-  const { testament, book, chapter, start, end, lang, koVersion } = query;
+  const { testament, book, chapter, start, end, lang, koVersion, enVersion } = query;
   if (!testament || !book || !chapter) {
     const err = new Error("testament, book, chapter are required");
     err.statusCode = 400;
@@ -1337,6 +1385,9 @@ async function getVersePayload(query) {
   const normalizedKoVersion = languages.includes("ko")
     ? normalizeKoVersion(koVersion)
     : null;
+  const normalizedEnVersion = languages.includes("en")
+    ? normalizeEnVersion(enVersion)
+    : null;
 
   try {
     const results = await Promise.all(
@@ -1346,7 +1397,8 @@ async function getVersePayload(query) {
           testamentEntry,
           bookEntry,
           chapterNum,
-          normalizedKoVersion
+          normalizedKoVersion,
+          normalizedEnVersion
         );
         const resp = await fetch(url, {
           headers: {
@@ -1360,8 +1412,14 @@ async function getVersePayload(query) {
           throw err;
         }
 
-        const html = await resp.text();
-        const items = parseChapter(html);
+        let items;
+        if (language === "ko") {
+          const html = await resp.text();
+          items = parseChapterBskorea(html);
+        } else {
+          const data = await resp.json();
+          items = parseBibleApiChapter(data);
+        }
         const lines = filterLines(items, startNum, endNum);
         return { language, url, lines };
       })
@@ -2481,6 +2539,65 @@ function parseChapter(html) {
   }
 
   return items;
+}
+
+function parseChapterBskorea(html) {
+  const markerIdx = html.indexOf('class="bible_read"');
+  if (markerIdx === -1) {
+    return [];
+  }
+  // Start from the chapter-number heading, not the container's opening
+  // tag, to skip past the leading "listen" audio-button <div>...</div>
+  // (which would otherwise be mistaken for the container's closing tag).
+  const chapNumIdx = html.indexOf('class="chapNum"', markerIdx);
+  if (chapNumIdx === -1) {
+    return [];
+  }
+  let slice = html.slice(chapNumIdx);
+
+  // Strip inline footnote popups (<div id="D_...">...</div>, single or
+  // double quoted) before looking for the closing </div> of the
+  // bible_read container, since verses use <span>, not <div>.
+  slice = slice.replace(/<div id=['"]D_[^'"]*['"][\s\S]*?<\/div>/g, "");
+  const endIdx = slice.indexOf("</div>");
+  if (endIdx !== -1) {
+    slice = slice.slice(0, endIdx);
+  }
+
+  const items = [];
+
+  const headingRegex = /<font class="smallTitle">([\s\S]*?)<\/font>/gi;
+  let match;
+  while ((match = headingRegex.exec(slice)) !== null) {
+    const line = normalizeText(stripTags(match[1]));
+    if (line) {
+      items.push({ type: "heading", index: match.index, line });
+    }
+  }
+
+  const verseRegex = /<span class="number">(\d+)[^<]*<\/span>([\s\S]*?)<\/span>/gi;
+  while ((match = verseRegex.exec(slice)) !== null) {
+    const num = Number.parseInt(match[1], 10);
+    const text = normalizeText(stripTags(match[2]));
+    if (text) {
+      items.push({ type: "verse", index: match.index, num, line: `${num}. ${text}` });
+    }
+  }
+
+  return items
+    .sort((a, b) => a.index - b.index)
+    .map(({ index, ...rest }) => rest);
+}
+
+function parseBibleApiChapter(data) {
+  if (!data || !Array.isArray(data.verses)) {
+    return [];
+  }
+  return data.verses.map((verse) => {
+    const num = Number.parseInt(verse.verse, 10);
+    const text = normalizeText(verse.text || "");
+    return { type: "verse", num, line: `${num}. ${text}` };
+  });
 }
 
 function extractChapterSlice(html) {

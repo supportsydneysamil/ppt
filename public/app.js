@@ -104,6 +104,7 @@ function buildParams() {
   }
   if (enVersionSelect.value) {
     languages.push("en");
+    params.set("enVersion", enVersionSelect.value);
   }
   if (languages.length > 0) {
     params.set("lang", languages.join(","));
