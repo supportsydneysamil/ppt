@@ -76,7 +76,32 @@ const hymnTitleBandImagePath = path.join(
   "assets",
   "hymn-title-band.png"
 );
-const SOFFICE_PATH = "/opt/homebrew/bin/soffice";
+async function runSoffice(args) {
+  const configuredPath = process.env.SOFFICE_PATH?.trim();
+  const candidates = configuredPath ? [configuredPath] : process.platform === "win32"
+    ? [
+        path.join(process.env.ProgramFiles || "C:\\Program Files", "LibreOffice", "program", "soffice.exe"),
+        path.join(process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)", "LibreOffice", "program", "soffice.exe"),
+        "soffice.exe",
+      ]
+    : process.platform === "darwin"
+      ? ["/Applications/LibreOffice.app/Contents/MacOS/soffice", "/opt/homebrew/bin/soffice", "/usr/local/bin/soffice", "soffice"]
+      : ["soffice", "/usr/bin/libreoffice"];
+
+  for (const executable of [...new Set(candidates)]) {
+    try {
+      return await execFileAsync(executable, args, { windowsHide: true });
+    } catch (err) {
+      if (err.code !== "ENOENT") throw err;
+    }
+  }
+
+  const err = new Error(configuredPath
+    ? "SOFFICE_PATH에 지정된 LibreOffice 실행 파일을 찾을 수 없습니다. 경로를 확인한 후 서버를 다시 시작하세요."
+    : "Web View2에 필요한 LibreOffice를 찾을 수 없습니다. LibreOffice를 설치한 후 서버를 다시 시작하세요. 별도 경로에 설치했다면 SOFFICE_PATH 환경 변수에 실행 파일 경로를 지정하세요.");
+  err.statusCode = 503;
+  throw err;
+}
 const scriptureSessions = new Map();
 
 // Ensure structure exists
@@ -293,7 +318,7 @@ async function loadPdfRenderDeps() {
 }
 
 async function convertPresentationToPdf(inputPath, outputDir) {
-  await execFileAsync(SOFFICE_PATH, [
+  await runSoffice([
     "--headless",
     "--convert-to",
     "pdf",
@@ -809,12 +834,7 @@ app.post("/api/upload", upload.single('file'), async (req, res) => {
   if (path.extname(originalName).toLowerCase() === '.ppt') {
     try {
       console.log(`Converting ${originalName} to PPTX...`);
-      const soffice = "/opt/homebrew/bin/soffice"; // Path verified
-
-      // Helper to execute conversion
-      // Usage: soffice --headless --convert-to pptx --outdir <dir> <file>
-      const cmd = `"${soffice}" --headless --convert-to pptx --outdir "${uploadsDir}" "${filePath}"`;
-      await execAsync(cmd);
+      await runSoffice(["--headless", "--convert-to", "pptx", "--outdir", uploadsDir, filePath]);
 
       // Calculate new filename (soffice replaces extension)
       const newFilename = filename.replace(/\.ppt$/i, '.pptx');
