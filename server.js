@@ -11,6 +11,7 @@ import http from "http";
 import { createWriteStream } from "fs";
 import { exec, execFile } from "child_process";
 import { promisify } from "util";
+import { appendCustomTitleSlide } from "./lib/custom-title-slide.js";
 import { appendTitleSlide } from "./lib/title-slide.js";
 
 const execAsync = promisify(exec);
@@ -151,6 +152,9 @@ function sanitizeSlideForTemplate(slide) {
     churchName: slide.churchName || "",
     serviceDate: slide.serviceDate || "",
     titleSubtitle: slide.titleSubtitle || "",
+    customTitleDesign: slide.customTitleDesign || null,
+    customTitleKo: slide.customTitleKo || "",
+    customTitleEn: slide.customTitleEn || "",
   };
 }
 
@@ -611,6 +615,11 @@ async function appendSlideDefinitionToDeck(pptx, slideData, tempDirs) {
     return;
   }
 
+  if (slideData.type === "custom-title") {
+    appendCustomTitleSlide(pptx, slideData);
+    return;
+  }
+
   if (slideData.sourceType === "upload") {
     await appendUploadedSlideDeck(pptx, slideData, tempDirs);
     return;
@@ -1060,6 +1069,24 @@ app.post("/api/create-title-slide-pptx", async (req, res) => {
     return res.send(buffer);
   } catch (err) {
     console.error("Title slide PPTX generation error:", err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/create-custom-title-slide-pptx", async (req, res) => {
+  try {
+    const pptx = new PptxGenJS();
+    pptx.layout = "LAYOUT_WIDE";
+    appendCustomTitleSlide(pptx, req.body);
+    let buffer = await pptx.write({ outputType: "nodebuffer" });
+    buffer = injectThumbnail(buffer);
+    const filename = `custom_title_slide_${Date.now()}.pptx`;
+    const asciiFilename = sanitizeAsciiFilename(filename);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
+    res.setHeader("Content-Disposition", `attachment; filename="${asciiFilename}"`);
+    return res.send(buffer);
+  } catch (err) {
+    console.error("Custom title slide PPTX generation error:", err);
     return res.status(500).json({ error: err.message });
   }
 });

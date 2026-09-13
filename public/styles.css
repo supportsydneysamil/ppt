@@ -858,6 +858,76 @@ body {
   background: rgba(242, 193, 91, 0.85);
 }
 
+/* Custom title thumbnails: one rule under the headline, like the renderers. */
+.title-preview-aurora,
+.title-preview-monolith,
+.title-preview-ivory,
+.title-preview-marquee {
+  align-content: center;
+}
+
+.title-preview-aurora::before,
+.title-preview-monolith::before,
+.title-preview-ivory::before,
+.title-preview-marquee::before {
+  display: none;
+}
+
+.title-preview-aurora::after,
+.title-preview-monolith::after,
+.title-preview-ivory::after,
+.title-preview-marquee::after {
+  bottom: 30%;
+  width: 34%;
+}
+
+.title-preview-aurora {
+  background:
+    radial-gradient(72% 72% at 78% 8%, rgba(139, 92, 246, 0.5), rgba(139, 92, 246, 0) 70%),
+    radial-gradient(78% 78% at 10% 96%, rgba(45, 212, 191, 0.35), rgba(45, 212, 191, 0) 70%),
+    linear-gradient(135deg, #170e33, #2c1a63 52%, #0c3a52);
+  color: #fff;
+}
+
+.title-preview-aurora::after {
+  background: rgba(139, 107, 255, 0.95);
+}
+
+.title-preview-monolith {
+  background:
+    radial-gradient(62% 62% at 50% 0%, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0) 70%),
+    linear-gradient(90deg, #0a0b0d, #15171b 50%, #0a0b0d);
+  color: #f4f1ea;
+  font-family: "Fraunces", Georgia, serif;
+}
+
+.title-preview-monolith::after {
+  width: 18%;
+  background: rgba(154, 150, 137, 0.9);
+}
+
+.title-preview-ivory {
+  background: #faf6ef;
+  color: #1f1b16;
+  font-family: "Fraunces", Georgia, serif;
+  box-shadow: inset 0 0 0 3px #faf6ef, inset 0 0 0 4px rgba(194, 168, 122, 0.9);
+}
+
+.title-preview-ivory::after {
+  background: rgba(194, 168, 122, 0.9);
+}
+
+.title-preview-marquee {
+  background: #2a0f16;
+  color: #f7ebda;
+  font-family: "Fraunces", Georgia, serif;
+  box-shadow: inset 0 0 0 3px #2a0f16, inset 0 0 0 4px rgba(217, 179, 118, 0.9);
+}
+
+.title-preview-marquee::after {
+  background: rgba(217, 179, 118, 0.9);
+}
+
 .radio-row {
   display: flex;
   align-items: center;

@@ -846,6 +846,11 @@ const titleChurchNameInput = document.getElementById("titleChurchName");
 const titleServiceDateSelect = document.getElementById("titleServiceDate");
 const titleSubtitleInput = document.getElementById("titleSubtitle");
 const titleSeasonSuggestBtn = document.getElementById("titleSeasonSuggestBtn");
+const customTitleSlideSettings = document.getElementById("customTitleSlideSettings");
+const customTitleDesignGrid = document.getElementById("customTitleDesignGrid");
+const customTitleDesignSelect = document.getElementById("customTitleDesign");
+const customTitleKoInput = document.getElementById("customTitleKo");
+const customTitleEnInput = document.getElementById("customTitleEn");
 
 // State
 let slides = [];
@@ -1054,6 +1059,9 @@ function cleanupPreviewResources() {
 slideTypeSelect.addEventListener('change', () => {
   if (slideTypeSelect.value === 'title') {
     prepareTitleSlideFields();
+  }
+  if (slideTypeSelect.value === 'custom-title') {
+    maybeAutoNameCustomTitleSlide();
   }
   updateSettingsVisibility();
   hasUnsavedChanges = true;
@@ -1410,6 +1418,9 @@ function getSlideTypeLabel(slide) {
   if (slide.type === "title") {
     return "타이틀";
   }
+  if (slide.type === "custom-title") {
+    return "타이틀 (Custom)";
+  }
   if (slide.type === "ad") {
     return slide.sourceType === "upload" ? "광고 업로드" : "광고";
   }
@@ -1448,6 +1459,9 @@ function createSlide() {
     churchName: "",
     serviceDate: "",
     titleSubtitle: "",
+    customTitleDesign: "aurora",
+    customTitleKo: "",
+    customTitleEn: "",
   };
   slides.push(newSlide);
   // Do NOT save to storage yet
@@ -1559,6 +1573,13 @@ function renderPreview(slideOverride) {
         sourceType: 'basic',
         ...collectTitleSlideData(),
       };
+    } else if (type === 'custom-title') {
+      data = {
+        name: slideNameInput.value,
+        type: 'custom-title',
+        sourceType: 'basic',
+        ...collectCustomTitleSlideData(),
+      };
     } else if (type === 'ad') {
       data = {
         name: slideNameInput.value,
@@ -1645,7 +1666,8 @@ function renderPreview(slideOverride) {
   // Case 3: Server File Path Cache
   // Only use this if not overridden by a new file upload. Title slides are
   // drawn from their own fields, so a leftover file path must not freeze them.
-  if (data.serverFilePath && !data.file && data.type !== 'title') {
+  const isTitleType = data.type === 'title' || data.type === 'custom-title';
+  if (data.serverFilePath && !data.file && !isTitleType) {
     if (slidePreview.dataset.lastRenderedPath === data.serverFilePath) {
       skipRender = true;
     }
@@ -1668,6 +1690,14 @@ function renderPreview(slideOverride) {
     slidePreview.classList.remove('preview-scroll-mode');
     slidePreview.appendChild(
       buildTitleSlidePreview(data, slidePreview.offsetWidth || 400)
+    );
+    return;
+  }
+
+  if (data.type === 'custom-title') {
+    slidePreview.classList.remove('preview-scroll-mode');
+    slidePreview.appendChild(
+      buildCustomTitleSlidePreview(data, slidePreview.offsetWidth || 400)
     );
     return;
   }
@@ -2131,6 +2161,11 @@ function populateEditor(slide) {
     titleSlideSettings.style.display = slide.type === 'title' ? 'grid' : 'none';
   }
 
+  if (customTitleSlideSettings) {
+    customTitleSlideSettings.style.display =
+      slide.type === 'custom-title' ? 'grid' : 'none';
+  }
+
   hymnNumberInput.value = slide.hymnNumber || '';
   hymnIncludeTitle.checked = !!slide.includeTitle;
   hymnTitleFields.style.display = slide.includeTitle ? 'block' : 'none';
@@ -2150,6 +2185,16 @@ function populateEditor(slide) {
     titleSubtitleInput.value = slide.titleSubtitle || '';
     ensureTitleServiceDateOptions(slide.serviceDate || defaultServiceDate());
     updateTitleSeasonSuggestion();
+  } else if (slide.type === 'custom-title') {
+    simpleSlideSettings.style.display = 'none';
+    hymnSlideSettings.style.display = 'none';
+
+    customTitleDesignSelect.value = normalizeCustomTitleDesign(
+      slide.customTitleDesign
+    );
+    syncCustomTitleDesignCards(customTitleDesignSelect.value);
+    customTitleKoInput.value = slide.customTitleKo || '';
+    customTitleEnInput.value = slide.customTitleEn || '';
   } else if (slide.type === 'ad') {
     simpleSlideSettings.style.display = 'block';
     hymnSlideSettings.style.display = 'none';
@@ -2677,6 +2722,260 @@ function buildTitleSlidePreview(data, previewWidth) {
   return container;
 }
 
+// --- Title (Custom) slide helpers ---
+
+const CUSTOM_TITLE_DESIGNS = ["aurora", "monolith", "ivory", "marquee"];
+
+function normalizeCustomTitleDesign(value) {
+  return CUSTOM_TITLE_DESIGNS.includes(value) ? value : "aurora";
+}
+
+// Loaded as a module, so it lands after this script's top-level run.
+function customTitleTextApi() {
+  return window.CustomTitleText || null;
+}
+
+function customTitleKoSize(text) {
+  const api = customTitleTextApi();
+  return api ? api.koTitleFontSize(text) : 70;
+}
+
+function customTitleEnSize(text) {
+  const api = customTitleTextApi();
+  return api ? api.enTitleFontSize(text) : 19;
+}
+
+function syncCustomTitleDesignCards(value) {
+  if (!customTitleDesignGrid) return;
+  customTitleDesignGrid
+    .querySelectorAll("[data-custom-title-design]")
+    .forEach((card) => {
+      card.classList.toggle(
+        "is-active",
+        card.dataset.customTitleDesign === value
+      );
+    });
+}
+
+function collectCustomTitleSlideData() {
+  return {
+    customTitleDesign: normalizeCustomTitleDesign(customTitleDesignSelect.value),
+    customTitleKo: customTitleKoInput.value.trim(),
+    customTitleEn: customTitleEnInput.value.trim(),
+  };
+}
+
+// --- Title (Custom) preview (mirrors lib/custom-title-slide.js coordinates) ---
+
+const CUSTOM_TITLE_THEMES = {
+  aurora: {
+    background:
+      "radial-gradient(72% 72% at 78% 8%, rgba(139,92,246,0.46), rgba(139,92,246,0) 72%)," +
+      "radial-gradient(78% 78% at 10% 96%, rgba(45,212,191,0.34), rgba(45,212,191,0) 72%)," +
+      "linear-gradient(135deg, #170E33 0%, #2C1A63 52%, #0C3A52 100%)",
+    koFont: TITLE_SANS,
+    koWeight: 700,
+    koColor: "#FFFFFF",
+    koTracking: 0.02,
+    koGap: 0.34,
+    dividerGap: 0.3,
+    ruleWidth: 3.4,
+    ruleWeight: 0.024,
+    ruleColor: "#8B6BFF",
+    enColor: "#C4B2FF",
+    enWeight: 700,
+    enTracking: 0.42,
+  },
+  monolith: {
+    background:
+      "radial-gradient(62% 62% at 50% 0%, rgba(255,255,255,0.12), rgba(255,255,255,0) 70%)," +
+      "linear-gradient(90deg, #0A0B0D 25%, #15171B 50%, #0A0B0D 75%)",
+    koFont: TITLE_SERIF,
+    koWeight: 700,
+    koColor: "#F4F1EA",
+    koTracking: 0.06,
+    koGap: 0.36,
+    dividerGap: 0.28,
+    ruleWidth: 1.1,
+    ruleWeight: 0.014,
+    ruleColor: "#9A9689",
+    enColor: "#9A9689",
+    enWeight: 400,
+    enTracking: 0.5,
+    hairline: "#2C2E33",
+  },
+  ivory: {
+    background: "#FAF6EF",
+    koFont: TITLE_SERIF,
+    koWeight: 700,
+    koColor: "#1F1B16",
+    koTracking: 0.04,
+    koGap: 0.32,
+    dividerGap: 0.28,
+    ruleWidth: 2.2,
+    ruleWeight: 0.017,
+    ruleColor: "#C2A87A",
+    enColor: "#907A52",
+    enWeight: 700,
+    enTracking: 0.45,
+    frame: "#C2A87A",
+    frameWeight: 0.021,
+  },
+  marquee: {
+    background: "#2A0F16",
+    koFont: TITLE_SERIF,
+    koWeight: 700,
+    koColor: "#F7EBDA",
+    koTracking: 0.05,
+    koGap: 0.34,
+    dividerGap: 0.3,
+    ruleWidth: 3.6,
+    ruleWeight: 0.014,
+    ruleColor: "#D9B376",
+    enColor: "#D9B376",
+    enWeight: 700,
+    enTracking: 0.48,
+    frame: "#D9B376",
+    frameWeight: 0.024,
+    diamonds: true,
+  },
+};
+
+function customTitleDiamond(cssText, size, color) {
+  return titlePreviewNode(
+    `position:absolute;${cssText}width:${size}px;height:${size}px;` +
+      `background:${color};transform:rotate(45deg);`
+  );
+}
+
+function addCustomTitleFrame(container, theme, unit) {
+  const { inch } = unit;
+
+  if (theme.hairline) {
+    [`top:${inch(0.45)}px`, `bottom:${inch(0.45)}px`].forEach((edge) => {
+      container.appendChild(
+        titlePreviewNode(
+          `position:absolute;${edge};left:${inch(0.45)}px;right:${inch(0.45)}px;` +
+            `height:1px;background:${theme.hairline};`
+        )
+      );
+    });
+  }
+
+  if (!theme.frame) return;
+
+  const inset = theme.diamonds ? 0.44 : 0.42;
+  container.appendChild(
+    titlePreviewNode(
+      `position:absolute;inset:${inch(inset)}px;border:${Math.max(
+        1,
+        inch(theme.frameWeight)
+      )}px solid ${theme.frame};`
+    )
+  );
+
+  if (theme.diamonds) {
+    const size = inch(0.11);
+    const offset = inch(inset) - size / 2;
+    [
+      `top:${offset}px;left:${offset}px;`,
+      `top:${offset}px;right:${offset}px;`,
+      `bottom:${offset}px;left:${offset}px;`,
+      `bottom:${offset}px;right:${offset}px;`,
+    ].forEach((position) => {
+      container.appendChild(customTitleDiamond(position, size, theme.frame));
+    });
+    return;
+  }
+
+  container.appendChild(
+    titlePreviewNode(
+      `position:absolute;inset:${inch(0.56)}px;border:1px solid ${theme.frame};`
+    )
+  );
+}
+
+function buildCustomTitleSlidePreview(data, previewWidth) {
+  const width = previewWidth || 400;
+  const perInch = width / 13.333;
+  const unit = {
+    inch: (value) => value * perInch,
+    pt: (value) => (value / 72) * perInch,
+  };
+  const { inch, pt } = unit;
+
+  const ko = (data.customTitleKo || "").trim() || "타이틀 이름";
+  const en = (data.customTitleEn || "").trim();
+  const theme =
+    CUSTOM_TITLE_THEMES[normalizeCustomTitleDesign(data.customTitleDesign)];
+
+  const container = document.createElement("div");
+  container.style.cssText =
+    `position:relative;width:${width}px;height:${width * 0.5625}px;overflow:hidden;`;
+  container.style.background = theme.background;
+
+  addCustomTitleFrame(container, theme, unit);
+
+  const stack = titlePreviewNode(
+    "position:relative;height:100%;display:flex;flex-direction:column;" +
+      "align-items:center;justify-content:center;"
+  );
+
+  const koSize = pt(customTitleKoSize(ko));
+  stack.appendChild(
+    titlePreviewNode(
+      `font-family:${theme.koFont};font-weight:${theme.koWeight};font-size:${koSize}px;` +
+        `line-height:1.22;color:${theme.koColor};white-space:nowrap;` +
+        `letter-spacing:${koSize * theme.koTracking}px;` +
+        `padding-left:${koSize * theme.koTracking}px;`,
+      ko
+    )
+  );
+
+  if (en) {
+    const rule = titlePreviewNode(
+      `position:relative;width:${inch(theme.ruleWidth)}px;` +
+        `height:${Math.max(1, inch(theme.ruleWeight))}px;background:${theme.ruleColor};` +
+        `margin-top:${inch(theme.koGap)}px;`
+    );
+
+    if (theme.diamonds) {
+      // The renderer breaks the rule for a centre diamond.
+      const size = inch(0.12);
+      rule.appendChild(
+        titlePreviewNode(
+          `position:absolute;top:0;left:50%;width:${inch(0.26)}px;height:100%;` +
+            `transform:translateX(-50%);background:${theme.background};`
+        )
+      );
+      rule.appendChild(
+        customTitleDiamond(
+          `top:${-size / 2}px;left:calc(50% - ${size / 2}px);`,
+          size,
+          theme.ruleColor
+        )
+      );
+    }
+
+    stack.appendChild(rule);
+
+    const enSize = pt(customTitleEnSize(en));
+    stack.appendChild(
+      titlePreviewNode(
+        `font-family:${TITLE_LATIN};font-weight:${theme.enWeight};font-size:${enSize}px;` +
+          `line-height:1.5;color:${theme.enColor};white-space:nowrap;` +
+          `letter-spacing:${enSize * theme.enTracking}px;` +
+          `padding-left:${enSize * theme.enTracking}px;` +
+          `margin-top:${inch(theme.dividerGap)}px;`,
+        en.toUpperCase()
+      )
+    );
+  }
+
+  container.appendChild(stack);
+  return container;
+}
+
 function toggleSettingsMode(mode) {
   updateSettingsVisibility(mode);
 }
@@ -2692,7 +2991,12 @@ function updateSettingsVisibility(overrideMode) {
     titleSlideSettings.style.display = type === "title" ? "grid" : "none";
   }
 
-  if (type === "title") {
+  if (customTitleSlideSettings) {
+    customTitleSlideSettings.style.display =
+      type === "custom-title" ? "grid" : "none";
+  }
+
+  if (type === "title" || type === "custom-title") {
     simpleSlideSettings.style.display = "none";
     hymnSlideSettings.style.display = "none";
     return;
@@ -2907,7 +3211,7 @@ function renderSlideList() {
 
     const typeBadge = document.createElement("span");
     typeBadge.className = "slide-type-badge";
-    typeBadge.textContent = slide.type === "title" ? "TITLE" : slide.type === "ad" ? "AD" : slide.sourceType === "upload" ? "PPT/PPTX" : "TEXT";
+    typeBadge.textContent = slide.type === "title" ? "TITLE" : slide.type === "custom-title" ? "TITLE+" : slide.type === "ad" ? "AD" : slide.sourceType === "upload" ? "PPT/PPTX" : "TEXT";
 
     const saveBadge = document.createElement("span");
     saveBadge.className = `slide-save-badge${slide.saved ? "" : " unsaved"}`;
@@ -3103,6 +3407,17 @@ async function saveCurrentSlide() {
       slide.sourceType = 'basic';
       slide.saved = true;
 
+    } else if (slide.type === 'custom-title') {
+      const customTitleData = collectCustomTitleSlideData();
+      if (!customTitleData.customTitleKo) {
+        alert("타이틀 이름(한글)을 입력하세요.");
+        return;
+      }
+
+      Object.assign(slide, customTitleData);
+      slide.sourceType = 'basic';
+      slide.saved = true;
+
     } else {
       // Simple Slide Logic
       const sourceRadio = document.querySelector('input[name="sourceType"]:checked');
@@ -3221,6 +3536,41 @@ async function downloadSlide() {
       const a = document.createElement('a');
       a.href = url;
       a.download = `${slide.name || buildTitleSlideName(slide.serviceDate)}.pptx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      return;
+    } catch (e) {
+      alert("다운로드 중 오류가 발생했습니다.");
+      console.error(e);
+      return;
+    }
+  }
+
+  if (slide.type === 'custom-title') {
+    try {
+      const resp = await fetch('/api/create-custom-title-slide-pptx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customTitleDesign: slide.customTitleDesign,
+          customTitleKo: slide.customTitleKo,
+          customTitleEn: slide.customTitleEn,
+        })
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json();
+        alert("다운로드 실패: " + (err.error || "Unknown Error"));
+        return;
+      }
+
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${slide.name || slide.customTitleKo || '타이틀'}.pptx`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -3391,6 +3741,9 @@ function buildSerializableSlide(slide) {
     churchName: slide.churchName,
     serviceDate: slide.serviceDate,
     titleSubtitle: slide.titleSubtitle,
+    customTitleDesign: slide.customTitleDesign,
+    customTitleKo: slide.customTitleKo,
+    customTitleEn: slide.customTitleEn,
   };
 }
 
@@ -3925,6 +4278,41 @@ titleSubtitleInput.addEventListener('input', () => {
 titleSeasonSuggestBtn.addEventListener('click', () => {
   titleSubtitleInput.value = titleSeasonSuggestBtn.dataset.suggestion || '';
   updateTitleSeasonSuggestion();
+  hasUnsavedChanges = true;
+  renderPreview();
+});
+
+// --- Title (Custom) slide listeners ---
+
+// Only replaces names the user has not personalised yet.
+function maybeAutoNameCustomTitleSlide() {
+  const current = slideNameInput.value.trim();
+  if (current && !/^새 슬라이드\d*$/.test(current)) return;
+
+  const ko = customTitleKoInput.value.trim();
+  if (ko) slideNameInput.value = ko;
+}
+
+if (customTitleDesignGrid) {
+  customTitleDesignGrid.addEventListener('click', (event) => {
+    const card = event.target.closest('[data-custom-title-design]');
+    if (!card) return;
+    customTitleDesignSelect.value = normalizeCustomTitleDesign(
+      card.dataset.customTitleDesign
+    );
+    syncCustomTitleDesignCards(customTitleDesignSelect.value);
+    hasUnsavedChanges = true;
+    renderPreview();
+  });
+}
+
+customTitleKoInput.addEventListener('input', () => {
+  maybeAutoNameCustomTitleSlide();
+  hasUnsavedChanges = true;
+  renderPreview();
+});
+
+customTitleEnInput.addEventListener('input', () => {
   hasUnsavedChanges = true;
   renderPreview();
 });

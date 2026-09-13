@@ -320,6 +320,7 @@
                   <option value="hymn">찬송가 (한영)</option>
                   <option value="ad">광고</option>
                   <option value="title">타이틀 (주일 예배)</option>
+                  <option value="custom-title">타이틀 (Custom)</option>
                 </select>
               </label>
             </div>
@@ -653,6 +654,68 @@
               </div>
             </div>
 
+            <!-- Title (Custom) Settings -->
+            <div id="customTitleSlideSettings" class="settings-group" style="display:none;">
+              <div class="rte-panel">
+                <div class="rte-panel-label">디자인</div>
+                <div class="rte-panel-body">
+                  <div class="theme-option-grid" id="customTitleDesignGrid" role="list" aria-label="커스텀 타이틀 디자인 목록">
+                    <button type="button" class="theme-option-card is-active" data-custom-title-design="aurora">
+                      <span class="title-design-preview title-preview-aurora"><span>타이틀</span></span>
+                      <span class="theme-option-copy">
+                        <strong>오로라 그라디언트</strong>
+                        <small>바이올렛 · 틸 번짐</small>
+                      </span>
+                    </button>
+                    <button type="button" class="theme-option-card" data-custom-title-design="monolith">
+                      <span class="title-design-preview title-preview-monolith"><span>타이틀</span></span>
+                      <span class="theme-option-copy">
+                        <strong>모노리스</strong>
+                        <small>딥 블랙 · 명조 대제목</small>
+                      </span>
+                    </button>
+                    <button type="button" class="theme-option-card" data-custom-title-design="ivory">
+                      <span class="title-design-preview title-preview-ivory"><span>타이틀</span></span>
+                      <span class="theme-option-copy">
+                        <strong>아이보리 클래식</strong>
+                        <small>아이보리 · 이중 금테</small>
+                      </span>
+                    </button>
+                    <button type="button" class="theme-option-card" data-custom-title-design="marquee">
+                      <span class="title-design-preview title-preview-marquee"><span>타이틀</span></span>
+                      <span class="theme-option-copy">
+                        <strong>마키 프레임</strong>
+                        <small>버건디 · 금색 다이아</small>
+                      </span>
+                    </button>
+                  </div>
+                  <select id="customTitleDesign" class="hidden-select">
+                    <option value="aurora" selected>오로라 그라디언트</option>
+                    <option value="monolith">모노리스</option>
+                    <option value="ivory">아이보리 클래식</option>
+                    <option value="marquee">마키 프레임</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="rte-panel">
+                <div class="rte-panel-label">타이틀 이름</div>
+                <div class="rte-panel-body">
+                  <div class="rte-panel-row">
+                    <span class="rte-row-label">한글</span>
+                    <input id="customTitleKo" type="text" class="rte-url-input" placeholder="예: 성찬 예배" />
+                  </div>
+                  <div class="rte-panel-row">
+                    <span class="rte-row-label">영문 <span class="rte-panel-hint">선택</span></span>
+                    <input id="customTitleEn" type="text" class="rte-url-input" placeholder="예: Holy Communion Service" />
+                  </div>
+                  <p class="hint rte-hint">
+                    한글 제목은 길이에 맞춰 글자 크기가 자동으로 조절됩니다. 영문은 대문자로 표시됩니다.
+                  </p>
+                </div>
+              </div>
+            </div>
+
           </form>
 
           <div class="preview-area">
@@ -827,9 +890,13 @@
   <script src="https://cdn.jsdelivr.net/gh/meshesha/PPTXjs@latest/js/pptxjs.js"></script>
 
   <script type="module">
-    // Same helpers the server renders with, so preview dates never drift.
+    // Same helpers the server renders with, so preview dates and type sizes
+    // never drift.
     import * as titleSlideDate from "/lib/title-slide-date.js";
     window.TitleSlideDate = titleSlideDate;
+
+    import * as customTitleText from "/lib/custom-title-text.js";
+    window.CustomTitleText = customTitleText;
   </script>
   <script src="/app.js"></script>
 </body>
