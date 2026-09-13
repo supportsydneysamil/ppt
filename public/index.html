@@ -234,19 +234,16 @@
     </div>
 
     <div id="view-ppt" style="display: none;">
-      <nav class="sub-nav">
-        <button id="slideModeBtn" class="sub-nav-item active">슬라이드</button>
-        <div class="sub-nav-menu-wrap">
-          <button id="templateMenuBtn" class="sub-nav-item">
-            템플릿 <span class="dropdown-caret">▾</span>
+      <div class="ppt-tabbar">
+        <nav class="ppt-tabs" role="tablist" aria-label="PPT 생성기 영역">
+          <button id="tabSlidesBtn" type="button" class="ppt-tab is-active" role="tab" aria-selected="true">
+            슬라이드
           </button>
-          <div id="templateMenuDropdown" class="bulk-dropdown" hidden>
-            <div id="templateMenuList" class="bulk-submenu-list"></div>
-          </div>
-        </div>
-        <div class="sub-nav-action-wrap">
-          <button id="templateSaveBtn" class="ghost small" hidden>템플릿 저장</button>
-          <button id="templateDeleteBtn" class="ghost small" hidden>템플릿 삭제</button>
+          <button id="tabTemplatesBtn" type="button" class="ppt-tab" role="tab" aria-selected="false">
+            템플릿 <span id="templateCountBadge" class="ppt-tab-count">0</span>
+          </button>
+        </nav>
+        <div class="ppt-tabbar-actions" id="pptTabbarActions">
           <button id="bulkActionMenuBtn" class="sub-nav-action-btn" disabled>
             선택 작업 <span class="dropdown-caret">▾</span>
           </button>
@@ -256,14 +253,41 @@
             <button id="bulkDownloadBtn" type="button" class="bulk-dropdown-item">선택 묶음 다운로드</button>
           </div>
         </div>
-      </nav>
+      </div>
 
-      <section class="ppt-interface">
+      <section id="templateGallery" class="template-gallery" hidden>
+        <div id="templateGalleryGrid" class="template-gallery-grid">
+          <!-- Template cards will be injected here -->
+        </div>
+        <div id="templateGalleryEmpty" class="template-gallery-empty" hidden>
+          <h3>저장된 템플릿이 없습니다</h3>
+          <p>슬라이드 탭에서 슬라이드를 선택해 &lsquo;선택 작업 &rarr; 템플릿 만들기&rsquo;로 만들어 보세요.</p>
+          <button id="templateGalleryGoSlidesBtn" type="button" class="ghost small">슬라이드 탭으로 이동</button>
+        </div>
+      </section>
+
+      <div id="templateWorkspaceBar" class="template-workspace-bar" hidden>
+        <button id="templateBackBtn" type="button" class="template-back-btn">
+          <span aria-hidden="true">←</span> 템플릿
+        </button>
+        <button
+          id="templateNameDisplay"
+          type="button"
+          class="template-name-display"
+          title="클릭해서 템플릿 이름 수정"
+        ></button>
+        <div class="template-workspace-actions">
+          <button id="templateSaveBtn" type="button" class="cta small">템플릿 저장</button>
+          <button id="templateDeleteBtn" type="button" class="ghost small danger">템플릿 삭제</button>
+        </div>
+      </div>
+
+      <section class="ppt-interface" id="pptWorkspace">
         <!-- Left: Slide List -->
         <div class="slide-list-panel">
           <div class="slide-list-header">
             <div class="slide-list-title-wrap">
-              <h3 id="slideListTitle">슬라이드 목록</h3>
+              <h3>슬라이드 목록</h3>
             </div>
             <button id="addSlideBtn" class="ghost small">+ 추가</button>
           </div>

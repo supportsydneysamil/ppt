@@ -712,8 +712,11 @@ async function handleExportToPptGenerator(event) {
     mainSlides.push(cloneSlide(responsePayload.slide));
     closeScriptureExportModal();
     switchView("ppt");
+    pptTab = "slides";
     activeTemplateId = null;
+    hasPendingTemplateChanges = false;
     loadWorkspaceSlides(mainSlides);
+    renderPptScreen();
     selectSlide(responsePayload.slide.id);
     alert(`슬라이드가 추가되었습니다: ${responsePayload.slide.name}`);
   } catch (err) {
@@ -733,10 +736,18 @@ const slideListContainer = document.getElementById("slideListContainer");
 const selectAllSlidesCheckbox = document.getElementById("selectAllSlidesCheckbox");
 const clearSelectionBtn = document.getElementById("clearSelectionBtn");
 const selectedCountBadge = document.getElementById("selectedCountBadge");
-const slideModeBtn = document.getElementById("slideModeBtn");
-const templateMenuBtn = document.getElementById("templateMenuBtn");
-const templateMenuDropdown = document.getElementById("templateMenuDropdown");
-const templateMenuList = document.getElementById("templateMenuList");
+const tabSlidesBtn = document.getElementById("tabSlidesBtn");
+const tabTemplatesBtn = document.getElementById("tabTemplatesBtn");
+const templateCountBadge = document.getElementById("templateCountBadge");
+const pptTabbarActions = document.getElementById("pptTabbarActions");
+const pptWorkspace = document.getElementById("pptWorkspace");
+const templateGallery = document.getElementById("templateGallery");
+const templateGalleryGrid = document.getElementById("templateGalleryGrid");
+const templateGalleryEmpty = document.getElementById("templateGalleryEmpty");
+const templateGalleryGoSlidesBtn = document.getElementById("templateGalleryGoSlidesBtn");
+const templateWorkspaceBar = document.getElementById("templateWorkspaceBar");
+const templateBackBtn = document.getElementById("templateBackBtn");
+const templateNameDisplay = document.getElementById("templateNameDisplay");
 const bulkActionMenuBtn = document.getElementById("bulkActionMenuBtn");
 const bulkActionDropdown = document.getElementById("bulkActionDropdown");
 const bulkDeleteBtn = document.getElementById("bulkDeleteBtn");
@@ -747,7 +758,6 @@ const templateDeleteBtn = document.getElementById("templateDeleteBtn");
 const slideEditor = document.getElementById("slideEditor");
 const emptyEditorState = document.getElementById("emptyEditorState");
 const addSlideBtn = document.getElementById("addSlideBtn");
-const slideListTitle = document.getElementById("slideListTitle");
 const editorSaveBtn = document.getElementById("editorSaveBtn");
 const editorResetBtn = document.getElementById("editorResetBtn");
 const editorCancelBtn = document.getElementById("editorCancelBtn");
@@ -829,6 +839,9 @@ const customTitleEnInput = document.getElementById("customTitleEn");
 let slides = [];
 let mainSlides = [];
 let templates = [];
+// "slides" or "templates". activeTemplateId is only ever set while on the
+// templates tab, so isTemplateMode() stays a simple truthiness check.
+let pptTab = "slides";
 let activeTemplateId = null;
 let hasPendingTemplateChanges = false;
 let currentSlideId = null;
@@ -940,80 +953,306 @@ function loadWorkspaceSlides(nextSlides) {
 function updateTemplateManagementUi() {
   const activeTemplate = getActiveTemplate();
 
-  if (slideListTitle) {
-    slideListTitle.textContent = activeTemplate ? activeTemplate.name : "슬라이드 목록";
-    slideListTitle.classList.toggle("is-template-title", Boolean(activeTemplate));
-    slideListTitle.title = activeTemplate ? "클릭해서 템플릿 이름 수정" : "";
-  }
-
-  if (slideModeBtn) {
-    slideModeBtn.classList.toggle("active", !activeTemplate);
-  }
-
-  if (templateMenuBtn) {
-    templateMenuBtn.classList.toggle("active", Boolean(activeTemplate) || !templateMenuDropdown.hidden);
+  if (templateNameDisplay && activeTemplate) {
+    templateNameDisplay.textContent = activeTemplate.name;
   }
 
   if (templateSaveBtn) {
-    templateSaveBtn.hidden = !activeTemplate;
     templateSaveBtn.disabled = !activeTemplate || !hasPendingTemplateChanges;
   }
 
-  if (templateDeleteBtn) {
-    templateDeleteBtn.hidden = !activeTemplate;
+  if (templateCountBadge) {
+    templateCountBadge.textContent = String(templates.length);
   }
 }
 
-function renderTemplateSubmenu() {
-  const templateListTargets = [templateMenuList].filter(Boolean);
-  if (templateListTargets.length === 0) {
-    return;
+// Single source of truth for which of the three PPT screens is visible:
+// the slide workspace, the template gallery, or a template's workspace.
+function renderPptScreen() {
+  const onTemplatesTab = pptTab === "templates";
+  const inTemplateWorkspace = onTemplatesTab && Boolean(activeTemplateId);
+
+  if (tabSlidesBtn) {
+    tabSlidesBtn.classList.toggle("is-active", !onTemplatesTab);
+    tabSlidesBtn.setAttribute("aria-selected", String(!onTemplatesTab));
   }
 
-  templateListTargets.forEach((target) => {
-    target.innerHTML = "";
-  });
+  if (tabTemplatesBtn) {
+    tabTemplatesBtn.classList.toggle("is-active", onTemplatesTab);
+    tabTemplatesBtn.setAttribute("aria-selected", String(onTemplatesTab));
+  }
 
-  templates.forEach((template) => {
-    templateListTargets.forEach((target) => {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = `bulk-dropdown-item${template.id === activeTemplateId ? " is-active-template" : ""}`;
-      button.textContent = `${template.name} (${(template.slides || []).length})`;
-      button.addEventListener("click", () => {
-        closeBulkDropdown();
-        openTemplateWorkspace(template.id);
-      });
-      target.appendChild(button);
-    });
-  });
+  if (templateGallery) {
+    templateGallery.hidden = !onTemplatesTab || inTemplateWorkspace;
+  }
+
+  if (templateWorkspaceBar) {
+    templateWorkspaceBar.hidden = !inTemplateWorkspace;
+  }
+
+  if (pptWorkspace) {
+    pptWorkspace.hidden = onTemplatesTab && !inTemplateWorkspace;
+  }
+
+  // The bulk action menu acts on the slide list, so it has no meaning while
+  // the gallery is showing.
+  if (pptTabbarActions) {
+    pptTabbarActions.hidden = onTemplatesTab && !inTemplateWorkspace;
+  }
+
+  updateTemplateManagementUi();
 }
 
-function openMainSlidesWorkspace() {
+// Returns false when the user cancels. When they confirm discarding template
+// edits, the local template cache is refetched so an abandoned rename or slide
+// change does not linger in the gallery.
+async function leaveCurrentWorkspace() {
+  const hadTemplateEdits = isTemplateMode() && hasPendingTemplateChanges;
+
   if (!confirmLeavingDirtyWorkspace()) {
-    return;
+    return false;
   }
 
   activeTemplateId = null;
   hasPendingTemplateChanges = false;
-  loadWorkspaceSlides(mainSlides);
-  updateTemplateManagementUi();
+
+  if (hadTemplateEdits) {
+    await loadTemplatesFromServer();
+  }
+
+  return true;
 }
 
-function openTemplateWorkspace(templateId) {
+async function setPptTab(tab) {
+  if (tab === pptTab && !(tab === "templates" && activeTemplateId)) {
+    return;
+  }
+
+  if (!(await leaveCurrentWorkspace())) {
+    return;
+  }
+
+  pptTab = tab === "templates" ? "templates" : "slides";
+
+  if (pptTab === "slides") {
+    loadWorkspaceSlides(mainSlides);
+  } else {
+    renderTemplateGallery();
+  }
+
+  renderPptScreen();
+}
+
+async function openTemplateWorkspace(templateId) {
+  if (!templates.some((entry) => entry.id === templateId)) {
+    return;
+  }
+
+  if (!(await leaveCurrentWorkspace())) {
+    return;
+  }
+
+  // The cache may have been refetched while discarding edits, so look the
+  // template up again.
   const template = templates.find((entry) => entry.id === templateId);
   if (!template) {
+    renderTemplateGallery();
+    renderPptScreen();
     return;
   }
 
-  if (!confirmLeavingDirtyWorkspace()) {
-    return;
-  }
-
+  pptTab = "templates";
   activeTemplateId = templateId;
-  hasPendingTemplateChanges = false;
   loadWorkspaceSlides(template.slides || []);
-  updateTemplateManagementUi();
+  renderPptScreen();
+}
+
+async function closeTemplateWorkspace() {
+  if (!(await leaveCurrentWorkspace())) {
+    return;
+  }
+
+  pptTab = "templates";
+  loadWorkspaceSlides([]);
+  renderTemplateGallery();
+  renderPptScreen();
+}
+
+function formatTemplateDate(value) {
+  if (!value) {
+    return "";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  return date.toLocaleDateString("ko-KR", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+function closeTemplateCardMenus() {
+  if (!templateGalleryGrid) {
+    return;
+  }
+  templateGalleryGrid
+    .querySelectorAll(".template-card-menu-dropdown:not([hidden])")
+    .forEach((menu) => {
+      menu.hidden = true;
+    });
+  templateGalleryGrid
+    .querySelectorAll(".template-card-menu-btn.open")
+    .forEach((button) => {
+      button.classList.remove("open");
+    });
+}
+
+function buildTemplateThumbStrip(template) {
+  const strip = document.createElement("div");
+  strip.className = "template-card-thumbs";
+
+  const previewSlides = (template.slides || []).slice(0, 3);
+
+  if (previewSlides.length === 0) {
+    const empty = document.createElement("span");
+    empty.className = "template-card-thumb is-empty";
+    empty.textContent = "빈 템플릿";
+    strip.appendChild(empty);
+    return strip;
+  }
+
+  previewSlides.forEach((slide) => {
+    const thumb = document.createElement("span");
+    thumb.className = "template-card-thumb";
+    const thumbSrc = slide.thumbnail || slide.adBgImagePath || null;
+
+    if (thumbSrc) {
+      const img = document.createElement("img");
+      img.src = thumbSrc;
+      img.alt = "";
+      img.loading = "lazy";
+      thumb.appendChild(img);
+    } else {
+      thumb.classList.add("is-placeholder");
+      thumb.textContent = getSlideTypeLabel(slide);
+    }
+
+    strip.appendChild(thumb);
+  });
+
+  return strip;
+}
+
+function buildTemplateCard(template) {
+  const card = document.createElement("article");
+  card.className = "template-card";
+  card.dataset.templateId = template.id;
+
+  card.appendChild(buildTemplateThumbStrip(template));
+
+  const body = document.createElement("div");
+  body.className = "template-card-body";
+
+  const title = document.createElement("h3");
+  title.className = "template-card-title";
+
+  // The title button stretches over the whole card via ::after, which keeps
+  // the card clickable without nesting block content inside a <button>.
+  const openBtn = document.createElement("button");
+  openBtn.type = "button";
+  openBtn.className = "template-card-open";
+  openBtn.textContent = template.name;
+  openBtn.addEventListener("click", () => openTemplateWorkspace(template.id));
+  title.appendChild(openBtn);
+  body.appendChild(title);
+
+  const meta = document.createElement("p");
+  meta.className = "template-card-meta";
+  const slideCount = (template.slides || []).length;
+  const createdAt = formatTemplateDate(template.createdAt);
+  meta.textContent = createdAt
+    ? `${slideCount}개 슬라이드 · ${createdAt}`
+    : `${slideCount}개 슬라이드`;
+  body.appendChild(meta);
+
+  card.appendChild(body);
+
+  const menuWrap = document.createElement("div");
+  menuWrap.className = "template-card-menu";
+
+  const menuBtn = document.createElement("button");
+  menuBtn.type = "button";
+  menuBtn.className = "template-card-menu-btn";
+  menuBtn.setAttribute("aria-label", `${template.name} 템플릿 메뉴`);
+  menuBtn.textContent = "⋯";
+
+  const menuDropdown = document.createElement("div");
+  menuDropdown.className = "bulk-dropdown template-card-menu-dropdown";
+  menuDropdown.hidden = true;
+
+  const renameItem = document.createElement("button");
+  renameItem.type = "button";
+  renameItem.className = "bulk-dropdown-item";
+  renameItem.textContent = "이름 변경";
+  renameItem.addEventListener("click", (event) => {
+    event.stopPropagation();
+    closeTemplateCardMenus();
+    renameTemplateById(template.id);
+  });
+
+  const deleteItem = document.createElement("button");
+  deleteItem.type = "button";
+  deleteItem.className = "bulk-dropdown-item danger";
+  deleteItem.textContent = "삭제";
+  deleteItem.addEventListener("click", (event) => {
+    event.stopPropagation();
+    closeTemplateCardMenus();
+    deleteTemplateById(template.id);
+  });
+
+  menuDropdown.appendChild(renameItem);
+  menuDropdown.appendChild(deleteItem);
+
+  menuBtn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const wasOpen = !menuDropdown.hidden;
+    closeTemplateCardMenus();
+    if (!wasOpen) {
+      menuDropdown.hidden = false;
+      menuBtn.classList.add("open");
+    }
+  });
+
+  menuWrap.appendChild(menuBtn);
+  menuWrap.appendChild(menuDropdown);
+  card.appendChild(menuWrap);
+
+  return card;
+}
+
+function renderTemplateGallery() {
+  if (templateCountBadge) {
+    templateCountBadge.textContent = String(templates.length);
+  }
+
+  if (!templateGalleryGrid) {
+    return;
+  }
+
+  closeTemplateCardMenus();
+  templateGalleryGrid.innerHTML = "";
+
+  templates.forEach((template) => {
+    templateGalleryGrid.appendChild(buildTemplateCard(template));
+  });
+
+  const isEmpty = templates.length === 0;
+  templateGalleryGrid.hidden = isEmpty;
+  if (templateGalleryEmpty) {
+    templateGalleryEmpty.hidden = !isEmpty;
+  }
 }
 
 function cleanupPreviewResources() {
@@ -1452,16 +1691,20 @@ function switchView(viewName) {
 
 navExtractor.addEventListener("click", () => switchView("extractor"));
 navPpt.addEventListener("click", () => switchView("ppt"));
-slideModeBtn.addEventListener("click", () => {
+tabSlidesBtn.addEventListener("click", () => {
   closeBulkDropdown();
-  openMainSlidesWorkspace();
+  setPptTab("slides");
 });
-slideListTitle.addEventListener("click", () => {
-  if (!isTemplateMode()) {
-    return;
-  }
-  renameActiveTemplate();
+tabTemplatesBtn.addEventListener("click", () => {
+  closeBulkDropdown();
+  setPptTab("templates");
 });
+templateGalleryGoSlidesBtn.addEventListener("click", () => setPptTab("slides"));
+templateBackBtn.addEventListener("click", () => {
+  closeBulkDropdown();
+  closeTemplateWorkspace();
+});
+templateNameDisplay.addEventListener("click", renameActiveTemplate);
 
 // --- Storage (Server Side) ---
 
@@ -1511,7 +1754,7 @@ async function saveActiveTemplateToServer() {
     );
     hasPendingTemplateChanges = false;
     updateTemplateManagementUi();
-    renderTemplateSubmenu();
+    renderTemplateGallery();
     return true;
   } catch (e) {
     console.error("Failed to save template", e);
@@ -1558,11 +1801,12 @@ async function loadPptDataFromServer() {
   if (activeTemplate) {
     loadWorkspaceSlides(activeTemplate.slides || []);
   } else {
+    activeTemplateId = null;
     loadWorkspaceSlides(mainSlides);
   }
 
-  renderTemplateSubmenu();
-  updateTemplateManagementUi();
+  renderTemplateGallery();
+  renderPptScreen();
 }
 
 function syncSelectedSlideIds() {
@@ -1614,8 +1858,6 @@ function updateSlideListControls() {
 function closeBulkDropdown() {
   if (bulkActionDropdown) bulkActionDropdown.hidden = true;
   if (bulkActionMenuBtn) bulkActionMenuBtn.classList.remove("open");
-  if (templateMenuDropdown) templateMenuDropdown.hidden = true;
-  updateTemplateManagementUi();
 }
 
 function toggleSlideSelection(id, forceValue) {
@@ -3388,7 +3630,6 @@ function updateButtonsState(slide) {
 
 function renderSlideList() {
   syncSelectedSlideIds();
-  renderTemplateSubmenu();
   updateTemplateManagementUi();
   slideListContainer.innerHTML = "";
   slides.forEach((slide, index) => {
@@ -4188,26 +4429,26 @@ async function createTemplateFromSelection() {
     }
 
     templates.push(cloneTemplate(payload.template));
-    renderTemplateSubmenu();
-    openTemplateWorkspace(payload.template.id);
+    renderTemplateGallery();
+    await openTemplateWorkspace(payload.template.id);
     alert(`템플릿이 저장되었습니다: ${payload.template.name}`);
   } catch (err) {
     alert(err.message || "템플릿 저장 중 오류가 발생했습니다.");
   }
 }
 
-async function deleteActiveTemplate() {
-  const activeTemplate = getActiveTemplate();
-  if (!activeTemplate) {
+async function deleteTemplateById(templateId) {
+  const template = templates.find((entry) => entry.id === templateId);
+  if (!template) {
     return;
   }
 
-  if (!confirm(`'${activeTemplate.name}' 템플릿을 삭제하시겠습니까?`)) {
+  if (!confirm(`'${template.name}' 템플릿을 삭제하시겠습니까?`)) {
     return;
   }
 
   try {
-    const resp = await fetch(`/api/templates/${encodeURIComponent(activeTemplate.id)}`, {
+    const resp = await fetch(`/api/templates/${encodeURIComponent(template.id)}`, {
       method: "DELETE",
     });
     const payload = await resp.json().catch(() => ({}));
@@ -4215,30 +4456,48 @@ async function deleteActiveTemplate() {
       throw new Error(payload.error || "템플릿 삭제에 실패했습니다.");
     }
 
-    templates = templates.filter((template) => template.id !== activeTemplate.id);
+    templates = templates.filter((entry) => entry.id !== template.id);
+    const wasOpen = activeTemplateId === template.id;
     activeTemplateId = null;
     hasPendingTemplateChanges = false;
-    loadWorkspaceSlides(mainSlides);
-    renderTemplateSubmenu();
-    updateTemplateManagementUi();
+
+    if (wasOpen) {
+      loadWorkspaceSlides([]);
+    }
+
+    renderTemplateGallery();
+    renderPptScreen();
   } catch (err) {
     alert(err.message || "템플릿 삭제 중 오류가 발생했습니다.");
   }
 }
 
-async function renameActiveTemplate() {
+function deleteActiveTemplate() {
+  return deleteTemplateById(activeTemplateId);
+}
+
+function promptTemplateName(currentName) {
+  const nextName = prompt("템플릿 이름을 입력하세요.", currentName);
+  if (!nextName) {
+    return null;
+  }
+
+  const trimmedName = nextName.trim();
+  if (!trimmedName || trimmedName === currentName) {
+    return null;
+  }
+
+  return trimmedName;
+}
+
+function renameActiveTemplate() {
   const activeTemplate = getActiveTemplate();
   if (!activeTemplate) {
     return;
   }
 
-  const nextName = prompt("템플릿 이름을 입력하세요.", activeTemplate.name);
-  if (!nextName) {
-    return;
-  }
-
-  const trimmedName = nextName.trim();
-  if (!trimmedName || trimmedName === activeTemplate.name) {
+  const trimmedName = promptTemplateName(activeTemplate.name);
+  if (!trimmedName) {
     return;
   }
 
@@ -4249,7 +4508,45 @@ async function renameActiveTemplate() {
   );
   hasPendingTemplateChanges = true;
   updateTemplateManagementUi();
-  renderTemplateSubmenu();
+}
+
+// Renaming from the gallery has no "저장" button to fall back on, so persist
+// immediately instead of leaving the change pending.
+async function renameTemplateById(templateId) {
+  const template = templates.find((entry) => entry.id === templateId);
+  if (!template) {
+    return;
+  }
+
+  const trimmedName = promptTemplateName(template.name);
+  if (!trimmedName) {
+    return;
+  }
+
+  try {
+    const resp = await fetch(`/api/templates/${encodeURIComponent(template.id)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: trimmedName,
+        slides: (template.slides || []).map(buildSerializableSlide),
+      }),
+    });
+
+    const payload = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      throw new Error(payload.error || "템플릿 이름 변경에 실패했습니다.");
+    }
+
+    const nextTemplate = cloneTemplate(payload.template);
+    templates = templates.map((entry) =>
+      entry.id === nextTemplate.id ? nextTemplate : entry
+    );
+    renderTemplateGallery();
+    updateTemplateManagementUi();
+  } catch (err) {
+    alert(err.message || "템플릿 이름 변경 중 오류가 발생했습니다.");
+  }
 }
 
 async function downloadSelectedSlidesBundle() {
@@ -4368,28 +4665,14 @@ bulkActionMenuBtn.addEventListener("click", (e) => {
   }
 });
 
-templateMenuBtn.addEventListener("click", (e) => {
-  e.stopPropagation();
-  const isOpen = !templateMenuDropdown.hidden;
-  if (isOpen) {
-    closeBulkDropdown();
-  } else {
-    closeBulkDropdown();
-    templateMenuDropdown.hidden = false;
-    templateMenuBtn.classList.add("active");
-  }
-});
-
 document.addEventListener("click", (e) => {
   if (bulkActionDropdown && !bulkActionDropdown.hidden) {
     if (!bulkActionMenuBtn.contains(e.target) && !bulkActionDropdown.contains(e.target)) {
       closeBulkDropdown();
     }
   }
-  if (templateMenuDropdown && !templateMenuDropdown.hidden) {
-    if (!templateMenuBtn.contains(e.target) && !templateMenuDropdown.contains(e.target)) {
-      closeBulkDropdown();
-    }
+  if (templateGalleryGrid && !templateGalleryGrid.contains(e.target)) {
+    closeTemplateCardMenus();
   }
 });
 
