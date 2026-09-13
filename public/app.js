@@ -4054,33 +4054,6 @@ document.addEventListener("click", (e) => {
   }
 });
 
-document.addEventListener("click", (e) => {
-  if (!currentSlideId) return;
-  if (e.target.closest(".slide-card")) return;
-  if (e.target.closest(".slide-editor-panel")) return;
-  if (e.target.closest(".sub-nav")) return;
-
-  const currentSlide = slides.find(s => s.id === currentSlideId);
-  if (currentSlide && !currentSlide.saved) {
-    if (!confirm("이 슬라이드는 저장되지 않았습니다. 이동하면 삭제됩니다. 계속하시겠습니까?")) {
-      e.stopPropagation();
-      return;
-    }
-    slides = slides.filter(s => s.id !== currentSlideId);
-  } else if (hasUnsavedChanges) {
-    if (!confirm("저장하지 않은 변경사항이 있습니다. 무시하고 이동하시겠습니까?")) {
-      e.stopPropagation();
-      return;
-    }
-  }
-
-  currentSlideId = null;
-  hasUnsavedChanges = false;
-  emptyEditorState.style.display = "flex";
-  slideEditor.style.display = "none";
-  renderSlideList();
-}, true);
-
 bulkDeleteBtn.addEventListener("click", () => { closeBulkDropdown(); deleteSelectedSlides(); });
 bulkTemplateBtn.addEventListener("click", () => { closeBulkDropdown(); createTemplateFromSelection(); });
 bulkDownloadBtn.addEventListener("click", () => { closeBulkDropdown(); downloadSelectedSlidesBundle(); });
