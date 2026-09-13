@@ -1,0 +1,60 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import {
+  createSnapshot,
+  isSnapshotDirty,
+  deriveSaveButtonState,
+  getPendingChangeScopes,
+  getSaveSequence,
+} from "../lib/save-state.js";
+
+describe("save state snapshots", () => {
+  it("ignores object key insertion order", () => {
+    assert.equal(
+      createSnapshot({ name: "예배", settings: { size: 40, align: "center" } }),
+      createSnapshot({ settings: { align: "center", size: 40 }, name: "예배" })
+    );
+  });
+
+  it("becomes clean when a changed value returns to the baseline", () => {
+    const baseline = createSnapshot({ name: "원본", size: 40 });
+    assert.equal(isSnapshotDirty({ name: "수정", size: 40 }, baseline), true);
+    assert.equal(isSnapshotDirty({ name: "원본", size: 40 }, baseline), false);
+  });
+});
+
+describe("save state decisions", () => {
+  it("enables only the button that has pending work", () => {
+    assert.deepEqual(
+      deriveSaveButtonState({
+        hasSlide: true,
+        hasTemplate: true,
+        slideDirty: true,
+        templateDirty: false,
+        slideSaving: false,
+        templateSaving: false,
+      }),
+      { slideDisabled: false, templateDisabled: true }
+    );
+  });
+
+  it("disables both buttons while either save is running", () => {
+    assert.deepEqual(
+      deriveSaveButtonState({
+        hasSlide: true,
+        hasTemplate: true,
+        slideDirty: true,
+        templateDirty: true,
+        slideSaving: true,
+        templateSaving: false,
+      }),
+      { slideDisabled: true, templateDisabled: true }
+    );
+  });
+
+  it("reports both dirty scopes once and saves slide before template", () => {
+    const input = { slideDirty: true, templateDirty: true };
+    assert.deepEqual(getPendingChangeScopes(input), ["slide", "template"]);
+    assert.deepEqual(getSaveSequence(input), ["slide", "template"]);
+  });
+});
