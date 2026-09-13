@@ -7,6 +7,8 @@ import {
   deriveSaveButtonState,
   getPendingChangeScopes,
   getSaveSequence,
+  getUnsavedChangesMessage,
+  selectTransientPreviewFiles,
   shouldRecaptureSlideBaseline,
   toFileMetadata,
   withTransientFiles,
@@ -49,6 +51,56 @@ describe("save state snapshots", () => {
     );
     assert.equal("file" in draft, false);
     assert.equal("adBgImageFile" in draft, false);
+  });
+
+  it("keeps a picked file in the preview for an upload slide", () => {
+    const file = { name: "slides.pptx" };
+    const backgroundFile = { name: "background.png" };
+    assert.deepEqual(
+      selectTransientPreviewFiles(
+        { type: "simple", sourceType: "upload", adBgSource: "file" },
+        { file, backgroundFile }
+      ),
+      { file, backgroundFile }
+    );
+  });
+
+  it("drops a picked file that the current slide type cannot render", () => {
+    const file = { name: "slides.pptx" };
+    const backgroundFile = { name: "background.png" };
+    assert.deepEqual(
+      selectTransientPreviewFiles(
+        { type: "hymn", sourceType: "upload", adBgSource: "file" },
+        { file, backgroundFile }
+      ),
+      { file: null, backgroundFile: null }
+    );
+    assert.deepEqual(
+      selectTransientPreviewFiles(
+        { type: "title", sourceType: "upload", adBgSource: "file" },
+        { file, backgroundFile }
+      ),
+      { file: null, backgroundFile: null }
+    );
+    assert.deepEqual(
+      selectTransientPreviewFiles(
+        { type: "scripture", sourceType: "upload", adBgSource: "file" },
+        { file, backgroundFile }
+      ),
+      { file: null, backgroundFile: null }
+    );
+  });
+
+  it("drops a picked file when the slide no longer reads from that source", () => {
+    const file = { name: "slides.pptx" };
+    const backgroundFile = { name: "background.png" };
+    assert.deepEqual(
+      selectTransientPreviewFiles(
+        { type: "ad", sourceType: "basic", adBgSource: "url" },
+        { file, backgroundFile }
+      ),
+      { file: null, backgroundFile: null }
+    );
   });
 
   it("ignores object key insertion order", () => {
@@ -122,10 +174,71 @@ describe("save state decisions", () => {
     );
   });
 
+  it("keeps template save inactive while the slide draft is still dirty", () => {
+    assert.deepEqual(
+      deriveSaveButtonState({
+        hasSlide: true,
+        hasTemplate: true,
+        slideDirty: true,
+        templateDirty: true,
+        slideSaving: false,
+        templateSaving: false,
+      }),
+      { slideDisabled: false, templateDisabled: true }
+    );
+    assert.deepEqual(
+      deriveSaveButtonState({
+        hasSlide: true,
+        hasTemplate: true,
+        slideDirty: false,
+        templateDirty: true,
+        slideSaving: false,
+        templateSaving: false,
+      }),
+      { slideDisabled: true, templateDisabled: false }
+    );
+  });
+
   it("reports both dirty scopes once and saves slide before template", () => {
     const input = { slideDirty: true, templateDirty: true };
     assert.deepEqual(getPendingChangeScopes(input), ["slide", "template"]);
     assert.deepEqual(getSaveSequence(input), ["slide", "template"]);
+  });
+
+  it("does not request a popup or save when nothing is dirty", () => {
+    assert.deepEqual(
+      getPendingChangeScopes({ slideDirty: false, templateDirty: false }),
+      []
+    );
+    assert.deepEqual(
+      getSaveSequence({ slideDirty: false, templateDirty: false }),
+      []
+    );
+  });
+
+  it("requests only template save after the slide draft was committed", () => {
+    assert.deepEqual(
+      getSaveSequence({ slideDirty: false, templateDirty: true }),
+      ["template"]
+    );
+  });
+
+  it("summarizes both dirty scopes in one popup message", () => {
+    assert.equal(
+      getUnsavedChangesMessage(["slide", "template"]),
+      "슬라이드 편집과 템플릿 변경사항이 있습니다."
+    );
+  });
+
+  it("names the single dirty scope in the popup message", () => {
+    assert.equal(
+      getUnsavedChangesMessage(["template"]),
+      "템플릿에 저장하지 않은 변경사항이 있습니다."
+    );
+    assert.equal(
+      getUnsavedChangesMessage(["slide"]),
+      "슬라이드에 저장하지 않은 변경사항이 있습니다."
+    );
   });
 
   it("recaptures a slide baseline only for a clean selection that survives resync", () => {

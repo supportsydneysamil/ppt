@@ -1,8 +1,12 @@
 import {
   createSnapshot,
   deriveSaveButtonState,
+  getPendingChangeScopes,
+  getSaveSequence,
+  getUnsavedChangesMessage,
   isSnapshotDirty,
   isTemplateDirty,
+  selectTransientPreviewFiles,
   shouldRecaptureSlideBaseline,
   toFileMetadata,
   withTransientFiles,
@@ -729,15 +733,17 @@ async function handleExportToPptGenerator(event) {
 
     mainSlides.push(cloneSlide(responsePayload.slide));
     closeScriptureExportModal();
-    switchView("ppt");
+    // The slide is already stored on the server, so this jump must not be
+    // interrupted by the unsaved-changes guard.
+    applyViewChange("ppt");
     pptTab = "slides";
     activeTemplateId = null;
     hasPendingTemplateChanges = false;
     templateBaselineSnapshot = null;
     loadWorkspaceSlides(mainSlides);
     renderPptScreen();
-    selectSlide(responsePayload.slide.id);
-    alert(`슬라이드가 추가되었습니다: ${responsePayload.slide.name}`);
+    applySlideSelection(responsePayload.slide.id);
+    showToast(`슬라이드가 추가되었습니다: ${responsePayload.slide.name}`);
   } catch (err) {
     alert(err?.message || "슬라이드를 보내는 중 오류가 발생했습니다.");
   } finally {
@@ -853,6 +859,12 @@ const customTitleDesignGrid = document.getElementById("customTitleDesignGrid");
 const customTitleDesignSelect = document.getElementById("customTitleDesign");
 const customTitleKoInput = document.getElementById("customTitleKo");
 const customTitleEnInput = document.getElementById("customTitleEn");
+const unsavedChangesModal = document.getElementById("unsavedChangesModal");
+const unsavedChangesMessage = document.getElementById("unsavedChangesMessage");
+const unsavedSaveBtn = document.getElementById("unsavedSaveBtn");
+const unsavedDiscardBtn = document.getElementById("unsavedDiscardBtn");
+const unsavedCancelBtn = document.getElementById("unsavedCancelBtn");
+const appToastRegion = document.getElementById("appToastRegion");
 
 // State
 let slides = [];
@@ -870,6 +882,9 @@ let slideRuntimeDraft = {};
 let slideDirty = false;
 let slideSaving = false;
 let templateSaving = false;
+// Depth > 0 means a guarded transition is already running, so nested helpers
+// must not raise a second unsaved-changes popup.
+let guardedTransitionDepth = 0;
 let selectedSlideIds = new Set();
 let draggedSlideId = null;
 
@@ -1025,10 +1040,13 @@ function collectCurrentSlideDraft() {
 function collectCurrentSlidePreviewDraft(slideOverride) {
   const draft = slideOverride || collectCurrentSlideDraft();
   if (!draft) return null;
-  return withTransientFiles(draft, {
-    file: userPptxFile?.files?.[0],
-    backgroundFile: adBgImageFile?.files?.[0],
-  });
+  return withTransientFiles(
+    draft,
+    selectTransientPreviewFiles(draft, {
+      file: userPptxFile?.files?.[0],
+      backgroundFile: adBgImageFile?.files?.[0],
+    })
+  );
 }
 
 function refreshSaveState() {
@@ -1062,29 +1080,202 @@ function resetEditorSelection() {
   refreshSaveState();
 }
 
-function confirmLeavingDirtyWorkspace() {
+// --- Unsaved changes: one popup, one guard, non-blocking notices ---
+
+function showToast(message) {
+  if (!appToastRegion) {
+    return;
+  }
+  const toast = document.createElement("div");
+  toast.className = "app-toast";
+  toast.textContent = message;
+  appToastRegion.appendChild(toast);
+  window.setTimeout(() => toast.remove(), 2800);
+}
+
+function getPendingScopes() {
+  return getPendingChangeScopes({
+    slideDirty,
+    templateDirty: hasPendingTemplateChanges,
+  });
+}
+
+// Set while the dialog waits for a choice. Escape, the backdrop and the close
+// button all resolve through it, so a stale click can never answer a newer
+// question.
+let unsavedDialogResolver = null;
+
+function setUnsavedDialogBusy(busy) {
+  unsavedSaveBtn.disabled = busy;
+  unsavedDiscardBtn.disabled = busy;
+  unsavedCancelBtn.disabled = busy;
+  unsavedSaveBtn.textContent = busy ? "저장 중..." : "저장 후 이동";
+}
+
+function closeUnsavedChangesDialog() {
+  unsavedDialogResolver = null;
+  setUnsavedDialogBusy(false);
+  if (unsavedChangesModal.open) {
+    unsavedChangesModal.close();
+  }
+}
+
+// Escape, the backdrop and "계속 편집" are the same answer. The dialog stays
+// open between rounds so a failed save can be retried in place.
+function showUnsavedChangesDialog(scopes) {
+  unsavedChangesMessage.textContent = getUnsavedChangesMessage(scopes);
+  setUnsavedDialogBusy(false);
+
+  return new Promise((resolve) => {
+    unsavedDialogResolver = resolve;
+    const finish = (choice) => {
+      if (unsavedDialogResolver !== resolve) {
+        return;
+      }
+      unsavedDialogResolver = null;
+      resolve(choice);
+    };
+
+    unsavedSaveBtn.onclick = () => finish("save");
+    unsavedDiscardBtn.onclick = () => finish("discard");
+    unsavedCancelBtn.onclick = () => finish("cancel");
+    unsavedChangesModal.oncancel = (event) => {
+      event.preventDefault();
+      finish("cancel");
+    };
+    unsavedChangesModal.onclick = (event) => {
+      if (event.target === unsavedChangesModal) {
+        finish("cancel");
+      }
+    };
+
+    if (!unsavedChangesModal.open) {
+      unsavedChangesModal.showModal();
+    }
+  });
+}
+
+// Restores the exact saved baselines: a never-saved slide disappears, an
+// edited slide falls back to its stored model, and template edits are replaced
+// by the server copy.
+async function discardPendingChanges() {
+  const current = slides.find((slide) => slide.id === currentSlideId);
+
+  if (slideDirty && current && current.saved === false) {
+    slides = slides.filter((slide) => slide.id !== currentSlideId);
+    resetEditorSelection();
+    // The dropped draft must not survive inside the template working copy.
+    syncWorkingSlidesToState();
+    if (isTemplateMode()) {
+      refreshTemplateDirtyState();
+    }
+    renderSlideList();
+  } else if (slideDirty && current) {
+    slideRuntimeDraft = {};
+    populateEditor(current);
+    slideBaselineSnapshot = createSnapshot(collectCurrentSlideDraft());
+    renderPreview(current);
+    updateButtonsState(current);
+  }
+
   if (isTemplateMode() && hasPendingTemplateChanges) {
-    if (!confirm("템플릿에 저장되지 않은 변경사항이 있습니다. 저장하지 않고 이동하시겠습니까?")) {
+    const templateId = activeTemplateId;
+    await loadTemplatesFromServer();
+    const restored = templates.find((template) => template.id === templateId);
+    activeTemplateId = restored ? templateId : null;
+    loadWorkspaceSlides(restored ? restored.slides || [] : []);
+    captureTemplateBaseline();
+    refreshTemplateDirtyState();
+    renderTemplateGallery();
+  }
+
+  refreshSaveState();
+}
+
+// Saving the slide draft is what creates the template change, so the sequence
+// is recomputed after every step instead of being frozen up front.
+async function savePendingChanges() {
+  // Two scopes means at most two rounds; the extra round only exists so a
+  // scope that refuses to go clean ends the loop instead of spinning.
+  for (let round = 0; round < 3; round += 1) {
+    const [scope] = getSaveSequence({
+      slideDirty,
+      templateDirty: hasPendingTemplateChanges,
+    });
+    if (!scope) {
+      return true;
+    }
+
+    const saved =
+      scope === "slide"
+        ? await saveCurrentSlide({ silent: true })
+        : await saveActiveTemplateToServer({ silent: true });
+    if (!saved) {
       return false;
     }
   }
 
-  if (!currentSlideId) {
+  return getPendingScopes().length === 0;
+}
+
+async function runTransition(transition) {
+  guardedTransitionDepth += 1;
+  try {
+    await transition();
+  } finally {
+    guardedTransitionDepth -= 1;
+  }
+  return true;
+}
+
+// Every internal navigation funnels through here so only one popup can ever
+// be on screen, even when a guarded transition calls another guarded helper.
+async function guardTransition(transition) {
+  if (guardedTransitionDepth > 0) {
+    await transition();
     return true;
   }
 
-  const currentSlide = slides.find((slide) => slide.id === currentSlideId);
-  if (currentSlide && !currentSlide.saved) {
-    if (!confirm("이 슬라이드는 저장되지 않았습니다. 이동하면 삭제됩니다. 계속하시겠습니까?")) {
-      return false;
-    }
-  } else if (slideDirty) {
-    if (!confirm("저장하지 않은 변경사항이 있습니다. 무시하고 이동하시겠습니까?")) {
-      return false;
-    }
+  if (getPendingScopes().length === 0) {
+    return runTransition(transition);
   }
 
-  return true;
+  try {
+    for (;;) {
+      const scopes = getPendingScopes();
+      if (scopes.length === 0) {
+        break;
+      }
+
+      const choice = await showUnsavedChangesDialog(scopes);
+      if (choice === "cancel") {
+        return false;
+      }
+
+      if (choice === "discard") {
+        await discardPendingChanges();
+        break;
+      }
+
+      setUnsavedDialogBusy(true);
+      let saved = false;
+      try {
+        saved = await savePendingChanges();
+      } finally {
+        setUnsavedDialogBusy(false);
+      }
+      if (saved) {
+        showToast("변경사항을 저장했습니다");
+        break;
+      }
+      // Keep the dialog and the workspace open so the draft and the picked
+      // files survive for another attempt.
+    }
+  } finally {
+    closeUnsavedChangesDialog();
+  }
+
+  return runTransition(transition);
 }
 
 function loadWorkspaceSlides(nextSlides) {
@@ -1145,82 +1336,76 @@ function renderPptScreen() {
   updateTemplateManagementUi();
 }
 
-// Returns false when the user cancels. When they confirm discarding template
-// edits, the local template cache is refetched so an abandoned rename or slide
-// change does not linger in the gallery.
-async function leaveCurrentWorkspace() {
-  const hadTemplateEdits = isTemplateMode() && hasPendingTemplateChanges;
-
-  if (!confirmLeavingDirtyWorkspace()) {
-    return false;
-  }
-
+// By the time a transition body runs, the guard has already saved or
+// discarded everything, so leaving only has to drop the template context.
+function clearActiveWorkspace() {
   activeTemplateId = null;
   hasPendingTemplateChanges = false;
   templateBaselineSnapshot = null;
-
-  if (hadTemplateEdits) {
-    await loadTemplatesFromServer();
-  }
-
-  return true;
 }
 
-async function setPptTab(tab) {
-  if (tab === pptTab && !(tab === "templates" && activeTemplateId)) {
-    return;
+function setPptTab(tab) {
+  const nextTab = tab === "templates" ? "templates" : "slides";
+  if (nextTab === pptTab && !(nextTab === "templates" && activeTemplateId)) {
+    return Promise.resolve(true);
   }
 
-  if (!(await leaveCurrentWorkspace())) {
-    return;
-  }
+  return guardTransition(async () => {
+    clearActiveWorkspace();
+    pptTab = nextTab;
 
-  pptTab = tab === "templates" ? "templates" : "slides";
+    if (pptTab === "slides") {
+      loadWorkspaceSlides(mainSlides);
+    } else {
+      renderTemplateGallery();
+    }
 
-  if (pptTab === "slides") {
-    loadWorkspaceSlides(mainSlides);
-  } else {
-    renderTemplateGallery();
-  }
-
-  renderPptScreen();
+    renderPptScreen();
+  });
 }
 
-async function openTemplateWorkspace(templateId) {
+function openTemplateWorkspace(templateId) {
   if (!templates.some((entry) => entry.id === templateId)) {
-    return;
+    return Promise.resolve(false);
   }
 
-  if (!(await leaveCurrentWorkspace())) {
-    return;
+  if (activeTemplateId === templateId) {
+    return Promise.resolve(true);
   }
 
-  // The cache may have been refetched while discarding edits, so look the
-  // template up again.
-  const template = templates.find((entry) => entry.id === templateId);
-  if (!template) {
+  return guardTransition(async () => {
+    clearActiveWorkspace();
+
+    // The cache may have been refetched while discarding edits, so look the
+    // template up again.
+    const template = templates.find((entry) => entry.id === templateId);
+    if (!template) {
+      renderTemplateGallery();
+      renderPptScreen();
+      return;
+    }
+
+    pptTab = "templates";
+    activeTemplateId = templateId;
+    loadWorkspaceSlides(template.slides || []);
+    captureTemplateBaseline();
+    refreshTemplateDirtyState();
+    renderPptScreen();
+  });
+}
+
+function closeTemplateWorkspace() {
+  if (!isTemplateMode()) {
+    return Promise.resolve(true);
+  }
+
+  return guardTransition(async () => {
+    clearActiveWorkspace();
+    pptTab = "templates";
+    loadWorkspaceSlides([]);
     renderTemplateGallery();
     renderPptScreen();
-    return;
-  }
-
-  pptTab = "templates";
-  activeTemplateId = templateId;
-  loadWorkspaceSlides(template.slides || []);
-  captureTemplateBaseline();
-  refreshTemplateDirtyState();
-  renderPptScreen();
-}
-
-async function closeTemplateWorkspace() {
-  if (!(await leaveCurrentWorkspace())) {
-    return;
-  }
-
-  pptTab = "templates";
-  loadWorkspaceSlides([]);
-  renderTemplateGallery();
-  renderPptScreen();
+  });
 }
 
 function formatTemplateDate(value) {
@@ -1835,12 +2020,20 @@ document.querySelectorAll('input[name="scriptureTitleSlideType"]').forEach((radi
 
 // --- Navigation ---
 function switchView(viewName) {
-  if (viewName === "extractor" && slideDirty) {
-    if (!confirm("저장하지 않은 변경사항이 있습니다. 정말 이동하시겠습니까?")) {
-      return;
-    }
+  const nextView = viewName === "extractor" ? "extractor" : "ppt";
+  const currentView = navExtractor.classList.contains("active")
+    ? "extractor"
+    : "ppt";
+  if (nextView === currentView) {
+    return Promise.resolve(true);
   }
 
+  return guardTransition(async () => {
+    applyViewChange(nextView);
+  });
+}
+
+function applyViewChange(viewName) {
   if (viewName === "extractor") {
     viewExtractor.style.display = "block";
     viewPpt.style.display = "none";
@@ -1940,7 +2133,7 @@ async function saveActiveTemplateToServer({ silent = false } = {}) {
     renderSlideList();
     renderTemplateGallery();
     if (!silent) {
-      alert("템플릿이 저장되었습니다");
+      showToast("템플릿이 저장되었습니다");
     }
     return true;
   } catch (e) {
@@ -2138,7 +2331,15 @@ function getSlideTypeLabel(slide) {
 
 // --- Slide Management ---
 
+// Guarded before the draft exists so a cancelled popup cannot leave an
+// orphan slide behind.
 function createSlide() {
+  return guardTransition(async () => {
+    appendNewSlide();
+  });
+}
+
+function appendNewSlide() {
   const newSlide = {
     id: Date.now().toString(),
     name: "새 슬라이드",
@@ -2172,7 +2373,7 @@ function createSlide() {
   };
   slides.push(newSlide);
   // Do NOT save to storage yet
-  selectSlide(newSlide.id);
+  applySlideSelection(newSlide.id);
   refreshSaveState();
   renderSlideList();
 }
@@ -2839,27 +3040,14 @@ function renderPreview(slideOverride) {
 }
 
 function selectSlide(id) {
-  if (currentSlideId === id) return;
+  if (currentSlideId === id) return Promise.resolve(true);
 
-  if (currentSlideId) {
-    const prevSlide = slides.find(s => s.id === currentSlideId);
-    // If previous slide was unsaved (never saved), we should discard/delete it if user navigates away
-    if (prevSlide && !prevSlide.saved) {
-      if (!confirm("이 슬라이드는 저장되지 않았습니다. 이동하면 삭제됩니다. 계속하시겠습니까?")) {
-        return;
-      }
-      // Remove the unsaved slide
-      slides = slides.filter(s => s.id !== currentSlideId);
-      slideDirty = false;
-    } else if (slideDirty) {
-      // Saved slide but has pending edits
-      if (!confirm("저장하지 않은 변경사항이 있습니다. 무시하고 이동하시겠습니까?")) {
-        return;
-      }
-      slideDirty = false;
-    }
-  }
+  return guardTransition(async () => {
+    applySlideSelection(id);
+  });
+}
 
+function applySlideSelection(id) {
   currentSlideId = id;
   const slide = slides.find((s) => s.id === id);
 
@@ -3998,30 +4186,30 @@ async function commitSlideCandidate(candidate) {
   return true;
 }
 
-async function saveCurrentSlide() {
+async function saveCurrentSlide({ silent = false } = {}) {
   if (!currentSlideId) {
     console.error("No currentSlideId!");
-    return;
+    return false;
   }
 
   const name = slideNameInput.value.trim();
 
   if (!name) {
     alert("슬라이드 이름을 입력하세요.");
-    return;
+    return false;
   }
 
   // Check duplicate name
   const existing = slides.find((s) => s.name === name && s.id !== currentSlideId);
   if (existing) {
     alert("이미 존재하는 슬라이드 이름입니다.");
-    return;
+    return false;
   }
 
   const slide = collectCurrentSlideDraft();
   if (!slide) {
     console.error("Slide object not found for id:", currentSlideId);
-    return;
+    return false;
   }
 
   slideSaving = true;
@@ -4031,7 +4219,7 @@ async function saveCurrentSlide() {
       const number = hymnNumberInput.value;
       if (!number) {
         alert("찬송가 장수를 입력하세요.");
-        return;
+        return false;
       }
 
       // Explicitly check if we need to download (if number changed or no file)
@@ -4065,7 +4253,7 @@ async function saveCurrentSlide() {
         } catch (e) {
           alert("자동 다운로드 실패: " + e.message);
           if (saveBtnMsg) saveBtnMsg.textContent = originalText;
-          return; // Stop save if download fails
+          return false; // Stop save if download fails
         } finally {
           if (saveBtnMsg) saveBtnMsg.textContent = originalText;
         }
@@ -4081,7 +4269,7 @@ async function saveCurrentSlide() {
 
     } else if (slide.type === 'scripture') {
       if (!(await applyScriptureSlideSettings(slide))) {
-        return;
+        return false;
       }
 
       const generated = await ensureScriptureSlideFile(
@@ -4091,7 +4279,7 @@ async function saveCurrentSlide() {
         "생성 중..."
       );
       if (!generated) {
-        return;
+        return false;
       }
       rememberSlideRuntimeAssets(slide, [
         "serverFilePath",
@@ -4148,7 +4336,7 @@ async function saveCurrentSlide() {
           } catch (e) {
             alert("배경 이미지 업로드 실패: " + e.message);
             if (saveBtnMsg) saveBtnMsg.textContent = originalText;
-            return;
+            return false;
           } finally {
             if (saveBtnMsg) saveBtnMsg.textContent = originalText;
           }
@@ -4170,7 +4358,7 @@ async function saveCurrentSlide() {
         const file = userPptxFile.files[0];
         if (file.size > 50 * 1024 * 1024) {
           alert("파일 크기가 50MB를 초과합니다.");
-          return;
+          return false;
         }
         
         if (
@@ -4200,7 +4388,7 @@ async function saveCurrentSlide() {
           } catch (e) {
             alert("파일 업로드 실패: " + e.message);
             if (saveBtnMsg) saveBtnMsg.textContent = originalText;
-            return;
+            return false;
           } finally {
             if (saveBtnMsg) saveBtnMsg.textContent = originalText;
           }
@@ -4213,11 +4401,11 @@ async function saveCurrentSlide() {
       const titleData = collectTitleSlideData();
       if (!titleData.churchName) {
         alert("교회 이름을 입력하세요.");
-        return;
+        return false;
       }
       if (!titleData.serviceDate) {
         alert("주일 날짜를 선택하세요.");
-        return;
+        return false;
       }
 
       Object.assign(slide, titleData);
@@ -4228,7 +4416,7 @@ async function saveCurrentSlide() {
       const customTitleData = collectCustomTitleSlideData();
       if (!customTitleData.customTitleKo) {
         alert("타이틀 이름(한글)을 입력하세요.");
-        return;
+        return false;
       }
 
       Object.assign(slide, customTitleData);
@@ -4240,7 +4428,7 @@ async function saveCurrentSlide() {
       const sourceRadio = document.querySelector('input[name="sourceType"]:checked');
       if (!sourceRadio) {
         console.error("No source radio checked");
-        return;
+        return false;
       }
       slide.sourceType = sourceRadio.value;
       slide.content = slideContentInput.value;
@@ -4279,7 +4467,7 @@ async function saveCurrentSlide() {
           } catch (e) {
             alert("배경 이미지 업로드 실패: " + e.message);
             if (saveBtnMsg) saveBtnMsg.textContent = originalText;
-            return;
+            return false;
           } finally {
             if (saveBtnMsg) saveBtnMsg.textContent = originalText;
           }
@@ -4328,19 +4516,19 @@ async function saveCurrentSlide() {
             } catch (err) {
               console.error("Upload Error:", err);
               alert("파일 업로드 실패");
-              return;
+              return false;
             }
           }
         } else if (!slide.fileName && !slide.serverFilePath) {
           alert("PPTX 파일을 업로드해주세요.");
-          return;
+          return false;
         }
       }
     }
 
     const committed = await commitSlideCandidate(slide);
     if (!committed) {
-      return;
+      return false;
     }
 
     if (slide.type === "title") {
@@ -4352,14 +4540,18 @@ async function saveCurrentSlide() {
     refreshSaveState();
     updateButtonsState(slide);
     renderSlideList();
-    alert(
-      isTemplateMode()
-        ? "슬라이드 변경사항이 반영되었습니다 · 템플릿 저장 필요"
-        : "슬라이드가 저장되었습니다"
-    );
+    if (!silent) {
+      showToast(
+        isTemplateMode()
+          ? "슬라이드 변경사항이 반영되었습니다 · 템플릿 저장 필요"
+          : "슬라이드가 저장되었습니다"
+      );
+    }
+    return true;
   } catch (e) {
     console.error("Error in saveCurrentSlide:", e);
     alert("저장 중 오류 발생: " + e.message);
+    return false;
   } finally {
     slideSaving = false;
     refreshSaveState();
@@ -4753,8 +4945,8 @@ async function createTemplateFromSelection() {
 
     templates.push(cloneTemplate(payload.template));
     renderTemplateGallery();
+    showToast(`템플릿이 저장되었습니다: ${payload.template.name}`);
     await openTemplateWorkspace(payload.template.id);
-    alert(`템플릿이 저장되었습니다: ${payload.template.name}`);
   } catch (err) {
     alert(err.message || "템플릿 저장 중 오류가 발생했습니다.");
   }
@@ -4913,7 +5105,7 @@ async function downloadSelectedSlidesBundle() {
 
 addSlideBtn.addEventListener("click", createSlide);
 
-editorSaveBtn.addEventListener("click", saveCurrentSlide);
+editorSaveBtn.addEventListener("click", () => saveCurrentSlide());
 editorResetBtn.addEventListener("click", resetCurrentSlide);
 editorCancelBtn.addEventListener("click", cancelEdit);
 
@@ -4944,22 +5136,23 @@ async function deleteCurrentSlide() {
   }
 }
 
-// ... cancelEdit (no server logic needed here usually, just discard local) ...
+// Closing the editor is the same decision as leaving it, so it goes through
+// the one guard instead of its own confirm.
 function cancelEdit() {
-  if (!currentSlideId) return;
-  const slide = slides.find(s => s.id === currentSlideId);
+  if (!currentSlideId) return Promise.resolve(true);
 
-  if (slide && !slide.saved) {
-    if (!confirm("작성 중인 슬라이드가 삭제됩니다. 취소하시겠습니까?")) {
-      return;
+  return guardTransition(async () => {
+    const slide = slides.find((s) => s.id === currentSlideId);
+    if (slide && !slide.saved) {
+      slides = slides.filter((s) => s.id !== currentSlideId);
+      syncWorkingSlidesToState();
+      if (isTemplateMode()) {
+        refreshTemplateDirtyState();
+      }
     }
-    slides = slides.filter(s => s.id !== currentSlideId);
     resetEditorSelection();
     renderSlideList();
-  } else {
-    resetEditorSelection();
-    renderSlideList();
-  }
+  });
 }
 
 editorDeleteBtn.addEventListener("click", deleteCurrentSlide);
@@ -5282,6 +5475,16 @@ userPptxFile.addEventListener('change', async () => {
 
   renderPreview();
   refreshSaveState();
+});
+
+// Closing the tab is the one navigation the in-app popup cannot own, so the
+// browser prompt stands in for it — and only when something is really dirty.
+window.addEventListener("beforeunload", (event) => {
+  if (!slideDirty && !hasPendingTemplateChanges) {
+    return;
+  }
+  event.preventDefault();
+  event.returnValue = "";
 });
 
 // Load slides on init
