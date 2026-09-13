@@ -41,11 +41,18 @@
    npm install
    ```
 
-2. 서버 실행
+2. 개발 서버 실행 (Vite 미들웨어 + API)
    ```bash
-   npm start
+   npm run dev
    ```
    - 기본 포트: `3000` (http://localhost:3000)
+   - 프론트엔드는 Vite HMR로 자동 반영됩니다. `server.js`/`lib/`를 고친 경우에는 서버를 직접 재시작하세요.
+
+3. 운영 실행
+   ```bash
+   npm run build
+   npm start
+   ```
 
 ## 프로젝트 구조
 

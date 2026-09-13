@@ -75,6 +75,44 @@ class FakeObject {
 }
 
 export class Rect extends FakeObject {}
+
+export class Shadow {
+  constructor(options = {}) {
+    Object.assign(this, { color: "#000000", blur: 0, offsetX: 0, offsetY: 0, ...options });
+  }
+}
+
+export class ActiveSelection extends FakeObject {
+  constructor(objects = [], options = {}) {
+    super({ type: "activeSelection", originX: "center", originY: "center", ...options });
+    this._objects = [...objects];
+    this.role = "selection";
+    if (objects.length === 0) {
+      this.left = 0;
+      this.top = 0;
+      return;
+    }
+    const lefts = objects.map((object) => object.left);
+    const tops = objects.map((object) => object.top);
+    this.left = (Math.min(...lefts) + Math.max(...lefts)) / 2;
+    this.top = (Math.min(...tops) + Math.max(...tops)) / 2;
+    for (const object of objects) {
+      object.left -= this.left;
+      object.top -= this.top;
+    }
+  }
+
+  getObjects() {
+    return [...this._objects];
+  }
+
+  restoreAbsolute() {
+    for (const object of this._objects) {
+      object.left += this.left;
+      object.top += this.top;
+    }
+  }
+}
 export class Ellipse extends FakeObject {
   constructor(options = {}) {
     super(options);
@@ -215,7 +253,35 @@ export class Canvas {
   }
 
   discardActiveObject() {
+    if (this._active instanceof ActiveSelection) {
+      this._active.restoreAbsolute();
+    }
     this._active = null;
+    return this;
+  }
+
+  getActiveObjects() {
+    if (this._active instanceof ActiveSelection) {
+      return this._active.getObjects();
+    }
+    return this._active ? [this._active] : [];
+  }
+
+  bringObjectToFront(object) {
+    const index = this._objects.indexOf(object);
+    if (index >= 0) {
+      this._objects.splice(index, 1);
+      this._objects.push(object);
+    }
+    return this;
+  }
+
+  sendObjectToBack(object) {
+    const index = this._objects.indexOf(object);
+    if (index >= 0) {
+      this._objects.splice(index, 1);
+      this._objects.unshift(object);
+    }
     return this;
   }
 

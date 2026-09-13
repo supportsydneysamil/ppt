@@ -877,3 +877,19 @@ test("template options come from the editor module instead of the markup", async
 
   await ctx.editor.destroy();
 });
+
+test("serializing an ActiveSelection restores absolute coordinates", async () => {
+  const ctx = await createEditor();
+  await ctx.editor.load({
+    elements: [
+      { id: "a", type: "rect", x: 100, y: 100, width: 80, height: 80, fill: "#ff0000", stroke: "", strokeWidth: 0 },
+      { id: "b", type: "rect", x: 300, y: 120, width: 80, height: 80, fill: "#00ff00", stroke: "", strokeWidth: 0 },
+    ],
+  });
+  const objects = ctx.canvas.getObjects().filter((object) => object.role === "element");
+  ctx.canvas.setActiveObject(new fakeFabric.ActiveSelection(objects, { canvas: ctx.canvas }));
+  const serialized = ctx.editor.serialize();
+  assert.equal(serialized.elements[0].x, 100);
+  assert.equal(serialized.elements[1].x, 300);
+  await ctx.editor.destroy();
+});

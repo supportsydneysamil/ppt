@@ -15,6 +15,7 @@ const ELEMENT_TYPES = new Set([
 ]);
 
 const TEXT_ALIGNS = new Set(["left", "center", "right"]);
+const TEXT_VALIGNS = new Set(["top", "middle", "bottom"]);
 const IMAGE_FITS = new Set(["contain", "cover"]);
 
 function finiteNumber(value, fallback = 0) {
@@ -31,6 +32,64 @@ function normalizeColor(value, fallback) {
 
 function normalizeTextAlign(value) {
   return TEXT_ALIGNS.has(value) ? value : "left";
+}
+
+function normalizeTextValign(value) {
+  return TEXT_VALIGNS.has(value) ? value : "top";
+}
+
+function normalizeShadow(value) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  if (value.enabled === false) {
+    return null;
+  }
+  const offsetX = finiteNumber(value.offsetX, 0);
+  const offsetY = finiteNumber(value.offsetY, 0);
+  const blur = clamp(finiteNumber(value.blur, 8), 0, 100);
+  if (blur === 0 && offsetX === 0 && offsetY === 0 && value.enabled !== true) {
+    return null;
+  }
+  return {
+    color: normalizeColor(value.color, "#000000"),
+    blur,
+    offsetX,
+    offsetY,
+    opacity: clamp(finiteNumber(value.opacity, 0.45), 0, 1),
+  };
+}
+
+export function fabricShadowToPptx(shadow) {
+  const normalized = normalizeShadow(shadow);
+  if (!normalized) {
+    return null;
+  }
+  const offset = Math.hypot(normalized.offsetX, normalized.offsetY);
+  const angle =
+    ((Math.atan2(normalized.offsetY, normalized.offsetX) * 180) / Math.PI + 360) % 360;
+  return {
+    type: "outer",
+    color: normalized.color.replace(/^#/, ""),
+    blur: normalized.blur,
+    offset,
+    angle,
+    opacity: normalized.opacity,
+  };
+}
+
+function fabricShadowToModel(shadow) {
+  if (!shadow || typeof shadow !== "object") {
+    return null;
+  }
+  return normalizeShadow({
+    color: shadow.color,
+    blur: shadow.blur,
+    offsetX: shadow.offsetX,
+    offsetY: shadow.offsetY,
+    opacity: shadow.opacity,
+    enabled: true,
+  });
 }
 
 function normalizeImageFit(value) {
@@ -330,6 +389,9 @@ function normalizeCommonFields(element, index, canvasWidth, canvasHeight) {
     rotation: normalizeRotation(element.rotation),
     opacity: clamp(finiteNumber(element.opacity, 1), 0, 1),
     zIndex: normalizeZIndex(element.zIndex),
+    visible: element.visible !== false,
+    locked: Boolean(element.locked),
+    shadow: normalizeShadow(element.shadow),
   };
 
   return normalizeBoxGeometry(common, canvasWidth, canvasHeight);
@@ -351,6 +413,11 @@ function normalizeTextElement(element, index, canvasWidth, canvasHeight) {
         : String(element.fontWeight),
     color: normalizeColor(element.color, "#000000"),
     textAlign: normalizeTextAlign(element.textAlign),
+    valign: normalizeTextValign(element.valign),
+    italic: Boolean(element.italic),
+    underline: Boolean(element.underline),
+    lineHeight: clamp(finiteNumber(element.lineHeight, 1.16), 0.8, 3),
+    charSpacing: clamp(finiteNumber(element.charSpacing, 0), -50, 200),
   };
 }
 
@@ -403,6 +470,9 @@ function normalizeLineElement(element, index, canvasWidth, canvasHeight) {
     y2: clampPosition(element.y2, canvasHeight),
     stroke: typeof element.stroke === "string" ? element.stroke : "#000000",
     strokeWidth: clamp(finiteNumber(element.strokeWidth, 1), 0, 100),
+    visible: element.visible !== false,
+    locked: Boolean(element.locked),
+    shadow: normalizeShadow(element.shadow),
   };
 }
 
@@ -557,6 +627,12 @@ function elementToFabricObject(element) {
       strokeWidth: element.strokeWidth,
       opacity: element.opacity,
       angle: 0,
+      visible: element.visible !== false,
+      selectable: !element.locked,
+      evented: !element.locked,
+      customLocked: Boolean(element.locked),
+      customVisible: element.visible !== false,
+      shadow: element.shadow,
     };
   }
 
@@ -575,6 +651,12 @@ function elementToFabricObject(element) {
     opacity: element.opacity,
     scaleX: 1,
     scaleY: 1,
+    visible: element.visible !== false,
+    selectable: !element.locked,
+    evented: !element.locked,
+    customLocked: Boolean(element.locked),
+    customVisible: element.visible !== false,
+    shadow: element.shadow,
   };
 
   switch (element.type) {
@@ -587,6 +669,11 @@ function elementToFabricObject(element) {
         fontSize: element.fontSize,
         fontWeight: element.fontWeight,
         textAlign: element.textAlign,
+        fontStyle: element.italic ? "italic" : "normal",
+        underline: Boolean(element.underline),
+        lineHeight: element.lineHeight,
+        charSpacing: element.charSpacing,
+        textAlignVertical: element.valign,
         text: element.text,
       };
     case "image":
@@ -760,6 +847,9 @@ function fabricObjectToElement(object, orderIndex) {
       y2: geometry.y2,
       stroke: typeof object.stroke === "string" ? object.stroke : "#000000",
       strokeWidth: finiteNumber(object.strokeWidth, 1),
+      visible: object.visible !== false && object.customVisible !== false,
+      locked: Boolean(object.customLocked) || object.selectable === false,
+      shadow: fabricShadowToModel(object.shadow),
     };
   }
 
@@ -778,6 +868,9 @@ function fabricObjectToElement(object, orderIndex) {
     rotation: geometry.rotation,
     opacity: finiteNumber(object.opacity, 1),
     zIndex: orderIndex,
+    visible: object.visible !== false && object.customVisible !== false,
+    locked: Boolean(object.customLocked) || object.selectable === false,
+    shadow: fabricShadowToModel(object.shadow),
   };
 
   switch (elementType) {
@@ -796,6 +889,11 @@ function fabricObjectToElement(object, orderIndex) {
             : String(object.fontWeight),
         color: normalizeColor(object.fill, "#000000"),
         textAlign: normalizeTextAlign(object.textAlign),
+        valign: normalizeTextValign(object.textAlignVertical),
+        italic: object.fontStyle === "italic" || object.italic === true,
+        underline: Boolean(object.underline),
+        lineHeight: finiteNumber(object.lineHeight, 1.16),
+        charSpacing: finiteNumber(object.charSpacing, 0),
       };
     case "image":
       return {

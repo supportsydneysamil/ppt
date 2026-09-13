@@ -148,6 +148,11 @@ describe("normalizeCustomSlide", () => {
     );
     assert.equal(normalized.elements[2].type, "text");
     assert.equal(normalized.elements[2].text, "Hello");
+    assert.equal(normalized.elements[2].italic, false);
+    assert.equal(normalized.elements[2].underline, false);
+    assert.equal(normalized.elements[2].valign, "top");
+    assert.equal(normalized.elements[2].visible, true);
+    assert.equal(normalized.elements[2].locked, false);
     assert.equal(normalized.elements[1].fit, "cover");
     assert.equal(normalized.elements[0].fill, "#cccccc");
     assert.equal(normalized.elements[3].rx, 8);

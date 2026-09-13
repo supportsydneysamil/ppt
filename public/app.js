@@ -3534,7 +3534,7 @@ let customEditorSessionPromise = null;
 
 function loadCustomSlideBridge() {
   if (!customSlideBridgePromise) {
-    customSlideBridgePromise = import("/custom-slide-bridge.js").then((module) => {
+    customSlideBridgePromise = import("./custom-slide-bridge.js").then((module) => {
       customSlideBridge = module;
       return module;
     });
@@ -3606,7 +3606,7 @@ function ensureCustomEditorSession() {
       if (!customSlideEditorRoot) {
         throw new Error("커스텀 편집기 영역을 찾을 수 없습니다.");
       }
-      const { createCustomSlideEditor } = await import("/custom-slide-editor.js");
+      const { createCustomSlideEditor } = await import("./custom-slide-editor.js");
       const session = bridge.createCustomEditorSession({
         root: customSlideEditorRoot,
         createEditor: createCustomSlideEditor,

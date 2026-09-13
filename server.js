@@ -538,15 +538,9 @@ function uploadSingleFile(req, res, next) {
 }
 
 app.use(express.json({ limit: "50mb" }));
-app.use(express.static(path.join(__dirname, "public")));
 app.use('/uploads', express.static(uploadsDir)); // Serve uploaded files
-// Date/season helpers are shared with the browser, so the module is served as-is.
+// Date/season helpers are shared with the browser and Node tests.
 app.use('/lib', express.static(path.join(__dirname, "lib")));
-// Fabric.js browser ESM build, served locally so the editor never needs a CDN.
-app.use(
-  '/vendor/fabric',
-  express.static(path.join(__dirname, "node_modules", "fabric", "dist"))
-);
 
 // --- Slide Persistence APIs ---
 
@@ -2604,6 +2598,29 @@ async function extractThumbnail(filePath, uploadsDir) {
 
 
 
-app.listen(PORT, "0.0.0.0", () => {
+const publicDir = path.join(__dirname, "public");
+const distDir = path.join(__dirname, "dist");
+const httpServer = http.createServer(app);
+
+async function mountFrontend() {
+  if (process.env.ENABLE_VITE === "1") {
+    const { createServer: createViteServer } = await import("vite");
+    const vite = await createViteServer({
+      configFile: path.join(__dirname, "vite.config.js"),
+      // HMR rides on our own HTTP server; a dedicated port would collide with
+      // a previous run that has not released it yet.
+      server: { middlewareMode: true, ws: { server: httpServer } },
+      appType: "mpa",
+    });
+    app.use(vite.middlewares);
+  } else if (process.env.NODE_ENV === "production") {
+    app.use(express.static(distDir));
+  }
+  app.use(express.static(publicDir));
+}
+
+await mountFrontend();
+
+httpServer.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on http://0.0.0.0:${PORT}`);
 });

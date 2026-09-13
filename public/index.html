@@ -933,6 +933,7 @@
             aria-label="커스텀 슬라이드 편집기"
             hidden
           >
+            <div id="customEditorReactRoot" class="custom-editor-react-root"></div>
             <div class="custom-editor-bar">
               <label class="custom-editor-field">
                 <span class="field-label">템플릿</span>
@@ -1023,10 +1024,19 @@
                   </label>
                   <label class="custom-editor-row">
                     <span class="field-label">글꼴</span>
-                    <select data-editor-field="fontFamily" aria-label="텍스트 글꼴">
+                    <select data-editor-field="fontFamily" aria-label="텍스트 글꼴" class="font-preview-select">
                       <option value="Malgun Gothic">맑은 고딕</option>
+                      <option value="Batang">바탕</option>
+                      <option value="Gulim">굴림</option>
+                      <option value="Dotum">돋움</option>
+                      <option value="Gungsuh">궁서</option>
                       <option value="Calibri">Calibri</option>
                       <option value="Arial">Arial</option>
+                      <option value="Times New Roman">Times New Roman</option>
+                      <option value="Georgia">Georgia</option>
+                      <option value="Verdana">Verdana</option>
+                      <option value="Trebuchet MS">Trebuchet MS</option>
+                      <option value="Courier New">Courier New</option>
                     </select>
                   </label>
                   <label class="custom-editor-row">
@@ -1274,16 +1284,7 @@
   <script src="https://cdn.jsdelivr.net/gh/meshesha/PPTXjs@latest/js/nv.d3.min.js"></script>
   <script src="https://cdn.jsdelivr.net/gh/meshesha/PPTXjs@latest/js/pptxjs.js"></script>
 
-  <script type="module">
-    // Same helpers the server renders with, so preview dates and type sizes
-    // never drift.
-    import * as titleSlideDate from "/lib/title-slide-date.js";
-    window.TitleSlideDate = titleSlideDate;
-
-    import * as customTitleText from "/lib/custom-title-text.js";
-    window.CustomTitleText = customTitleText;
-  </script>
-  <script src="/app.js"></script>
+  <script type="module" src="/main.jsx"></script>
 </body>
 
 </html>

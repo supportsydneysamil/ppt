@@ -5,13 +5,15 @@ import {
   normalizeCustomSlide,
 } from "./custom-slide-model.js";
 import { createCustomSlideHistory } from "./custom-slide-history.js";
+import { computePosition, flip, offset, shift } from "@floating-ui/dom";
 
 export const SLIDE_WIDTH = 1280;
 export const SLIDE_HEIGHT = 720;
+export const MIN_ZOOM = 0.25;
+export const MAX_ZOOM = 2;
+export const NUDGE_SMALL = 1;
+export const NUDGE_LARGE = 10;
 
-// Served by the app from the installed fabric package (see the vendor contract
-// test), so the editor never depends on a CDN.
-export const FABRIC_MODULE_URL = "/vendor/fabric/index.min.mjs";
 const SNAP_THRESHOLD = 8;
 const HISTORY_DEBOUNCE_MS = 220;
 const PASTE_OFFSET = 24;
@@ -286,6 +288,14 @@ export function decideKeyboardCommand(event) {
         return "copy";
       case "v":
         return "paste";
+      case "d":
+        return "duplicate";
+      case "a":
+        return "select-all";
+      case "[":
+        return event.shiftKey ? "backward" : null;
+      case "]":
+        return event.shiftKey ? "forward" : null;
       case "z":
         return event.shiftKey ? "redo" : "undo";
       case "y":
@@ -298,8 +308,111 @@ export function decideKeyboardCommand(event) {
   if (key === "delete" || key === "backspace") {
     return "delete";
   }
+  if (key === "escape") {
+    return "deselect";
+  }
+  if (key === "arrowleft") {
+    return event.shiftKey ? "nudge-left-large" : "nudge-left";
+  }
+  if (key === "arrowright") {
+    return event.shiftKey ? "nudge-right-large" : "nudge-right";
+  }
+  if (key === "arrowup") {
+    return event.shiftKey ? "nudge-up-large" : "nudge-up";
+  }
+  if (key === "arrowdown") {
+    return event.shiftKey ? "nudge-down-large" : "nudge-down";
+  }
 
   return null;
+}
+
+export function isActiveSelection(object) {
+  return Boolean(object && object.type === "activeSelection");
+}
+
+export function selectedFabricObjects(canvas) {
+  const active = canvas?.getActiveObject?.();
+  if (!active) {
+    return [];
+  }
+  if (isActiveSelection(active) && typeof active.getObjects === "function") {
+    return active.getObjects();
+  }
+  if (active.role === "element") {
+    return [active];
+  }
+  return [];
+}
+
+export function serializeAfterRestoringSelection(canvas, fabric, serializeElements) {
+  const active = canvas.getActiveObject?.();
+  const members = isActiveSelection(active) && typeof active.getObjects === "function"
+    ? [...active.getObjects()]
+    : null;
+  if (members) {
+    canvas.discardActiveObject();
+  }
+  const result = serializeElements();
+  if (members && members.length > 0 && fabric?.ActiveSelection) {
+    const selection = new fabric.ActiveSelection(members, { canvas });
+    canvas.setActiveObject(selection);
+  }
+  return result;
+}
+
+export function alignBoxesTogether(boxes, alignment) {
+  if (!Array.isArray(boxes) || boxes.length === 0) {
+    return boxes;
+  }
+  const minX = Math.min(...boxes.map((box) => box.x));
+  const maxX = Math.max(...boxes.map((box) => box.x + box.width));
+  const minY = Math.min(...boxes.map((box) => box.y));
+  const maxY = Math.max(...boxes.map((box) => box.y + box.height));
+  return boxes.map((box) => {
+    switch (alignment) {
+      case "left":
+        return { ...box, x: minX };
+      case "center":
+        return { ...box, x: minX + (maxX - minX - box.width) / 2 };
+      case "right":
+        return { ...box, x: maxX - box.width };
+      case "top":
+        return { ...box, y: minY };
+      case "middle":
+        return { ...box, y: minY + (maxY - minY - box.height) / 2 };
+      case "bottom":
+        return { ...box, y: maxY - box.height };
+      default:
+        return { ...box };
+    }
+  });
+}
+
+export function distributeBoxes(boxes, axis) {
+  if (!Array.isArray(boxes) || boxes.length < 3) {
+    return boxes;
+  }
+  const sorted = [...boxes].sort((left, right) =>
+    axis === "y" ? left.y - right.y : left.x - right.x
+  );
+  const first = sorted[0];
+  const last = sorted[sorted.length - 1];
+  const start = axis === "y" ? first.y : first.x;
+  const end =
+    axis === "y" ? last.y + last.height : last.x + last.width;
+  const totalSize = sorted.reduce(
+    (sum, box) => sum + (axis === "y" ? box.height : box.width),
+    0
+  );
+  const gap = (end - start - totalSize) / (sorted.length - 1);
+  let cursor = start;
+  return sorted.map((box) => {
+    const next =
+      axis === "y" ? { ...box, y: cursor } : { ...box, x: cursor };
+    cursor += (axis === "y" ? box.height : box.width) + gap;
+    return next;
+  });
 }
 
 export function alignBoxToSlide(box, alignment, canvasSize = {}) {
@@ -488,13 +601,44 @@ function rotatePoint(x, y, degrees) {
   return { x: x * cos - y * sin, y: x * sin + y * cos };
 }
 
-function tagObject(object, element) {
+function applyElementChrome(object, element, fabric) {
+  const locked = Boolean(element?.locked);
+  const visible = element?.visible !== false;
+  const shadow = element?.shadow;
+  object.set({
+    visible,
+    selectable: !locked,
+    evented: !locked,
+    lockMovementX: locked,
+    lockMovementY: locked,
+    lockScalingX: locked,
+    lockScalingY: locked,
+    lockRotation: locked,
+    customLocked: locked,
+    customVisible: visible,
+  });
+  if (shadow && fabric?.Shadow) {
+    object.set({
+      shadow: new fabric.Shadow({
+        color: shadow.color,
+        blur: shadow.blur,
+        offsetX: shadow.offsetX,
+        offsetY: shadow.offsetY,
+      }),
+    });
+  } else if (shadow) {
+    object.set({ shadow });
+  }
+  return object;
+}
+
+function tagObject(object, element, fabric) {
   object.set({
     role: "element",
     customElementId: element.id,
     elementType: element.type,
   });
-  return object;
+  return applyElementChrome(object, element, fabric);
 }
 
 /**
@@ -514,7 +658,7 @@ export function buildFabricObject(fabric, element) {
       opacity: element.opacity ?? 1,
       objectCaching: false,
     });
-    return tagObject(line, element);
+    return tagObject(line, element, fabric);
   }
 
   const shared = {
@@ -538,13 +682,17 @@ export function buildFabricObject(fabric, element) {
         fontSize: element.fontSize,
         fontWeight: element.fontWeight,
         textAlign: element.textAlign,
+        fontStyle: element.italic ? "italic" : "normal",
+        underline: Boolean(element.underline),
+        lineHeight: element.lineHeight ?? 1.16,
+        charSpacing: element.charSpacing ?? 0,
         splitByGrapheme: true,
       });
       // Fabric derives Textbox height from the wrapped text, so the centered
       // origin has to be re-anchored to the authored top edge.
       textbox.set({ top: element.y + (textbox.height ?? 0) / 2 });
       textbox.setCoords?.();
-      return tagObject(textbox, element);
+      return tagObject(textbox, element, fabric);
     }
     case "rect":
     case "roundRect": {
@@ -558,7 +706,7 @@ export function buildFabricObject(fabric, element) {
         rx: element.type === "roundRect" ? element.rx ?? 0 : 0,
         ry: element.type === "roundRect" ? element.rx ?? 0 : 0,
       });
-      return tagObject(rect, element);
+      return tagObject(rect, element, fabric);
     }
     case "ellipse": {
       const ellipse = new fabric.Ellipse({
@@ -569,7 +717,7 @@ export function buildFabricObject(fabric, element) {
         stroke: element.stroke || null,
         strokeWidth: element.strokeWidth,
       });
-      return tagObject(ellipse, element);
+      return tagObject(ellipse, element, fabric);
     }
     default:
       return null;
@@ -715,7 +863,7 @@ export async function buildFabricImage(fabric, element) {
     customSrc: element.src,
   });
   applyImageFit(image, element.fit, element.width || image.width, element.height || image.height);
-  return tagObject(image, element);
+  return tagObject(image, element, fabric);
 }
 
 function lineDescriptor(object) {
@@ -903,7 +1051,9 @@ export async function createCustomSlideEditor(root, options = {}) {
     throw new Error("커스텀 편집기를 초기화할 영역이 없습니다.");
   }
 
-  const fabricModule = await import(options.fabricModuleUrl ?? FABRIC_MODULE_URL);
+  const fabricModule = options.fabricModuleUrl
+    ? await import(/* @vite-ignore */ options.fabricModuleUrl)
+    : await import("fabric");
   const fabric = fabricModule.fabric ?? fabricModule;
 
   const onChange = typeof options.onChange === "function" ? options.onChange : () => {};
@@ -933,7 +1083,7 @@ export async function createCustomSlideEditor(root, options = {}) {
     height: SLIDE_HEIGHT,
     backgroundColor: "#ffffff",
     preserveObjectStacking: true,
-    selection: false,
+    selection: true,
     controlsAboveOverlay: true,
   });
 
@@ -945,6 +1095,10 @@ export async function createCustomSlideEditor(root, options = {}) {
   let historyTimer = null;
   let activeGuides = [];
   let clipboard = null;
+  let zoom = 1;
+  let spacePan = false;
+  let panning = false;
+  let panOrigin = null;
   // True while the last pointer or focus interaction happened inside the
   // editor, which is what scopes the clipboard and delete shortcuts.
   let canvasEngaged = false;
@@ -993,12 +1147,14 @@ export async function createCustomSlideEditor(root, options = {}) {
   }
 
   function serialize() {
-    const descriptors = elementObjects()
-      .map((object) => fabricObjectToDescriptor(object))
-      .filter(Boolean);
-    return fabricObjectsToCustomSlide(descriptors, {
-      ...model,
-      background: { color: canvas.backgroundColor },
+    return serializeAfterRestoringSelection(canvas, fabric, () => {
+      const descriptors = elementObjects()
+        .map((object) => fabricObjectToDescriptor(object))
+        .filter(Boolean);
+      return fabricObjectsToCustomSlide(descriptors, {
+        ...model,
+        background: { color: canvas.backgroundColor },
+      });
     });
   }
 
@@ -1012,10 +1168,8 @@ export async function createCustomSlideEditor(root, options = {}) {
   }
 
   function refreshActionStates() {
-    const active = canvas.getActiveObject();
-    const hasSelection = Boolean(active && active.role === "element");
-
-    for (const button of dom.actions) {
+    const hasSelection = selectedFabricObjects(canvas).length > 0;
+    for (const button of root.querySelectorAll("[data-editor-action]")) {
       const action = button.dataset.editorAction;
       if (action === "undo") {
         button.disabled = !history.canUndo();
@@ -1025,12 +1179,19 @@ export async function createCustomSlideEditor(root, options = {}) {
         action.startsWith("align-") ||
         action === "forward" ||
         action === "backward" ||
+        action === "to-front" ||
+        action === "to-back" ||
         action === "duplicate" ||
-        action === "delete"
+        action === "delete" ||
+        action === "copy"
       ) {
         button.disabled = !hasSelection;
+      } else if (action === "distribute-x" || action === "distribute-y") {
+        button.disabled = selectedFabricObjects(canvas).length < 3;
       }
     }
+    refreshContextToolbar();
+    refreshLayerList();
   }
 
   function pushHistory() {
@@ -1184,13 +1345,13 @@ export async function createCustomSlideEditor(root, options = {}) {
   }
 
   function showPanels(names) {
-    for (const element of dom.panels) {
+    for (const element of root.querySelectorAll("[data-editor-panel]")) {
       element.hidden = !names.includes(element.dataset.editorPanel);
     }
   }
 
   function field(name) {
-    return dom.fields.find((element) => element.dataset.editorField === name);
+    return root.querySelector(`[data-editor-field="${name}"]`);
   }
 
   function setFieldValue(name, value) {
@@ -1227,30 +1388,43 @@ export async function createCustomSlideEditor(root, options = {}) {
 
   function updatePropertyPanel() {
     const active = canvas.getActiveObject();
-    if (!active || active.role !== "element") {
+    if (!active || (active.role !== "element" && !isActiveSelection(active))) {
       showPanels(["empty"]);
       setStatus("선택된 개체가 없습니다.");
+      refreshContextToolbar();
       return;
     }
+    const target = isActiveSelection(active) ? selectedFabricObjects(canvas)[0] : active;
+    if (!target || target.role !== "element") {
+      showPanels(["empty"]);
+      return;
+    }
+    const box = objectBox(target);
+    setFieldValue("opacity", target.opacity ?? 1);
+    setFieldValue("rotation", Math.round(target.angle ?? 0));
+    setFieldValue("locked", Boolean(target.customLocked));
+    setFieldValue("visible", target.visible !== false);
+    setFieldValue("shadowEnabled", Boolean(target.shadow));
 
-    const box = objectBox(active);
-    setFieldValue("opacity", active.opacity ?? 1);
-    setFieldValue("rotation", Math.round(active.angle ?? 0));
-
-    switch (active.elementType) {
+    switch (target.elementType) {
       case "text":
         showPanels(["text", "common"]);
-        setFieldValue("text", active.text);
-        setFieldValue("fontFamily", active.fontFamily);
-        setFieldValue("fontSize", Math.round(active.fontSize));
-        setFieldValue("bold", String(active.fontWeight) === "bold");
-        setFieldValue("color", active.fill);
-        setFieldValue("textAlign", active.textAlign);
+        setFieldValue("text", target.text);
+        setFieldValue("fontFamily", target.fontFamily);
+        setFieldValue("fontSize", Math.round(target.fontSize));
+        setFieldValue("bold", String(target.fontWeight) === "bold" || Number(target.fontWeight) >= 600);
+        setFieldValue("italic", target.fontStyle === "italic");
+        setFieldValue("underline", Boolean(target.underline));
+        setFieldValue("color", target.fill);
+        setFieldValue("textAlign", target.textAlign);
+        setFieldValue("valign", target.textAlignVertical ?? "top");
+        setFieldValue("lineHeight", target.lineHeight ?? 1.16);
+        setFieldValue("charSpacing", target.charSpacing ?? 0);
         setStatus("텍스트가 선택되었습니다.");
         break;
       case "image":
         showPanels(["image", "common"]);
-        setFieldValue("fit", active.customFit ?? "contain");
+        setFieldValue("fit", target.customFit ?? "contain");
         setStatus("이미지가 선택되었습니다.");
         break;
       case "line": {
@@ -1259,7 +1433,7 @@ export async function createCustomSlideEditor(root, options = {}) {
         if (fillInput) {
           fillInput.disabled = true;
         }
-        syncStrokeFields(active);
+        syncStrokeFields(target);
         setStatus("선이 선택되었습니다.");
         break;
       }
@@ -1269,8 +1443,8 @@ export async function createCustomSlideEditor(root, options = {}) {
         if (fillInput) {
           fillInput.disabled = false;
         }
-        setFieldValue("fill", active.fill ?? "#cccccc");
-        syncStrokeFields(active);
+        setFieldValue("fill", target.fill ?? "#cccccc");
+        syncStrokeFields(target);
         setStatus(`도형(${box.width.toFixed(0)}×${box.height.toFixed(0)})이 선택되었습니다.`);
         break;
       }
@@ -1279,6 +1453,12 @@ export async function createCustomSlideEditor(root, options = {}) {
 
   function enforceBounds(object) {
     if (!object) {
+      return;
+    }
+    if (isActiveSelection(object) && typeof object.getObjects === "function") {
+      for (const child of object.getObjects()) {
+        enforceBounds(child);
+      }
       return;
     }
 
@@ -1495,41 +1675,75 @@ export async function createCustomSlideEditor(root, options = {}) {
   }
 
   function withSelection(callback) {
-    const active = canvas.getActiveObject();
-    if (!active || active.role !== "element") {
+    const objects = selectedFabricObjects(canvas).filter((object) => object.role === "element");
+    if (objects.length === 0) {
       return;
     }
-    callback(active);
+    callback(objects);
   }
 
-  function alignSelection(alignment) {
-    withSelection((active) => {
-      const box = objectBox(active);
-      const aligned = alignBoxToSlide(box, alignment, {
-        width: SLIDE_WIDTH,
-        height: SLIDE_HEIGHT,
-      });
-      active.set({
-        left: active.left + (aligned.x - box.x),
-        top: active.top + (aligned.y - box.y),
-      });
-      active.setCoords();
+  function applyBoxToObject(object, fromBox, toBox) {
+    object.set({
+      left: object.left + (toBox.x - fromBox.x),
+      top: object.top + (toBox.y - fromBox.y),
+    });
+    object.setCoords();
+  }
+
+  function alignSelection(alignment, together = false) {
+    withSelection((objects) => {
+      const boxes = objects.map((object) => objectBox(object));
+      const aligned = together && objects.length > 1
+        ? alignBoxesTogether(boxes, alignment)
+        : boxes.map((box) =>
+            alignBoxToSlide(box, alignment, { width: SLIDE_WIDTH, height: SLIDE_HEIGHT })
+          );
+      objects.forEach((object, index) => applyBoxToObject(object, boxes[index], aligned[index]));
       canvas.requestRenderAll();
       pushHistory();
-      setStatus("슬라이드 기준으로 정렬했습니다.");
+      setStatus(together ? "선택 기준으로 정렬했습니다." : "슬라이드 기준으로 정렬했습니다.");
+    });
+  }
+
+  function distributeSelection(axis) {
+    withSelection((objects) => {
+      if (objects.length < 3) {
+        setStatus("균등 분배는 개체 3개 이상이 필요합니다.");
+        return;
+      }
+      const boxes = objects.map((object) => ({ ...objectBox(object), object }));
+      const distributed = distributeBoxes(boxes, axis);
+      for (const box of distributed) {
+        applyBoxToObject(box.object, boxes.find((item) => item.object === box.object), box);
+      }
+      canvas.requestRenderAll();
+      pushHistory();
+      setStatus(axis === "y" ? "세로로 균등 분배했습니다." : "가로로 균등 분배했습니다.");
     });
   }
 
   function reorderSelection(direction) {
-    withSelection((active) => {
-      if (direction === "forward") {
-        canvas.bringObjectForward(active);
-      } else {
-        canvas.sendObjectBackwards(active);
+    withSelection((objects) => {
+      const ordered = direction === "backward" || direction === "to-back"
+        ? objects
+        : [...objects].reverse();
+      for (const object of ordered) {
+        if (direction === "forward") {
+          canvas.bringObjectForward(object);
+        } else if (direction === "backward") {
+          canvas.sendObjectBackwards(object);
+        } else if (direction === "to-front" && typeof canvas.bringObjectToFront === "function") {
+          canvas.bringObjectToFront(object);
+        } else if (direction === "to-back" && typeof canvas.sendObjectToBack === "function") {
+          canvas.sendObjectToBack(object);
+        } else if (direction === "to-front") {
+          canvas.bringObjectForward(object);
+        } else {
+          canvas.sendObjectBackwards(object);
+        }
       }
       canvas.requestRenderAll();
       pushHistory();
-      setStatus(direction === "forward" ? "한 단계 앞으로 보냈습니다." : "한 단계 뒤로 보냈습니다.");
     });
   }
 
@@ -1540,15 +1754,16 @@ export async function createCustomSlideEditor(root, options = {}) {
   }
 
   async function duplicateSelection() {
-    const active = canvas.getActiveObject();
-    if (!active || active.role !== "element") {
+    const objects = selectedFabricObjects(canvas);
+    if (objects.length === 0) {
       return;
     }
-    const element = selectedElementModel(active);
-    if (!element) {
-      return;
+    for (const object of objects) {
+      const element = selectedElementModel(object);
+      if (element) {
+        await pasteElement({ ...element, id: nextId() });
+      }
     }
-    await pasteElement({ ...element, id: nextId() });
     setStatus("개체를 복제했습니다.");
   }
 
@@ -1607,8 +1822,8 @@ export async function createCustomSlideEditor(root, options = {}) {
   }
 
   function deleteSelection() {
-    withSelection((active) => {
-      canvas.remove(active);
+    withSelection((objects) => {
+      canvas.remove(...objects);
       canvas.discardActiveObject();
       canvas.requestRenderAll();
       pushHistory();
@@ -1618,12 +1833,161 @@ export async function createCustomSlideEditor(root, options = {}) {
   }
 
   function copySelection() {
-    const active = canvas.getActiveObject();
-    if (!active || active.role !== "element") {
+    const objects = selectedFabricObjects(canvas);
+    if (objects.length === 0) {
       return;
     }
-    clipboard = selectedElementModel(active);
+    clipboard = objects.map((object) => selectedElementModel(object)).filter(Boolean);
     setStatus("개체를 복사했습니다.");
+  }
+
+  async function pasteClipboard() {
+    const items = Array.isArray(clipboard) ? clipboard : clipboard ? [clipboard] : [];
+    for (const element of items) {
+      await pasteElement({ ...element, id: nextId() });
+    }
+  }
+
+  function nudgeSelection(dx, dy) {
+    withSelection((objects) => {
+      for (const object of objects) {
+        object.set({ left: object.left + dx, top: object.top + dy });
+        enforceBounds(object);
+        object.setCoords();
+      }
+      canvas.requestRenderAll();
+      queueHistory();
+    });
+  }
+
+  function setZoom(next) {
+    zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, next));
+    resizeToStage();
+    setStatus(`${Math.round(zoom * 100)}%`);
+  }
+
+  function hideContextMenu() {
+    const menu = root.querySelector("[data-editor-ui='context-menu']");
+    if (menu) {
+      menu.hidden = true;
+    }
+  }
+
+  function showContextMenu(event) {
+    const menu = root.querySelector("[data-editor-ui='context-menu']");
+    if (!menu) {
+      return;
+    }
+    menu.hidden = false;
+    menu.style.left = `${event.offsetX}px`;
+    menu.style.top = `${event.offsetY}px`;
+  }
+
+  function refreshContextToolbar() {
+    const toolbar = root.querySelector("[data-editor-ui='context-toolbar']");
+    if (!toolbar) {
+      return;
+    }
+    const objects = selectedFabricObjects(canvas);
+    const text = objects.find((object) => object.elementType === "text");
+    toolbar.hidden = !text;
+    if (!text || !canvas.lowerCanvasEl) {
+      return;
+    }
+    const box = objectBox(text);
+    const canvasRect = canvas.lowerCanvasEl.getBoundingClientRect();
+    const scaleX = canvasRect.width / SLIDE_WIDTH;
+    const scaleY = canvasRect.height / SLIDE_HEIGHT;
+    const virtualEl = {
+      getBoundingClientRect() {
+        return {
+          x: canvasRect.left + box.x * scaleX,
+          y: canvasRect.top + box.y * scaleY,
+          left: canvasRect.left + box.x * scaleX,
+          top: canvasRect.top + box.y * scaleY,
+          width: box.width * scaleX,
+          height: box.height * scaleY,
+          right: canvasRect.left + (box.x + box.width) * scaleX,
+          bottom: canvasRect.top + (box.y + box.height) * scaleY,
+        };
+      },
+    };
+    computePosition(virtualEl, toolbar, {
+      placement: "top",
+      middleware: [offset(8), flip(), shift({ padding: 8 })],
+    }).then(({ x, y }) => {
+      toolbar.style.position = "fixed";
+      toolbar.style.left = `${x}px`;
+      toolbar.style.top = `${y}px`;
+    });
+  }
+
+  function refreshLayerList() {
+    const list = root.querySelector("[data-editor-ui='layers']");
+    if (!list) {
+      return;
+    }
+    const objects = [...elementObjects()].reverse();
+    list.replaceChildren();
+    for (const object of objects) {
+      const item = list.ownerDocument.createElement("li");
+      item.draggable = true;
+      item.dataset.elementId = object.customElementId;
+      item.className = "custom-editor-layer";
+      if (selectedFabricObjects(canvas).includes(object)) {
+        item.classList.add("is-active");
+      }
+      const label = list.ownerDocument.createElement("button");
+      label.type = "button";
+      label.textContent = object.elementType || "개체";
+      label.addEventListener("click", () => {
+        canvas.setActiveObject(object);
+        canvas.requestRenderAll();
+        handleSelectionChange();
+      });
+      const vis = list.ownerDocument.createElement("button");
+      vis.type = "button";
+      vis.textContent = object.visible === false ? "숨김" : "표시";
+      vis.addEventListener("click", () => {
+        object.set({ visible: object.visible === false, customVisible: object.visible === false });
+        canvas.requestRenderAll();
+        pushHistory();
+        refreshLayerList();
+      });
+      const lock = list.ownerDocument.createElement("button");
+      lock.type = "button";
+      lock.textContent = object.customLocked ? "잠금" : "잠금 해제";
+      lock.addEventListener("click", () => {
+        const locked = !object.customLocked;
+        applyElementChrome(object, { locked, visible: object.visible !== false, shadow: object.shadow }, fabric);
+        canvas.requestRenderAll();
+        pushHistory();
+        refreshLayerList();
+      });
+      item.append(label, vis, lock);
+      item.addEventListener("dragstart", (event) => {
+        event.dataTransfer.setData("text/plain", object.customElementId);
+      });
+      item.addEventListener("dragover", (event) => event.preventDefault());
+      item.addEventListener("drop", (event) => {
+        event.preventDefault();
+        const fromId = event.dataTransfer.getData("text/plain");
+        const from = elementObjects().find((candidate) => candidate.customElementId === fromId);
+        if (!from || from === object) {
+          return;
+        }
+        canvas.remove(from);
+        const index = canvas.getObjects().indexOf(object);
+        canvas.add(from);
+        if (typeof canvas.moveObjectTo === "function") {
+          canvas.moveObjectTo(from, index);
+        }
+        canvas.requestRenderAll();
+        pushHistory();
+        refreshLayerList();
+      });
+      list.append(item);
+    }
   }
 
   async function undo() {
@@ -1683,11 +2047,12 @@ export async function createCustomSlideEditor(root, options = {}) {
   }
 
   function applyFieldChange(name, input) {
-    const active = canvas.getActiveObject();
-    if (!active || active.role !== "element") {
+    const targets = selectedFabricObjects(canvas);
+    if (targets.length === 0) {
       return;
     }
 
+    for (const active of targets) {
     switch (name) {
       case "text":
         active.set({ text: input.value });
@@ -1700,6 +2065,58 @@ export async function createCustomSlideEditor(root, options = {}) {
         break;
       case "bold":
         active.set({ fontWeight: input.checked ? "bold" : "normal" });
+        break;
+      case "italic":
+        active.set({ fontStyle: input.checked ? "italic" : "normal" });
+        break;
+      case "underline":
+        active.set({ underline: input.checked });
+        break;
+      case "valign":
+        active.set({ textAlignVertical: input.value });
+        break;
+      case "lineHeight":
+        active.set({ lineHeight: Number(input.value) || 1.16 });
+        break;
+      case "charSpacing":
+        active.set({ charSpacing: Number(input.value) || 0 });
+        break;
+      case "locked":
+        applyElementChrome(active, {
+          locked: input.checked,
+          visible: active.visible !== false,
+          shadow: active.shadow,
+        }, fabric);
+        break;
+      case "visible":
+        active.set({ visible: input.checked, customVisible: input.checked });
+        break;
+      case "shadowEnabled":
+        if (input.checked) {
+          applyElementChrome(active, {
+            locked: active.customLocked,
+            visible: active.visible !== false,
+            shadow: { color: field("shadowColor")?.value || "#000000", blur: 12, offsetX: 6, offsetY: 6, opacity: 0.45 },
+          }, fabric);
+        } else {
+          active.set({ shadow: null });
+        }
+        break;
+      case "shadowColor":
+        if (active.shadow) {
+          const current = active.shadow;
+          applyElementChrome(active, {
+            locked: active.customLocked,
+            visible: active.visible !== false,
+            shadow: {
+              color: input.value,
+              blur: current.blur ?? 12,
+              offsetX: current.offsetX ?? 6,
+              offsetY: current.offsetY ?? 6,
+              opacity: current.opacity ?? 0.45,
+            },
+          }, fabric);
+        }
         break;
       case "color":
         active.set({ fill: input.value });
@@ -1747,10 +2164,11 @@ export async function createCustomSlideEditor(root, options = {}) {
         enforceBounds(active);
         break;
       default:
-        return;
+        continue;
     }
 
     active.setCoords();
+    }
     canvas.requestRenderAll();
     queueHistory();
   }
@@ -1791,19 +2209,50 @@ export async function createCustomSlideEditor(root, options = {}) {
         break;
       case "forward":
       case "backward":
+      case "to-front":
+      case "to-back":
         reorderSelection(action);
+        break;
+      case "copy":
+        copySelection();
+        hideContextMenu();
+        break;
+      case "paste":
+        await pasteClipboard();
+        hideContextMenu();
         break;
       case "duplicate":
         await duplicateSelection();
+        hideContextMenu();
         break;
       case "delete":
         deleteSelection();
+        hideContextMenu();
+        break;
+      case "zoom-in":
+        setZoom(zoom + 0.25);
+        break;
+      case "zoom-out":
+        setZoom(zoom - 0.25);
+        break;
+      case "zoom-fit":
+        setZoom(1);
+        break;
+      case "distribute-x":
+        distributeSelection("x");
+        break;
+      case "distribute-y":
+        distributeSelection("y");
         break;
       case "apply-template":
-        await applyTemplate(dom.template?.value ?? "blank");
+        await applyTemplate(
+          root.querySelector('[data-custom-editor="template"]')?.value ?? "blank"
+        );
         break;
       default:
-        if (action.startsWith("align-")) {
+        if (action === "align-selection-left") {
+          alignSelection("left", true);
+        } else if (action.startsWith("align-")) {
           alignSelection(action.slice("align-".length));
         }
         break;
@@ -1811,33 +2260,40 @@ export async function createCustomSlideEditor(root, options = {}) {
   }
 
   const listeners = [];
-  function listen(target, type, handler) {
-    target.addEventListener(type, handler);
-    listeners.push(() => target.removeEventListener(type, handler));
+  function listen(target, type, handler, options) {
+    target.addEventListener(type, handler, options);
+    listeners.push(() => target.removeEventListener(type, handler, options));
   }
 
-  for (const button of dom.actions) {
-    listen(button, "click", (event) => {
-      event.preventDefault();
-      runAction(button.dataset.editorAction).catch((error) => {
-        setError("작업을 수행하지 못했습니다.", error);
-      });
+  listen(root, "click", (event) => {
+    const button = event.target.closest?.("[data-editor-action]");
+    if (!button || !root.contains(button)) {
+      return;
+    }
+    event.preventDefault();
+    runAction(button.dataset.editorAction).catch((error) => {
+      setError("작업을 수행하지 못했습니다.", error);
     });
-  }
+  });
 
-  for (const input of dom.fields) {
-    const eventName = input.tagName === "SELECT" || input.type === "checkbox" ? "change" : "input";
-    listen(input, eventName, () => applyFieldChange(input.dataset.editorField, input));
-  }
-
-  if (dom.background) {
-    listen(dom.background, "input", () => {
-      canvas.backgroundColor = dom.background.value;
+  listen(root, "input", (event) => {
+    const input = event.target;
+    if (input?.dataset?.editorField) {
+      applyFieldChange(input.dataset.editorField, input);
+    }
+    if (input?.getAttribute?.("data-custom-editor") === "background") {
+      canvas.backgroundColor = input.value;
       canvas.requestRenderAll();
       queueHistory();
-      setStatus("배경색을 변경했습니다.");
-    });
-  }
+    }
+  });
+
+  listen(root, "change", (event) => {
+    const input = event.target;
+    if (input?.dataset?.editorField) {
+      applyFieldChange(input.dataset.editorField, input);
+    }
+  });
 
   if (dom.file) {
     listen(dom.file, "change", () => {
@@ -1869,28 +2325,39 @@ export async function createCustomSlideEditor(root, options = {}) {
   }
 
   function canExecuteCommand(command) {
-    const active = canvas.getActiveObject();
-    const hasSelection = Boolean(active && active.role === "element");
+    const hasSelection = selectedFabricObjects(canvas).length > 0;
 
     switch (command) {
       case "copy":
       case "delete":
+      case "duplicate":
+      case "forward":
+      case "backward":
         return hasSelection;
       case "paste":
-        return Boolean(clipboard);
+        return Boolean(clipboard && (Array.isArray(clipboard) ? clipboard.length : true));
+      case "select-all":
+      case "deselect":
+        return true;
       case "undo":
-        // A pending debounced snapshot becomes undoable as soon as it flushes.
         return history.canUndo() || historyTimer !== null;
       case "redo":
         return history.canRedo();
       default:
-        return false;
+        return command.startsWith("nudge-");
     }
   }
 
   function handleKeydown(event) {
     if (destroyed || root.hidden || !root.isConnected) {
       return;
+    }
+    if (event.code === "Space" && !TYPING_TAGS.has((event.target?.tagName || "").toUpperCase())) {
+      spacePan = true;
+      const stage = dom.stage;
+      if (stage) {
+        stage.style.cursor = "grab";
+      }
     }
     const active = canvas.getActiveObject();
     const command = decideKeyboardCommand({
@@ -1918,11 +2385,12 @@ export async function createCustomSlideEditor(root, options = {}) {
         copySelection();
         break;
       case "paste":
-        if (clipboard) {
-          pasteElement({ ...clipboard, id: nextId() }).catch((error) => {
-            setError("붙여넣기에 실패했습니다.", error);
-          });
-        }
+        pasteClipboard().catch((error) => {
+          setError("붙여넣기에 실패했습니다.", error);
+        });
+        break;
+      case "duplicate":
+        duplicateSelection().catch((error) => setError("복제에 실패했습니다.", error));
         break;
       case "undo":
         undo().catch((error) => setError("실행 취소에 실패했습니다.", error));
@@ -1932,6 +2400,47 @@ export async function createCustomSlideEditor(root, options = {}) {
         break;
       case "delete":
         deleteSelection();
+        break;
+      case "select-all":
+        if (elementObjects().length && fabric.ActiveSelection) {
+          canvas.setActiveObject(new fabric.ActiveSelection(elementObjects(), { canvas }));
+          canvas.requestRenderAll();
+          handleSelectionChange();
+        }
+        break;
+      case "deselect":
+        canvas.discardActiveObject();
+        canvas.requestRenderAll();
+        handleSelectionChange();
+        hideContextMenu();
+        break;
+      case "forward":
+      case "backward":
+        reorderSelection(command);
+        break;
+      case "nudge-left":
+        nudgeSelection(-NUDGE_SMALL, 0);
+        break;
+      case "nudge-right":
+        nudgeSelection(NUDGE_SMALL, 0);
+        break;
+      case "nudge-up":
+        nudgeSelection(0, -NUDGE_SMALL);
+        break;
+      case "nudge-down":
+        nudgeSelection(0, NUDGE_SMALL);
+        break;
+      case "nudge-left-large":
+        nudgeSelection(-NUDGE_LARGE, 0);
+        break;
+      case "nudge-right-large":
+        nudgeSelection(NUDGE_LARGE, 0);
+        break;
+      case "nudge-up-large":
+        nudgeSelection(0, -NUDGE_LARGE);
+        break;
+      case "nudge-down-large":
+        nudgeSelection(0, NUDGE_LARGE);
         break;
       default:
         break;
@@ -1947,15 +2456,66 @@ export async function createCustomSlideEditor(root, options = {}) {
 
   const editorDocument = root.ownerDocument ?? document;
   listen(editorDocument, "keydown", handleKeydown);
+  listen(editorDocument, "keyup", (event) => {
+    if (event.code === "Space") {
+      spacePan = false;
+      panning = false;
+      if (dom.stage) {
+        dom.stage.style.cursor = "";
+      }
+    }
+  });
   listen(editorDocument, "mousedown", trackEngagement);
   listen(editorDocument, "focusin", trackEngagement);
+  listen(editorDocument, "click", (event) => {
+    if (!event.target.closest?.("[data-editor-ui='context-menu']")) {
+      hideContextMenu();
+    }
+  });
+
+  if (dom.stage) {
+    listen(dom.stage, "contextmenu", (event) => {
+      event.preventDefault();
+      canvasEngaged = true;
+      showContextMenu(event);
+    });
+    listen(dom.stage, "mousedown", (event) => {
+      if (!spacePan) {
+        return;
+      }
+      panning = true;
+      panOrigin = { x: event.clientX, y: event.clientY, sl: dom.stage.scrollLeft, st: dom.stage.scrollTop };
+      event.preventDefault();
+    });
+    listen(dom.stage, "mousemove", (event) => {
+      if (!panning || !panOrigin) {
+        return;
+      }
+      dom.stage.scrollLeft = panOrigin.sl - (event.clientX - panOrigin.x);
+      dom.stage.scrollTop = panOrigin.st - (event.clientY - panOrigin.y);
+    });
+    listen(dom.stage, "mouseup", () => {
+      panning = false;
+    });
+    listen(dom.stage, "wheel", (event) => {
+      if (!event.ctrlKey && !event.metaKey) {
+        return;
+      }
+      event.preventDefault();
+      setZoom(zoom + (event.deltaY < 0 ? 0.1 : -0.1));
+    }, { passive: false });
+  }
 
   canvas.on("object:moving", ({ target }) => {
-    applySnapping(target);
+    if (!isActiveSelection(target)) {
+      applySnapping(target);
+    }
     enforceBounds(target);
   });
   canvas.on("object:scaling", ({ target }) => {
-    limitScaling(target);
+    if (!isActiveSelection(target)) {
+      limitScaling(target);
+    }
     enforceBounds(target);
   });
   canvas.on("object:rotating", ({ target }) => {
@@ -1981,8 +2541,7 @@ export async function createCustomSlideEditor(root, options = {}) {
 
   function handleSelectionChange() {
     const active = canvas.getActiveObject();
-    if (active && active.role === "element") {
-      // Selecting on the canvas is itself an interaction with it.
+    if (active && (active.role === "element" || isActiveSelection(active))) {
       canvasEngaged = true;
     }
     updatePropertyPanel();
@@ -2001,7 +2560,7 @@ export async function createCustomSlideEditor(root, options = {}) {
     if (!available) {
       return;
     }
-    const width = Math.min(available, SLIDE_WIDTH);
+    const width = Math.min(available, SLIDE_WIDTH) * zoom;
     const height = (width * SLIDE_HEIGHT) / SLIDE_WIDTH;
     canvas.setDimensions({ width: `${width}px`, height: `${height}px` }, { cssOnly: true });
   }
@@ -2014,14 +2573,14 @@ export async function createCustomSlideEditor(root, options = {}) {
   }
   resizeToStage();
 
-  if (dom.template) {
-    // This module is the single source of truth for the template list.
-    dom.template.replaceChildren();
+  const templateSelects = root.querySelectorAll('[data-custom-editor="template"]');
+  for (const select of templateSelects) {
+    select.replaceChildren();
     for (const template of CUSTOM_SLIDE_TEMPLATES) {
-      const option = dom.template.ownerDocument.createElement("option");
+      const option = select.ownerDocument.createElement("option");
       option.value = template.id;
       option.textContent = template.label;
-      dom.template.append(option);
+      select.append(option);
     }
   }
 

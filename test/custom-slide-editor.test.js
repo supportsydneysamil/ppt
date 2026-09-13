@@ -10,12 +10,14 @@ import {
   clampLineIntoCanvas,
   limitScaleToCanvas,
   alignBoxToSlide,
+  alignBoxesTogether,
+  distributeBoxes,
+  serializeAfterRestoringSelection,
   applyImageFit,
   buildFabricObject,
   buildFabricImage,
   fabricObjectToDescriptor,
   bakeTextScale,
-  FABRIC_MODULE_URL,
 } from "../public/custom-slide-editor.js";
 import * as fakeFabric from "./fixtures/fake-fabric.js";
 import {
@@ -118,6 +120,13 @@ test("decideKeyboardCommand maps editor shortcuts", () => {
   assert.equal(decideKeyboardCommand({ ...base, key: "y", ctrlKey: true }), "redo");
   assert.equal(decideKeyboardCommand({ ...base, key: "Delete" }), "delete");
   assert.equal(decideKeyboardCommand({ ...base, key: "Backspace" }), "delete");
+  assert.equal(decideKeyboardCommand({ ...base, key: "d", ctrlKey: true }), "duplicate");
+  assert.equal(decideKeyboardCommand({ ...base, key: "a", ctrlKey: true }), "select-all");
+  assert.equal(decideKeyboardCommand({ ...base, key: "Escape" }), "deselect");
+  assert.equal(decideKeyboardCommand({ ...base, key: "[", ctrlKey: true, shiftKey: true }), "backward");
+  assert.equal(decideKeyboardCommand({ ...base, key: "]", ctrlKey: true, shiftKey: true }), "forward");
+  assert.equal(decideKeyboardCommand({ ...base, key: "ArrowLeft" }), "nudge-left");
+  assert.equal(decideKeyboardCommand({ ...base, key: "ArrowLeft", shiftKey: true }), "nudge-left-large");
 });
 
 test("decideKeyboardCommand ignores typing contexts and unknown keys", () => {
@@ -165,6 +174,48 @@ test("alignBoxToSlide aligns against the 1280x720 slide", () => {
   assert.deepEqual(alignBoxToSlide(box, "middle", CANVAS), { ...box, x: 10, y: 300 });
   assert.deepEqual(alignBoxToSlide(box, "bottom", CANVAS), { ...box, x: 10, y: 600 });
   assert.deepEqual(alignBoxToSlide(box, "nonsense", CANVAS), box);
+});
+
+test("alignBoxesTogether and distributeBoxes operate on the selection", () => {
+  const boxes = [
+    { x: 10, y: 10, width: 20, height: 20 },
+    { x: 80, y: 40, width: 20, height: 20 },
+    { x: 200, y: 80, width: 20, height: 20 },
+  ];
+  const left = alignBoxesTogether(boxes, "left");
+  assert.equal(left[0].x, 10);
+  assert.equal(left[1].x, 10);
+  assert.equal(left[2].x, 10);
+
+  const distributed = distributeBoxes(boxes, "x");
+  assert.equal(distributed[0].x, 10);
+  assert.equal(distributed[2].x, 200);
+  assert.ok(distributed[1].x > 10 && distributed[1].x < 200);
+});
+
+test("serializeAfterRestoringSelection discards ActiveSelection before reading coords", () => {
+  const members = [
+    { left: 10, top: 20, role: "element" },
+    { left: 30, top: 40, role: "element" },
+  ];
+  const selection = new fakeFabric.ActiveSelection(members);
+  assert.notEqual(members[0].left, 10);
+  let restored = false;
+  const canvas = {
+    getActiveObject: () => selection,
+    discardActiveObject() {
+      selection.restoreAbsolute();
+      this._active = null;
+    },
+    setActiveObject() {
+      restored = true;
+    },
+  };
+  const result = serializeAfterRestoringSelection(canvas, fakeFabric, () => {
+    return members.map((member) => member.left);
+  });
+  assert.deepEqual(result, [10, 30]);
+  assert.equal(restored, true);
 });
 
 test("clampBoxToCanvas keeps unrotated boxes inside the slide", () => {

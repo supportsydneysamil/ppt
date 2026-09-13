@@ -227,6 +227,9 @@ describe("appendCustomSlide", () => {
           fontFamily: "Georgia",
           fontSize: 32,
           fontWeight: "700",
+          italic: true,
+          underline: true,
+          valign: "middle",
           color: "#FEDCBA",
           textAlign: "center",
           rotation: 15,
@@ -262,6 +265,7 @@ describe("appendCustomSlide", () => {
     const textRun = text.getElementsByTagName("a:rPr")[0];
     assert.equal(textRun.getAttribute("sz"), "2400");
     assert.equal(textRun.getAttribute("b"), "1");
+    assert.equal(textRun.getAttribute("i"), "1");
     assert.equal(textRun.getElementsByTagName("a:latin")[0].getAttribute("typeface"), "Georgia");
     assert.equal(text.getElementsByTagName("a:pPr")[0].getAttribute("algn"), "ctr");
     assert.match(text.toString(), /<a:srgbClr val="FEDCBA"><a:alpha val="80000"\/>/);
@@ -640,4 +644,32 @@ describe("custom slide colors", () => {
       flipV: false,
     });
   });
+});
+
+it("skips hidden custom slide elements", async () => {
+  const { slideXml } = await render({
+    background: { color: "#000000" },
+    elements: [
+      element({
+        id: "shown",
+        type: "rect",
+        zIndex: 0,
+        fill: "#ff0000",
+        stroke: "",
+        strokeWidth: 0,
+        visible: true,
+      }),
+      element({
+        id: "hidden",
+        type: "rect",
+        zIndex: 1,
+        fill: "#00ff00",
+        stroke: "",
+        strokeWidth: 0,
+        visible: false,
+      }),
+    ],
+  });
+  assert.ok(objectByName(slideXml, "custom:shown"));
+  assert.equal(objectByName(slideXml, "custom:hidden"), undefined);
 });
