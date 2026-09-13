@@ -9,6 +9,16 @@ import https from "https";
 import http from "http";
 import { exec } from "child_process";
 import { promisify } from "util";
+import {
+  cloneCustomSlideAssets,
+  collectCustomSlideImageSrcs,
+  createCustomSlideRenderOptions,
+  isSupportedCustomImageUpload,
+  resolveUploadsChildPath,
+  validateUploadedImageBytes,
+} from "./lib/custom-slide-assets.js";
+import { sanitizeSlideForTemplate } from "./lib/slide-record.js";
+import { appendCustomSlide } from "./lib/custom-slide-pptx.js";
 import { appendCustomTitleSlide } from "./lib/custom-title-slide.js";
 import { convertLegacyPptToPptx } from "./lib/legacy-ppt.js";
 import { mergePptxBuffers } from "./lib/merge-pptx.js";
@@ -85,56 +95,6 @@ function getWideLayoutSize() {
   return { width: 13.333, height: 7.5 };
 }
 
-function sanitizeSlideForTemplate(slide) {
-  return {
-    id: slide.id,
-    name: slide.name,
-    type: slide.type,
-    sourceType: slide.sourceType,
-    content: slide.content || "",
-    font: slide.font || "Malgun Gothic",
-    fontSize: slide.fontSize || "40",
-    bg: slide.bg || "black",
-    align: slide.align || "center",
-    fileName: slide.fileName || null,
-    fileSaved: Boolean(slide.fileSaved),
-    saved: slide.saved !== false,
-    serverFilePath: slide.serverFilePath || null,
-    thumbnail: slide.thumbnail || null,
-    hymnNumber: slide.hymnNumber || null,
-    hymnKorTitle: slide.hymnKorTitle || "",
-    hymnEngTitle: slide.hymnEngTitle || "",
-    originalUrl: slide.originalUrl || null,
-    adTitle: slide.adTitle || "",
-    adTitleSize: slide.adTitleSize || "medium",
-    adTitleAlign: slide.adTitleAlign || "center",
-    adBgSource: slide.adBgSource || "none",
-    adBgImagePath: slide.adBgImagePath || null,
-    adBgImageUrl: slide.adBgImageUrl || null,
-    adBgOpacity:
-      typeof slide.adBgOpacity === "number" ? slide.adBgOpacity : 30,
-    titleDesign: slide.titleDesign || null,
-    churchName: slide.churchName || "",
-    serviceDate: slide.serviceDate || "",
-    titleSubtitle: slide.titleSubtitle || "",
-    customTitleDesign: slide.customTitleDesign || null,
-    customTitleKo: slide.customTitleKo || "",
-    customTitleEn: slide.customTitleEn || "",
-    includeTitle: Boolean(slide.includeTitle),
-    titleSlideType: slide.titleSlideType || "말씀",
-    testament: slide.testament || "",
-    book: slide.book || "",
-    chapter: slide.chapter || "",
-    start: slide.start || "",
-    end: slide.end || "",
-    koVersion: slide.koVersion || "",
-    enVersion: slide.enVersion || "",
-    themeId: slide.themeId || "dark",
-    customImageData: slide.customImageData || null,
-    scriptureSignature: slide.scriptureSignature || "",
-  };
-}
-
 function sanitizeTemplateName(value) {
   const trimmed = (value || "").trim();
   return trimmed || "새 템플릿";
@@ -179,14 +139,7 @@ function createScriptureWebViewSession(payload) {
 }
 
 function resolveUploadedFilePath(serverFilePath) {
-  if (!serverFilePath || typeof serverFilePath !== "string") {
-    return null;
-  }
-  if (!serverFilePath.startsWith("/uploads/")) {
-    return null;
-  }
-  const relativePath = serverFilePath.replace(/^\/uploads\//, "");
-  return path.join(uploadsDir, relativePath);
+  return resolveUploadsChildPath(uploadsDir, serverFilePath);
 }
 
 async function cloneUploadedAsset(serverFilePath) {
@@ -218,6 +171,14 @@ async function cloneSlideForTemplate(slide) {
   cloned.serverFilePath = await cloneUploadedAsset(cloned.serverFilePath);
   cloned.thumbnail = await cloneUploadedAsset(cloned.thumbnail);
   cloned.adBgImagePath = await cloneUploadedAsset(cloned.adBgImagePath);
+  if (cloned.customSlide) {
+    // Fresh element ids plus private copies of every picture, so deleting one
+    // copy of the slide never breaks the other.
+    cloned.customSlide = await cloneCustomSlideAssets(
+      cloned.customSlide,
+      cloneUploadedAsset
+    );
+  }
   return cloned;
 }
 
@@ -226,6 +187,7 @@ async function deleteSlideAsset(slide) {
     slide?.serverFilePath,
     slide?.thumbnail,
     slide?.adBgImagePath,
+    ...collectCustomSlideImageSrcs(slide),
   ].filter(Boolean);
 
   const uniqueResolvedPaths = [...new Set(assetPaths)]
@@ -439,6 +401,16 @@ function addHymnTitleSlide(pptx, hymnNumber, korTitle, engTitle) {
   });
 }
 
+function customSlideRenderOptions(warnings) {
+  return createCustomSlideRenderOptions({
+    uploadsDir,
+    onWarning: (message, element) => {
+      console.warn("Custom slide image skipped:", message);
+      warnings?.push({ message, elementId: element?.id ?? null });
+    },
+  });
+}
+
 async function writeGeneratedDeck(build) {
   const pptx = new PptxGenJS();
   pptx.layout = "LAYOUT_WIDE";
@@ -459,7 +431,7 @@ async function loadUploadedDeckBuffer(slideData) {
   return raw;
 }
 
-async function buffersForSlide(slideData) {
+async function buffersForSlide(slideData, warnings) {
   const buffers = [];
   if (slideData.type === "hymn" && slideData.includeTitle) {
     buffers.push(
@@ -490,6 +462,15 @@ async function buffersForSlide(slideData) {
     return buffers;
   }
 
+  if (slideData.type === "custom") {
+    buffers.push(
+      await writeGeneratedDeck((pptx) =>
+        appendCustomSlide(pptx, slideData, customSlideRenderOptions(warnings))
+      )
+    );
+    return buffers;
+  }
+
   if (slideData.sourceType === "upload") {
     buffers.push(await loadUploadedDeckBuffer(slideData));
     return buffers;
@@ -508,11 +489,13 @@ async function buffersForSlide(slideData) {
   return buffers;
 }
 
-async function buildCombinedSlidesDeck(slides) {
+// `warnings` collects the pictures that were skipped, so a combined deck can
+// report the same count as a single custom slide download.
+async function buildCombinedSlidesDeck(slides, warnings) {
   const buffers = [];
   for (const rawSlide of slides) {
     buffers.push(
-      ...(await buffersForSlide(sanitizeSlideForTemplate(rawSlide)))
+      ...(await buffersForSlide(sanitizeSlideForTemplate(rawSlide), warnings))
     );
   }
   return injectThumbnail(await mergePptxBuffers(buffers));
@@ -532,14 +515,38 @@ const storage = multer.diskStorage({
 });
 const upload = multer({
   storage: storage,
-  limits: { fileSize: 50 * 1024 * 1024 } // 50MB limit
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
+  // Only requests that mark themselves as image uploads (the custom slide
+  // editor) are restricted; PPT/PPTX uploads keep their existing freedom.
+  fileFilter: (req, file, cb) => {
+    if (req.query?.kind !== "image" || isSupportedCustomImageUpload(file)) {
+      cb(null, true);
+      return;
+    }
+    cb(new Error("PNG, JPEG, WebP 이미지만 업로드할 수 있습니다."));
+  },
 });
+
+function uploadSingleFile(req, res, next) {
+  upload.single("file")(req, res, (err) => {
+    if (err) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
+    next();
+  });
+}
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 app.use('/uploads', express.static(uploadsDir)); // Serve uploaded files
 // Date/season helpers are shared with the browser, so the module is served as-is.
 app.use('/lib', express.static(path.join(__dirname, "lib")));
+// Fabric.js browser ESM build, served locally so the editor never needs a CDN.
+app.use(
+  '/vendor/fabric',
+  express.static(path.join(__dirname, "node_modules", "fabric", "dist"))
+);
 
 // --- Slide Persistence APIs ---
 
@@ -566,7 +573,12 @@ app.post("/api/slides", async (req, res) => {
     if (!Array.isArray(slides)) {
       return res.status(400).json({ error: "Invalid data format" });
     }
-    await fs.writeFile(slidesPath, JSON.stringify(slides, null, 2));
+    // Store the same canonical schema templates use, so custom canvas models
+    // on disk are always normalized and runtime-only fields never land there.
+    await fs.writeFile(
+      slidesPath,
+      JSON.stringify(slides.map(sanitizeSlideForTemplate), null, 2)
+    );
     res.json({ success: true });
   } catch (err) {
     console.error(err);
@@ -586,7 +598,13 @@ app.post("/api/slides/bulk-delete", async (req, res) => {
     const slidesToDelete = data.filter((slide) => ids.includes(slide.id));
     const requestedAssets = requestSlides
       .filter((slide) => ids.includes(slide.id))
-      .map(sanitizeSlideForTemplate);
+      .map((slide) => ({
+        ...sanitizeSlideForTemplate(slide),
+        // Keep whatever canvas model the client still holds, even if the
+        // slide's type moved away from custom, so its pictures are not
+        // orphaned. Every source is still re-validated before deletion.
+        customSlide: slide?.customSlide ?? null,
+      }));
     const assetTargets = [
       ...slidesToDelete,
       ...requestedAssets.filter(
@@ -699,9 +717,18 @@ app.delete("/api/templates/:id", async (req, res) => {
 });
 
 // Upload File
-app.post("/api/upload", upload.single('file'), async (req, res) => {
+app.post("/api/upload", uploadSingleFile, async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "No file uploaded" });
+  }
+
+  // The declared type is only a hint, so image uploads are sniffed for real.
+  // Rejected bytes are deleted by the validator before we answer.
+  if (req.query?.kind === "image") {
+    const validation = await validateUploadedImageBytes(req.file);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
   }
 
   let filePath = req.file.path;
@@ -944,6 +971,41 @@ app.post("/api/create-custom-title-slide-pptx", async (req, res) => {
   }
 });
 
+app.post("/api/create-custom-slide-pptx", async (req, res) => {
+  try {
+    const warnings = [];
+    const pptx = new PptxGenJS();
+    pptx.layout = "LAYOUT_WIDE";
+    // Accept either a full slide record or a bare canvas model.
+    const slideData = req.body?.customSlide ? req.body : { customSlide: req.body };
+    await appendCustomSlide(pptx, slideData, customSlideRenderOptions(warnings));
+
+    let buffer = await pptx.write({ outputType: "nodebuffer" });
+    buffer = injectThumbnail(buffer);
+
+    const filename = sanitizeFilename(
+      `${(req.body?.name || "custom_slide").trim() || "custom_slide"}.pptx`
+    );
+    const asciiFilename = sanitizeAsciiFilename(filename);
+    const encodedFilename = encodeURIComponent(filename);
+
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    );
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`
+    );
+    // Skipped pictures never fail the slide; the count travels with the file.
+    res.setHeader("X-Custom-Slide-Warnings", String(warnings.length));
+    return res.send(buffer);
+  } catch (err) {
+    console.error("Custom slide PPTX generation error:", err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 app.post("/api/slides/export-pptx", async (req, res) => {
   try {
     const rawSlides = Array.isArray(req.body?.slides) ? req.body.slides : [];
@@ -951,7 +1013,8 @@ app.post("/api/slides/export-pptx", async (req, res) => {
       return res.status(400).json({ error: "No slides provided" });
     }
 
-    const buffer = await buildCombinedSlidesDeck(rawSlides);
+    const warnings = [];
+    const buffer = await buildCombinedSlidesDeck(rawSlides, warnings);
     const filename = sanitizeFilename(
       `selected_slides_${rawSlides.length}_${Date.now()}.pptx`
     );
@@ -966,6 +1029,8 @@ app.post("/api/slides/export-pptx", async (req, res) => {
       "Content-Disposition",
       `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`
     );
+    // Skipped pictures never fail the deck; the count travels with the file.
+    res.setHeader("X-Custom-Slide-Warnings", String(warnings.length));
     return res.send(buffer);
   } catch (err) {
     console.error("Selected slides export error:", err);

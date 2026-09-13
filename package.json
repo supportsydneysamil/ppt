@@ -13,8 +13,13 @@
     "adm-zip": "^0.5.16",
     "cfb": "^1.2.2",
     "express": "^4.19.2",
+    "fabric": "^6.9.1",
+    "image-size": "^1.2.1",
     "multer": "^2.0.2",
     "pptx-automizer": "^0.9.3",
     "pptxgenjs": "^4.0.1"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1"
   }
 }

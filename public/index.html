@@ -340,6 +340,7 @@
                   <option value="ad">광고</option>
                   <option value="title">타이틀 (주일 예배)</option>
                   <option value="custom-title">타이틀 (Custom)</option>
+                  <option value="custom">커스텀 편집</option>
                 </select>
               </label>
             </div>
@@ -925,6 +926,189 @@
             </div>
 
           </form>
+
+          <section
+            id="customSlideEditor"
+            class="custom-editor"
+            aria-label="커스텀 슬라이드 편집기"
+            hidden
+          >
+            <div class="custom-editor-bar">
+              <label class="custom-editor-field">
+                <span class="field-label">템플릿</span>
+                <select
+                  id="customEditorTemplate"
+                  data-custom-editor="template"
+                  aria-label="커스텀 슬라이드 템플릿"
+                  title="커스텀 슬라이드 템플릿"
+                >
+                  <!-- Options are populated from custom-slide-editor.js -->
+                </select>
+              </label>
+              <button
+                type="button"
+                class="ghost small"
+                data-editor-action="apply-template"
+                title="선택한 템플릿 적용"
+                aria-label="선택한 템플릿 적용"
+              >
+                템플릿 적용
+              </button>
+              <label class="custom-editor-field">
+                <span class="field-label">배경색</span>
+                <input
+                  id="customEditorBackground"
+                  type="color"
+                  value="#ffffff"
+                  data-custom-editor="background"
+                  title="슬라이드 배경색"
+                  aria-label="슬라이드 배경색"
+                />
+              </label>
+            </div>
+
+            <div class="custom-editor-toolbar" role="toolbar" aria-label="커스텀 슬라이드 도구">
+              <div class="custom-editor-tool-group" role="group" aria-label="개체 추가">
+                <button type="button" class="custom-editor-tool" data-editor-action="add-text" title="텍스트 추가" aria-label="텍스트 추가">텍스트</button>
+                <button type="button" class="custom-editor-tool" data-editor-action="add-image" title="이미지 추가" aria-label="이미지 추가">이미지</button>
+                <button type="button" class="custom-editor-tool" data-editor-action="add-rect" title="사각형 추가" aria-label="사각형 추가">사각형</button>
+                <button type="button" class="custom-editor-tool" data-editor-action="add-roundRect" title="둥근 사각형 추가" aria-label="둥근 사각형 추가">둥근 사각형</button>
+                <button type="button" class="custom-editor-tool" data-editor-action="add-ellipse" title="원 추가" aria-label="원 추가">원</button>
+                <button type="button" class="custom-editor-tool" data-editor-action="add-line" title="선 추가" aria-label="선 추가">선</button>
+              </div>
+
+              <div class="custom-editor-tool-group" role="group" aria-label="편집 이력">
+                <button type="button" class="custom-editor-tool" data-editor-action="undo" title="실행 취소" aria-label="실행 취소" disabled>되돌리기</button>
+                <button type="button" class="custom-editor-tool" data-editor-action="redo" title="다시 실행" aria-label="다시 실행" disabled>다시 실행</button>
+              </div>
+
+              <div class="custom-editor-tool-group" role="group" aria-label="슬라이드 기준 정렬">
+                <button type="button" class="custom-editor-tool" data-editor-action="align-left" title="왼쪽 정렬" aria-label="왼쪽 정렬" disabled>왼쪽</button>
+                <button type="button" class="custom-editor-tool" data-editor-action="align-center" title="가로 가운데 정렬" aria-label="가로 가운데 정렬" disabled>가로 가운데</button>
+                <button type="button" class="custom-editor-tool" data-editor-action="align-right" title="오른쪽 정렬" aria-label="오른쪽 정렬" disabled>오른쪽</button>
+                <button type="button" class="custom-editor-tool" data-editor-action="align-top" title="위쪽 정렬" aria-label="위쪽 정렬" disabled>위쪽</button>
+                <button type="button" class="custom-editor-tool" data-editor-action="align-middle" title="세로 가운데 정렬" aria-label="세로 가운데 정렬" disabled>세로 가운데</button>
+                <button type="button" class="custom-editor-tool" data-editor-action="align-bottom" title="아래쪽 정렬" aria-label="아래쪽 정렬" disabled>아래쪽</button>
+              </div>
+
+              <div class="custom-editor-tool-group" role="group" aria-label="개체 관리">
+                <button type="button" class="custom-editor-tool" data-editor-action="forward" title="앞으로 가져오기" aria-label="앞으로 가져오기" disabled>앞으로</button>
+                <button type="button" class="custom-editor-tool" data-editor-action="backward" title="뒤로 보내기" aria-label="뒤로 보내기" disabled>뒤로</button>
+                <button type="button" class="custom-editor-tool" data-editor-action="duplicate" title="개체 복제" aria-label="개체 복제" disabled>복제</button>
+                <button type="button" class="custom-editor-tool danger" data-editor-action="delete" title="개체 삭제" aria-label="개체 삭제" disabled>삭제</button>
+              </div>
+            </div>
+
+            <div class="custom-editor-body">
+              <div class="custom-editor-stage" data-custom-editor="stage">
+                <canvas
+                  id="customEditorCanvas"
+                  width="1280"
+                  height="720"
+                  data-custom-editor="canvas"
+                  aria-label="커스텀 슬라이드 캔버스 (1280x720)"
+                ></canvas>
+              </div>
+
+              <aside class="custom-editor-props" aria-label="선택 개체 속성">
+                <div class="custom-editor-panel" data-editor-panel="empty">
+                  <p class="hint">개체를 선택하면 속성이 표시됩니다.</p>
+                </div>
+
+                <div class="custom-editor-panel" data-editor-panel="text" hidden>
+                  <div class="custom-editor-panel-label">텍스트</div>
+                  <label class="custom-editor-row">
+                    <span class="field-label">내용</span>
+                    <textarea rows="3" data-editor-field="text" aria-label="텍스트 내용"></textarea>
+                  </label>
+                  <label class="custom-editor-row">
+                    <span class="field-label">글꼴</span>
+                    <select data-editor-field="fontFamily" aria-label="텍스트 글꼴">
+                      <option value="Malgun Gothic">맑은 고딕</option>
+                      <option value="Calibri">Calibri</option>
+                      <option value="Arial">Arial</option>
+                    </select>
+                  </label>
+                  <label class="custom-editor-row">
+                    <span class="field-label">크기</span>
+                    <input type="number" min="8" max="400" step="1" data-editor-field="fontSize" aria-label="텍스트 크기" />
+                  </label>
+                  <label class="custom-editor-row custom-editor-row-inline">
+                    <input type="checkbox" data-editor-field="bold" aria-label="굵게" />
+                    <span class="field-label">굵게</span>
+                  </label>
+                  <label class="custom-editor-row">
+                    <span class="field-label">글자색</span>
+                    <input type="color" data-editor-field="color" aria-label="글자색" />
+                  </label>
+                  <label class="custom-editor-row">
+                    <span class="field-label">정렬</span>
+                    <select data-editor-field="textAlign" aria-label="텍스트 정렬">
+                      <option value="left">왼쪽</option>
+                      <option value="center">가운데</option>
+                      <option value="right">오른쪽</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div class="custom-editor-panel" data-editor-panel="image" hidden>
+                  <div class="custom-editor-panel-label">이미지</div>
+                  <label class="custom-editor-row">
+                    <span class="field-label">맞춤</span>
+                    <select data-editor-field="fit" aria-label="이미지 맞춤 방식">
+                      <option value="contain">전체 보이기 (contain)</option>
+                      <option value="cover">영역 채우기 (cover)</option>
+                    </select>
+                  </label>
+                  <p class="hint">이미지는 업로드가 완료된 후에만 슬라이드에 저장됩니다.</p>
+                </div>
+
+                <div class="custom-editor-panel" data-editor-panel="shape" hidden>
+                  <div class="custom-editor-panel-label">도형</div>
+                  <label class="custom-editor-row">
+                    <span class="field-label">채우기</span>
+                    <input type="color" data-editor-field="fill" aria-label="도형 채우기 색" />
+                  </label>
+                  <label class="custom-editor-row custom-editor-row-inline">
+                    <input type="checkbox" data-editor-field="noStroke" aria-label="선 없음" />
+                    <span class="field-label">선 없음</span>
+                  </label>
+                  <label class="custom-editor-row">
+                    <span class="field-label">선 색</span>
+                    <input type="color" data-editor-field="stroke" aria-label="도형 선 색" />
+                  </label>
+                  <label class="custom-editor-row">
+                    <span class="field-label">선 두께</span>
+                    <input type="number" min="0" max="100" step="1" data-editor-field="strokeWidth" aria-label="도형 선 두께" />
+                  </label>
+                </div>
+
+                <div class="custom-editor-panel" data-editor-panel="common" hidden>
+                  <div class="custom-editor-panel-label">공통</div>
+                  <label class="custom-editor-row">
+                    <span class="field-label">투명도</span>
+                    <input type="range" min="0" max="1" step="0.05" data-editor-field="opacity" aria-label="투명도" />
+                  </label>
+                  <label class="custom-editor-row">
+                    <span class="field-label">회전</span>
+                    <input type="number" min="0" max="359" step="1" data-editor-field="rotation" aria-label="회전 각도" />
+                  </label>
+                </div>
+              </aside>
+            </div>
+
+            <p class="custom-editor-status" data-custom-editor="status" role="status" aria-live="polite"></p>
+            <p class="custom-editor-error" data-custom-editor="error" role="alert" hidden></p>
+            <input
+              type="file"
+              id="customEditorFile"
+              accept="image/png,image/jpeg,image/webp"
+              data-custom-editor="file"
+              aria-hidden="true"
+              tabindex="-1"
+              hidden
+            />
+          </section>
 
           <div class="preview-area">
             <h4>미리보기</h4>
