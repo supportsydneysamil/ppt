@@ -7,6 +7,7 @@ import {
   getPendingChangeScopes,
   getSaveSequence,
   toFileMetadata,
+  withTransientFiles,
 } from "../lib/save-state.js";
 
 describe("save state snapshots", () => {
@@ -25,6 +26,27 @@ describe("save state snapshots", () => {
       }
     );
     assert.equal(toFileMetadata(null), null);
+  });
+
+  it("attaches live files for preview without mutating the snapshot draft", () => {
+    const draft = {
+      name: "업로드",
+      pendingFile: { name: "slides.pptx", size: 10, lastModified: 1 },
+      pendingBackgroundFile: { name: "background.png", size: 20, lastModified: 2 },
+    };
+    const file = { name: "slides.pptx", live: true };
+    const backgroundFile = { name: "background.png", live: true };
+
+    assert.deepEqual(
+      withTransientFiles(draft, { file, backgroundFile }),
+      {
+        ...draft,
+        file,
+        adBgImageFile: backgroundFile,
+      }
+    );
+    assert.equal("file" in draft, false);
+    assert.equal("adBgImageFile" in draft, false);
   });
 
   it("ignores object key insertion order", () => {

@@ -3,6 +3,7 @@ import {
   deriveSaveButtonState,
   isSnapshotDirty,
   toFileMetadata,
+  withTransientFiles,
 } from "/lib/save-state.js";
 
 const testamentSelect = document.getElementById("testament");
@@ -329,6 +330,14 @@ function handleStepperButtonClick(event) {
     input.id === "scriptureEndVerse"
   ) {
     syncVerseRange(input);
+  }
+
+  if (
+    targetId === "scriptureChapter" ||
+    targetId === "scriptureStartVerse" ||
+    targetId === "scriptureEndVerse"
+  ) {
+    input.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
   input.focus();
@@ -978,6 +987,15 @@ function collectCurrentSlideDraft() {
   return draft;
 }
 
+function collectCurrentSlidePreviewDraft(slideOverride) {
+  const draft = slideOverride || collectCurrentSlideDraft();
+  if (!draft) return null;
+  return withTransientFiles(draft, {
+    file: userPptxFile?.files?.[0],
+    backgroundFile: adBgImageFile?.files?.[0],
+  });
+}
+
 function refreshSaveState() {
   const draft = collectCurrentSlideDraft();
   slideDirty = Boolean(
@@ -1003,6 +1021,7 @@ function resetEditorSelection() {
   slideBaselineSnapshot = null;
   slideRuntimeDraft = {};
   slideDirty = false;
+  clearTransientSlideFileInputs();
   emptyEditorState.style.display = "flex";
   slideEditor.style.display = "none";
   refreshSaveState();
@@ -1713,10 +1732,10 @@ if (scriptureIncludeTitle) {
 
 if (scripturePptxImageInput) {
   scripturePptxImageInput.addEventListener("change", () => {
-    const current = collectCurrentSlideDraft();
     if (scripturePptxImageInput.files?.[0]) {
       slideRuntimeDraft.customImageData = null;
     }
+    const current = collectCurrentSlideDraft();
     syncScriptureImageUI(current);
     refreshSaveState();
   });
@@ -2180,7 +2199,7 @@ function buildHymnTitleSlidePreview(hymnNumber, korTitle, engTitle) {
 function renderPreview(slideOverride) {
   if (!slidePreview) return;
 
-  let data = slideOverride || collectCurrentSlideDraft();
+  let data = collectCurrentSlidePreviewDraft(slideOverride);
 
   if (!data) {
     const type = slideTypeSelect.value;
@@ -2809,7 +2828,14 @@ function selectSlide(id) {
   }
 }
 
+function clearTransientSlideFileInputs() {
+  if (userPptxFile) userPptxFile.value = "";
+  if (adBgImageFile) adBgImageFile.value = "";
+  if (scripturePptxImageInput) scripturePptxImageInput.value = "";
+}
+
 function populateEditor(slide) {
+  clearTransientSlideFileInputs();
   slideNameInput.value = slide.name;
   slideTypeSelect.value = slide.type;
 
@@ -3865,7 +3891,24 @@ async function uploadFile(file) {
   return await resp.json();
 }
 
-async function commitSlideCandidate(candidate, options = {}) {
+function rememberSlideRuntimeAssets(candidate, keys) {
+  const assets = {};
+  keys.forEach((key) => {
+    assets[key] = candidate[key];
+  });
+  slideRuntimeDraft = { ...slideRuntimeDraft, ...assets };
+}
+
+function canReuseRuntimeUpload(candidate, markerKey, file, pathKey) {
+  return Boolean(
+    candidate[pathKey] &&
+      candidate[markerKey] &&
+      createSnapshot(candidate[markerKey]) ===
+        createSnapshot(toFileMetadata(file))
+  );
+}
+
+async function commitSlideCandidate(candidate) {
   const index = slides.findIndex((slide) => slide.id === candidate.id);
   if (index === -1) return false;
 
@@ -3880,7 +3923,10 @@ async function commitSlideCandidate(candidate, options = {}) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(nextSlides.map(buildSerializableSlide)),
     });
-    if (!resp.ok) return false;
+    if (!resp.ok) {
+      const payload = await resp.json().catch(() => ({}));
+      throw new Error(payload.error || "슬라이드 저장에 실패했습니다.");
+    }
   }
 
   slides = nextSlides;
@@ -3949,6 +3995,13 @@ async function saveCurrentSlide() {
           slide.originalUrl = data.originalUrl;
           slide.hymnNumber = number;
           slide.thumbnail = null;
+          rememberSlideRuntimeAssets(slide, [
+            "serverFilePath",
+            "fileName",
+            "originalUrl",
+            "hymnNumber",
+            "thumbnail",
+          ]);
         } catch (e) {
           alert("자동 다운로드 실패: " + e.message);
           if (saveBtnMsg) saveBtnMsg.textContent = originalText;
@@ -3980,6 +4033,13 @@ async function saveCurrentSlide() {
       if (!generated) {
         return;
       }
+      rememberSlideRuntimeAssets(slide, [
+        "serverFilePath",
+        "fileName",
+        "thumbnail",
+        "scriptureSignature",
+        "customImageData",
+      ]);
       slide.saved = true;
 
     } else if (slide.type === 'ad') {
@@ -4000,21 +4060,38 @@ async function saveCurrentSlide() {
       slide.adBgSource = bgSource;
 
       // Handle background image file upload
-      if (bgSource === 'file' && adBgImageFile.files[0]) {
-        const saveBtnMsg = document.getElementById('editorSaveBtn');
-        const originalText = saveBtnMsg ? saveBtnMsg.textContent : "저장";
-        if (saveBtnMsg) saveBtnMsg.textContent = "업로드 중...";
-        
-        try {
-          const uploadResult = await uploadFile(adBgImageFile.files[0]);
-          slide.adBgImagePath = uploadResult.path;
-          slide.adBgImageUrl = null; // Clear URL if file is uploaded
-        } catch (e) {
-          alert("배경 이미지 업로드 실패: " + e.message);
-          if (saveBtnMsg) saveBtnMsg.textContent = originalText;
-          return;
-        } finally {
-          if (saveBtnMsg) saveBtnMsg.textContent = originalText;
+      const backgroundFile = adBgImageFile.files[0];
+      if (bgSource === 'file') {
+        if (
+          backgroundFile &&
+          !canReuseRuntimeUpload(
+            slide,
+            "uploadedBackgroundFile",
+            backgroundFile,
+            "adBgImagePath"
+          )
+        ) {
+          const saveBtnMsg = document.getElementById('editorSaveBtn');
+          const originalText = saveBtnMsg ? saveBtnMsg.textContent : "저장";
+          if (saveBtnMsg) saveBtnMsg.textContent = "업로드 중...";
+
+          try {
+            const uploadResult = await uploadFile(backgroundFile);
+            slide.adBgImagePath = uploadResult.path;
+            slide.adBgImageUrl = null; // Clear URL if file is uploaded
+            slide.uploadedBackgroundFile = toFileMetadata(backgroundFile);
+            rememberSlideRuntimeAssets(slide, [
+              "adBgImagePath",
+              "adBgImageUrl",
+              "uploadedBackgroundFile",
+            ]);
+          } catch (e) {
+            alert("배경 이미지 업로드 실패: " + e.message);
+            if (saveBtnMsg) saveBtnMsg.textContent = originalText;
+            return;
+          } finally {
+            if (saveBtnMsg) saveBtnMsg.textContent = originalText;
+          }
         }
       } else if (bgSource === 'url') {
         slide.adBgImageUrl = adBgImageUrl.value;
@@ -4036,21 +4113,37 @@ async function saveCurrentSlide() {
           return;
         }
         
-        const saveBtnMsg = document.getElementById('editorSaveBtn');
-        const originalText = saveBtnMsg ? saveBtnMsg.textContent : "저장";
-        if (saveBtnMsg) saveBtnMsg.textContent = "업로드 중...";
-        
-        try {
-          const uploadResult = await uploadFile(file);
-          slide.fileName = file.name;
-          slide.serverFilePath = uploadResult.path;
-          slide.fileSaved = true;
-        } catch (e) {
-          alert("파일 업로드 실패: " + e.message);
-          if (saveBtnMsg) saveBtnMsg.textContent = originalText;
-          return;
-        } finally {
-          if (saveBtnMsg) saveBtnMsg.textContent = originalText;
+        if (
+          !canReuseRuntimeUpload(
+            slide,
+            "uploadedFile",
+            file,
+            "serverFilePath"
+          )
+        ) {
+          const saveBtnMsg = document.getElementById('editorSaveBtn');
+          const originalText = saveBtnMsg ? saveBtnMsg.textContent : "저장";
+          if (saveBtnMsg) saveBtnMsg.textContent = "업로드 중...";
+
+          try {
+            const uploadResult = await uploadFile(file);
+            slide.fileName = file.name;
+            slide.serverFilePath = uploadResult.path;
+            slide.fileSaved = true;
+            slide.uploadedFile = toFileMetadata(file);
+            rememberSlideRuntimeAssets(slide, [
+              "fileName",
+              "serverFilePath",
+              "fileSaved",
+              "uploadedFile",
+            ]);
+          } catch (e) {
+            alert("파일 업로드 실패: " + e.message);
+            if (saveBtnMsg) saveBtnMsg.textContent = originalText;
+            return;
+          } finally {
+            if (saveBtnMsg) saveBtnMsg.textContent = originalText;
+          }
         }
       }
       
@@ -4099,20 +4192,37 @@ async function saveCurrentSlide() {
 
       const bgSrc = document.querySelector('input[name="adBgSource"]:checked').value;
       slide.adBgSource = bgSrc;
-      if (bgSrc === 'file' && adBgImageFile.files[0]) {
-        const saveBtnMsg = document.getElementById('editorSaveBtn');
-        const originalText = saveBtnMsg ? saveBtnMsg.textContent : "저장";
-        if (saveBtnMsg) saveBtnMsg.textContent = "업로드 중...";
-        try {
-          const uploadResult = await uploadFile(adBgImageFile.files[0]);
-          slide.adBgImagePath = uploadResult.path;
-          slide.adBgImageUrl = null;
-        } catch (e) {
-          alert("배경 이미지 업로드 실패: " + e.message);
-          if (saveBtnMsg) saveBtnMsg.textContent = originalText;
-          return;
-        } finally {
-          if (saveBtnMsg) saveBtnMsg.textContent = originalText;
+      const backgroundFile = adBgImageFile.files[0];
+      if (bgSrc === 'file') {
+        if (
+          backgroundFile &&
+          !canReuseRuntimeUpload(
+            slide,
+            "uploadedBackgroundFile",
+            backgroundFile,
+            "adBgImagePath"
+          )
+        ) {
+          const saveBtnMsg = document.getElementById('editorSaveBtn');
+          const originalText = saveBtnMsg ? saveBtnMsg.textContent : "저장";
+          if (saveBtnMsg) saveBtnMsg.textContent = "업로드 중...";
+          try {
+            const uploadResult = await uploadFile(backgroundFile);
+            slide.adBgImagePath = uploadResult.path;
+            slide.adBgImageUrl = null;
+            slide.uploadedBackgroundFile = toFileMetadata(backgroundFile);
+            rememberSlideRuntimeAssets(slide, [
+              "adBgImagePath",
+              "adBgImageUrl",
+              "uploadedBackgroundFile",
+            ]);
+          } catch (e) {
+            alert("배경 이미지 업로드 실패: " + e.message);
+            if (saveBtnMsg) saveBtnMsg.textContent = originalText;
+            return;
+          } finally {
+            if (saveBtnMsg) saveBtnMsg.textContent = originalText;
+          }
         }
       } else if (bgSrc === 'url') {
         slide.adBgImageUrl = adBgImageUrl.value;
@@ -4127,22 +4237,39 @@ async function saveCurrentSlide() {
       if (slide.sourceType === 'upload') {
         if (userPptxFile.files.length > 0) {
           const file = userPptxFile.files[0];
-          // Upload to server
-          try {
-            const result = await uploadFile(file);
-            // Update slide with server file info
-            slide.serverFilePath = result.path; // e.g. /uploads/xxx-name.pptx
-            slide.fileName = result.originalName;
-            slide.thumbnail = result.thumbnail; // Save thumbnail path
-            slide.fileSaved = true;
+          if (
+            !canReuseRuntimeUpload(
+              slide,
+              "uploadedFile",
+              file,
+              "serverFilePath"
+            )
+          ) {
+            // Upload to server
+            try {
+              const result = await uploadFile(file);
+              // Update slide with server file info
+              slide.serverFilePath = result.path; // e.g. /uploads/xxx-name.pptx
+              slide.fileName = result.originalName;
+              slide.thumbnail = result.thumbnail; // Save thumbnail path
+              slide.fileSaved = true;
+              slide.uploadedFile = toFileMetadata(file);
+              rememberSlideRuntimeAssets(slide, [
+                "serverFilePath",
+                "fileName",
+                "thumbnail",
+                "fileSaved",
+                "uploadedFile",
+              ]);
 
-            // Clear transient file obj
-            slide.file = null;
-            slide.fileData = null;
-          } catch (err) {
-            console.error("Upload Error:", err);
-            alert("파일 업로드 실패");
-            return;
+              // Clear transient file obj
+              slide.file = null;
+              slide.fileData = null;
+            } catch (err) {
+              console.error("Upload Error:", err);
+              alert("파일 업로드 실패");
+              return;
+            }
           }
         } else if (!slide.fileName && !slide.serverFilePath) {
           alert("PPTX 파일을 업로드해주세요.");
@@ -5078,6 +5205,7 @@ userPptxFile.addEventListener('change', async () => {
           serverFilePath: result.path,
           fileName: result.originalName || file.name,
           fileSaved: true,
+          uploadedFile: toFileMetadata(file),
         };
         renderPreview(collectCurrentSlideDraft());
         refreshSaveState();
