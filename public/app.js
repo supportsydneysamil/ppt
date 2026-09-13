@@ -2,6 +2,7 @@ import {
   createSnapshot,
   deriveSaveButtonState,
   isSnapshotDirty,
+  isTemplateDirty,
   toFileMetadata,
   withTransientFiles,
 } from "/lib/save-state.js";
@@ -731,6 +732,7 @@ async function handleExportToPptGenerator(event) {
     pptTab = "slides";
     activeTemplateId = null;
     hasPendingTemplateChanges = false;
+    templateBaselineSnapshot = null;
     loadWorkspaceSlides(mainSlides);
     renderPptScreen();
     selectSlide(responsePayload.slide.id);
@@ -860,6 +862,7 @@ let templates = [];
 let pptTab = "slides";
 let activeTemplateId = null;
 let hasPendingTemplateChanges = false;
+let templateBaselineSnapshot = null;
 let currentSlideId = null;
 let slideBaselineSnapshot = null;
 let slideRuntimeDraft = {};
@@ -927,7 +930,32 @@ function markTemplateDirty() {
     return;
   }
   syncWorkingSlidesToState();
-  hasPendingTemplateChanges = true;
+  refreshTemplateDirtyState();
+}
+
+function collectActiveTemplateDraft() {
+  const template = getActiveTemplate();
+  return template
+    ? {
+        id: template.id,
+        name: template.name,
+        slides: slides.map(buildSerializableSlide),
+      }
+    : null;
+}
+
+function captureTemplateBaseline() {
+  const draft = collectActiveTemplateDraft();
+  templateBaselineSnapshot = draft ? createSnapshot(draft) : null;
+}
+
+function refreshTemplateDirtyState() {
+  const draft = collectActiveTemplateDraft();
+  hasPendingTemplateChanges = Boolean(
+    draft &&
+      templateBaselineSnapshot &&
+      isTemplateDirty(draft, templateBaselineSnapshot)
+  );
   updateTemplateManagementUi();
 }
 
@@ -1122,6 +1150,7 @@ async function leaveCurrentWorkspace() {
 
   activeTemplateId = null;
   hasPendingTemplateChanges = false;
+  templateBaselineSnapshot = null;
 
   if (hadTemplateEdits) {
     await loadTemplatesFromServer();
@@ -1171,6 +1200,8 @@ async function openTemplateWorkspace(templateId) {
   pptTab = "templates";
   activeTemplateId = templateId;
   loadWorkspaceSlides(template.slides || []);
+  captureTemplateBaseline();
+  refreshTemplateDirtyState();
   renderPptScreen();
 }
 
@@ -1855,10 +1886,10 @@ async function saveSlidesToServer() {
   }
 }
 
-async function saveActiveTemplateToServer() {
+async function saveActiveTemplateToServer({ silent = false } = {}) {
   const activeTemplate = getActiveTemplate();
-  if (!activeTemplate) {
-    return false;
+  if (!activeTemplate || !hasPendingTemplateChanges || templateSaving) {
+    return !hasPendingTemplateChanges;
   }
 
   templateSaving = true;
@@ -1882,9 +1913,12 @@ async function saveActiveTemplateToServer() {
     templates = templates.map((template) =>
       template.id === nextTemplate.id ? nextTemplate : template
     );
-    hasPendingTemplateChanges = false;
-    updateTemplateManagementUi();
+    captureTemplateBaseline();
+    refreshTemplateDirtyState();
     renderTemplateGallery();
+    if (!silent) {
+      alert("템플릿이 저장되었습니다");
+    }
     return true;
   } catch (e) {
     console.error("Failed to save template", e);
@@ -1929,10 +1963,13 @@ async function loadTemplatesFromServer() {
 async function loadPptDataFromServer() {
   await Promise.all([loadSlidesFromServer(), loadTemplatesFromServer()]);
   hasPendingTemplateChanges = false;
+  templateBaselineSnapshot = null;
 
   const activeTemplate = getActiveTemplate();
   if (activeTemplate) {
     loadWorkspaceSlides(activeTemplate.slides || []);
+    captureTemplateBaseline();
+    refreshTemplateDirtyState();
   } else {
     activeTemplateId = null;
     loadWorkspaceSlides(mainSlides);
@@ -4292,7 +4329,11 @@ async function saveCurrentSlide() {
     refreshSaveState();
     updateButtonsState(slide);
     renderSlideList();
-    alert("저장되었습니다.");
+    alert(
+      isTemplateMode()
+        ? "슬라이드 변경사항이 반영되었습니다 · 템플릿 저장 필요"
+        : "슬라이드가 저장되었습니다"
+    );
   } catch (e) {
     console.error("Error in saveCurrentSlide:", e);
     alert("저장 중 오류 발생: " + e.message);
@@ -4719,6 +4760,7 @@ async function deleteTemplateById(templateId) {
     const wasOpen = activeTemplateId === template.id;
     activeTemplateId = null;
     hasPendingTemplateChanges = false;
+    templateBaselineSnapshot = null;
 
     if (wasOpen) {
       loadWorkspaceSlides([]);
@@ -4765,8 +4807,7 @@ function renameActiveTemplate() {
       ? { ...template, name: trimmedName }
       : template
   );
-  hasPendingTemplateChanges = true;
-  updateTemplateManagementUi();
+  refreshTemplateDirtyState();
 }
 
 // Renaming from the gallery has no "저장" button to fall back on, so persist

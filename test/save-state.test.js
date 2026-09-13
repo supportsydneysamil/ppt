@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   createSnapshot,
   isSnapshotDirty,
+  isTemplateDirty,
   deriveSaveButtonState,
   getPendingChangeScopes,
   getSaveSequence,
@@ -60,6 +61,27 @@ describe("save state snapshots", () => {
     const baseline = createSnapshot({ name: "원본", size: 40 });
     assert.equal(isSnapshotDirty({ name: "수정", size: 40 }, baseline), true);
     assert.equal(isSnapshotDirty({ name: "원본", size: 40 }, baseline), false);
+  });
+
+  it("detects template name and slide order changes", () => {
+    const baseline = createSnapshot({
+      name: "주일",
+      slides: [{ id: "1" }, { id: "2" }],
+    });
+    assert.equal(
+      isTemplateDirty(
+        { name: "주일 예배", slides: [{ id: "1" }, { id: "2" }] },
+        baseline
+      ),
+      true
+    );
+    assert.equal(
+      isTemplateDirty(
+        { name: "주일", slides: [{ id: "2" }, { id: "1" }] },
+        baseline
+      ),
+      true
+    );
   });
 });
 
