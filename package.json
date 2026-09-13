@@ -6,14 +6,15 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node --test test/title-slide-date.test.js"
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {
-    "@napi-rs/canvas": "^0.1.80",
+    "@xmldom/xmldom": "^0.9.12",
     "adm-zip": "^0.5.16",
+    "cfb": "^1.2.2",
     "express": "^4.19.2",
     "multer": "^2.0.2",
-    "pdfjs-dist": "^4.10.38",
+    "pptx-automizer": "^0.9.3",
     "pptxgenjs": "^4.0.1"
   }
 }

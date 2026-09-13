@@ -1,34 +1,24 @@
 import express from "express";
 import fs from "fs/promises";
 import path from "path";
-import os from "os";
-import { fileURLToPath, pathToFileURL } from "url";
+import { fileURLToPath } from "url";
 import PptxGenJS from "pptxgenjs";
 import multer from "multer";
 import AdmZip from "adm-zip";
 import https from "https";
 import http from "http";
-import { createWriteStream } from "fs";
-import { exec, execFile } from "child_process";
+import { exec } from "child_process";
 import { promisify } from "util";
 import { appendCustomTitleSlide } from "./lib/custom-title-slide.js";
+import { convertLegacyPptToPptx } from "./lib/legacy-ppt.js";
+import { mergePptxBuffers } from "./lib/merge-pptx.js";
 import { appendTitleSlide } from "./lib/title-slide.js";
 
 const execAsync = promisify(exec);
-const execFileAsync = promisify(execFile);
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3000;
-const BUNDLED_NODE_MODULES = path.join(
-  os.homedir(),
-  ".cache",
-  "codex-runtimes",
-  "codex-primary-runtime",
-  "dependencies",
-  "node",
-  "node_modules"
-);
 const BASE_URLS = {
   ko: "https://www.bskorea.or.kr/bible/korbibReadpage.php",
   en: "https://bible-api.com",
@@ -78,32 +68,6 @@ const hymnTitleBandImagePath = path.join(
   "assets",
   "hymn-title-band.png"
 );
-async function runSoffice(args) {
-  const configuredPath = process.env.SOFFICE_PATH?.trim();
-  const candidates = configuredPath ? [configuredPath] : process.platform === "win32"
-    ? [
-        path.join(process.env.ProgramFiles || "C:\\Program Files", "LibreOffice", "program", "soffice.exe"),
-        path.join(process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)", "LibreOffice", "program", "soffice.exe"),
-        "soffice.exe",
-      ]
-    : process.platform === "darwin"
-      ? ["/Applications/LibreOffice.app/Contents/MacOS/soffice", "/opt/homebrew/bin/soffice", "/usr/local/bin/soffice", "soffice"]
-      : ["soffice", "/usr/bin/libreoffice"];
-
-  for (const executable of [...new Set(candidates)]) {
-    try {
-      return await execFileAsync(executable, args, { windowsHide: true });
-    } catch (err) {
-      if (err.code !== "ENOENT") throw err;
-    }
-  }
-
-  const err = new Error(configuredPath
-    ? "SOFFICE_PATH에 지정된 LibreOffice 실행 파일을 찾을 수 없습니다. 경로를 확인한 후 서버를 다시 시작하세요."
-    : "PPTX 미리보기에 필요한 LibreOffice를 찾을 수 없습니다. LibreOffice를 설치한 후 서버를 다시 시작하세요. 별도 경로에 설치했다면 SOFFICE_PATH 환경 변수에 실행 파일 경로를 지정하세요.");
-  err.statusCode = 503;
-  throw err;
-}
 const scriptureSessions = new Map();
 
 // Ensure structure exists
@@ -116,7 +80,6 @@ const scriptureSessions = new Map();
 
 const booksData = JSON.parse(await fs.readFile(booksPath, "utf-8"));
 const hymnsData = JSON.parse(await fs.readFile(hymnsPath, "utf-8"));
-let pdfRenderDepsPromise = null;
 
 function getWideLayoutSize() {
   return { width: 13.333, height: 7.5 };
@@ -139,6 +102,8 @@ function sanitizeSlideForTemplate(slide) {
     serverFilePath: slide.serverFilePath || null,
     thumbnail: slide.thumbnail || null,
     hymnNumber: slide.hymnNumber || null,
+    hymnKorTitle: slide.hymnKorTitle || "",
+    hymnEngTitle: slide.hymnEngTitle || "",
     originalUrl: slide.originalUrl || null,
     adTitle: slide.adTitle || "",
     adTitleSize: slide.adTitleSize || "medium",
@@ -196,25 +161,11 @@ async function writeTemplates(templates) {
 
 async function cleanupScriptureSessions() {
   const now = Date.now();
-  const deletions = [];
-
   scriptureSessions.forEach((entry, key) => {
     if (entry.expiresAt <= now) {
       scriptureSessions.delete(key);
-      if (entry.filePath) {
-        deletions.push(fs.unlink(entry.filePath).catch(() => {}));
-      }
-      if (entry.renderDir) {
-        deletions.push(
-          fs.rm(entry.renderDir, { recursive: true, force: true }).catch(() => {})
-        );
-      }
     }
   });
-
-  if (deletions.length) {
-    await Promise.all(deletions);
-  }
 }
 
 function createScriptureWebViewSession(payload) {
@@ -222,26 +173,6 @@ function createScriptureWebViewSession(payload) {
   const sessionId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   scriptureSessions.set(sessionId, {
     payload,
-    expiresAt: Date.now() + 1000 * 60 * 30,
-  });
-  return sessionId;
-}
-
-function createScripturePptxPreviewSession(
-  payload,
-  filePath,
-  filename,
-  renderDir,
-  imagePaths
-) {
-  cleanupScriptureSessions().catch(() => {});
-  const sessionId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-  scriptureSessions.set(sessionId, {
-    payload,
-    filePath,
-    filename,
-    renderDir,
-    imagePaths,
     expiresAt: Date.now() + 1000 * 60 * 30,
   });
   return sessionId;
@@ -310,84 +241,6 @@ async function deleteSlideAsset(slide) {
       }
     })
   );
-}
-
-async function loadPdfRenderDeps() {
-  if (pdfRenderDepsPromise) {
-    return pdfRenderDepsPromise;
-  }
-
-  pdfRenderDepsPromise = (async () => {
-    try {
-      const canvasMod = await import("@napi-rs/canvas");
-      const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
-      return { createCanvas: canvasMod.createCanvas, pdfjsLib };
-    } catch (err) {
-      const canvasUrl = pathToFileURL(
-        path.join(BUNDLED_NODE_MODULES, "@napi-rs", "canvas", "index.js")
-      ).href;
-      const pdfUrl = pathToFileURL(
-        path.join(BUNDLED_NODE_MODULES, "pdfjs-dist", "legacy", "build", "pdf.mjs")
-      ).href;
-      const canvasMod = await import(canvasUrl);
-      const pdfjsLib = await import(pdfUrl);
-      return { createCanvas: canvasMod.createCanvas, pdfjsLib };
-    }
-  })();
-
-  return pdfRenderDepsPromise;
-}
-
-async function convertPresentationToPdf(inputPath, outputDir) {
-  await runSoffice([
-    "--headless",
-    "--convert-to",
-    "pdf",
-    "--outdir",
-    outputDir,
-    inputPath,
-  ]);
-
-  const pdfPath = path.join(
-    outputDir,
-    `${path.basename(inputPath, path.extname(inputPath))}.pdf`
-  );
-
-  await fs.access(pdfPath);
-  return pdfPath;
-}
-
-async function renderPdfPagesToImages(pdfPath, outputDir) {
-  const { createCanvas, pdfjsLib } = await loadPdfRenderDeps();
-  const pdfData = await fs.readFile(pdfPath);
-  const loadingTask = pdfjsLib.getDocument({
-    data: new Uint8Array(pdfData),
-    useWorkerFetch: false,
-    isEvalSupported: false,
-    useSystemFonts: true,
-  });
-  const pdf = await loadingTask.promise;
-  const renderedImages = [];
-
-  for (let pageIndex = 1; pageIndex <= pdf.numPages; pageIndex += 1) {
-    const page = await pdf.getPage(pageIndex);
-    const viewport = page.getViewport({ scale: 1.5 });
-    const canvas = createCanvas(
-      Math.ceil(viewport.width),
-      Math.ceil(viewport.height)
-    );
-    const ctx = canvas.getContext("2d");
-    await page.render({ canvasContext: ctx, viewport }).promise;
-
-    const imagePath = path.join(
-      outputDir,
-      `${path.basename(pdfPath, ".pdf")}-page-${pageIndex}.png`
-    );
-    await fs.writeFile(imagePath, canvas.toBuffer("image/png"));
-    renderedImages.push(imagePath);
-  }
-
-  return renderedImages;
 }
 
 async function appendSimpleSlide(pptx, slideData) {
@@ -536,37 +389,6 @@ async function appendAdSlide(pptx, slideData) {
   });
 }
 
-function appendImageSlide(pptx, imagePath) {
-  const layout = getWideLayoutSize();
-  const slide = pptx.addSlide();
-  slide.addImage({
-    path: imagePath,
-    x: 0,
-    y: 0,
-    w: layout.width,
-    h: layout.height,
-  });
-}
-
-async function appendUploadedSlideDeck(pptx, slideData, tempDirs) {
-  const sourcePath = resolveUploadedFilePath(slideData.serverFilePath);
-  if (!sourcePath) {
-    throw new Error(`업로드 파일 경로가 없습니다: ${slideData.name}`);
-  }
-
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "samil-export-"));
-  tempDirs.push(tempDir);
-
-  const pdfPath = await convertPresentationToPdf(sourcePath, tempDir);
-  const imagePaths = await renderPdfPagesToImages(pdfPath, tempDir);
-
-  if (imagePaths.length === 0) {
-    throw new Error("렌더링된 슬라이드 이미지가 없습니다.");
-  }
-
-  imagePaths.forEach((imagePath) => appendImageSlide(pptx, imagePath));
-}
-
 function addHymnTitleSlide(pptx, hymnNumber, korTitle, engTitle) {
   const layout = getWideLayoutSize();
   const slide = pptx.addSlide();
@@ -617,58 +439,83 @@ function addHymnTitleSlide(pptx, hymnNumber, korTitle, engTitle) {
   });
 }
 
-async function appendSlideDefinitionToDeck(pptx, slideData, tempDirs) {
+async function writeGeneratedDeck(build) {
+  const pptx = new PptxGenJS();
+  pptx.layout = "LAYOUT_WIDE";
+  await build(pptx);
+  return pptx.write({ outputType: "nodebuffer" });
+}
+
+async function loadUploadedDeckBuffer(slideData) {
+  const sourcePath = resolveUploadedFilePath(slideData.serverFilePath);
+  if (!sourcePath) {
+    throw new Error(`업로드 파일 경로가 없습니다: ${slideData.name}`);
+  }
+
+  const raw = await fs.readFile(sourcePath);
+  if (path.extname(sourcePath).toLowerCase() === ".ppt") {
+    return convertLegacyPptToPptx(raw);
+  }
+  return raw;
+}
+
+async function buffersForSlide(slideData) {
+  const buffers = [];
   if (slideData.type === "hymn" && slideData.includeTitle) {
-    addHymnTitleSlide(pptx, slideData.hymnNumber, slideData.hymnKorTitle, slideData.hymnEngTitle);
+    buffers.push(
+      await writeGeneratedDeck((pptx) => {
+        addHymnTitleSlide(
+          pptx,
+          slideData.hymnNumber,
+          slideData.hymnKorTitle,
+          slideData.hymnEngTitle
+        );
+      })
+    );
   }
 
   if (slideData.type === "title") {
-    appendTitleSlide(pptx, slideData);
-    return;
+    buffers.push(
+      await writeGeneratedDeck((pptx) => appendTitleSlide(pptx, slideData))
+    );
+    return buffers;
   }
 
   if (slideData.type === "custom-title") {
-    appendCustomTitleSlide(pptx, slideData);
-    return;
+    buffers.push(
+      await writeGeneratedDeck((pptx) =>
+        appendCustomTitleSlide(pptx, slideData)
+      )
+    );
+    return buffers;
   }
 
   if (slideData.sourceType === "upload") {
-    await appendUploadedSlideDeck(pptx, slideData, tempDirs);
-    return;
+    buffers.push(await loadUploadedDeckBuffer(slideData));
+    return buffers;
   }
 
   if (slideData.type === "ad") {
-    await appendAdSlide(pptx, slideData);
-    return;
+    buffers.push(
+      await writeGeneratedDeck((pptx) => appendAdSlide(pptx, slideData))
+    );
+    return buffers;
   }
 
-  await appendSimpleSlide(pptx, slideData);
+  buffers.push(
+    await writeGeneratedDeck((pptx) => appendSimpleSlide(pptx, slideData))
+  );
+  return buffers;
 }
 
 async function buildCombinedSlidesDeck(slides) {
-  const pptx = new PptxGenJS();
-  pptx.layout = "LAYOUT_WIDE";
-  const tempDirs = [];
-
-  try {
-    for (const rawSlide of slides) {
-      await appendSlideDefinitionToDeck(
-        pptx,
-        sanitizeSlideForTemplate(rawSlide),
-        tempDirs
-      );
-    }
-
-    let buffer = await pptx.write({ outputType: "nodebuffer" });
-    buffer = injectThumbnail(buffer);
-    return buffer;
-  } finally {
-    await Promise.all(
-      tempDirs.map((tempDir) =>
-        fs.rm(tempDir, { recursive: true, force: true })
-      )
+  const buffers = [];
+  for (const rawSlide of slides) {
+    buffers.push(
+      ...(await buffersForSlide(sanitizeSlideForTemplate(rawSlide)))
     );
   }
+  return injectThumbnail(await mergePptxBuffers(buffers));
 }
 
 // Multer Setup
@@ -867,16 +714,10 @@ app.post("/api/upload", upload.single('file'), async (req, res) => {
   if (path.extname(originalName).toLowerCase() === '.ppt') {
     try {
       console.log(`Converting ${originalName} to PPTX...`);
-      await runSoffice(["--headless", "--convert-to", "pptx", "--outdir", uploadsDir, filePath]);
-
-      // Calculate new filename (soffice replaces extension)
+      const converted = await convertLegacyPptToPptx(await fs.readFile(filePath));
       const newFilename = filename.replace(/\.ppt$/i, '.pptx');
       const newPath = path.join(uploadsDir, newFilename);
-
-      // Verify existence
-      await fs.access(newPath);
-
-      // Delete original .ppt
+      await fs.writeFile(newPath, converted);
       await fs.unlink(filePath);
 
       filePath = newPath;
@@ -1185,105 +1026,6 @@ app.get("/api/scripture/web-view-session/:sessionId", async (req, res) => {
   }
 
   return res.json(entry.payload);
-});
-
-app.post("/api/scripture/pptx-preview-session", async (req, res) => {
-  try {
-    const payload = await getVersePayload(req.body);
-    const theme = resolvePptxTheme(req.body);
-    const pptx = buildPptx(payload, theme);
-    let buffer = await pptx.write({ outputType: "nodebuffer" });
-    buffer = injectThumbnail(buffer);
-
-    const filename = buildPptxFilename(req.body, payload);
-    const previewFilename = `preview-${Date.now()}-${sanitizeFilename(filename)}`;
-    const filePath = path.join(uploadsDir, previewFilename);
-    await fs.writeFile(filePath, buffer);
-    const renderDir = await fs.mkdtemp(path.join(os.tmpdir(), "samil-preview-"));
-    const pdfPath = await convertPresentationToPdf(filePath, renderDir);
-    const imagePaths = await renderPdfPagesToImages(pdfPath, renderDir);
-
-    const sessionId = createScripturePptxPreviewSession(
-      {
-        title: buildScriptureReferenceText(payload.meta, req.body),
-        filename,
-      },
-      filePath,
-      previewFilename,
-      renderDir,
-      imagePaths
-    );
-
-    return res.json({ success: true, sessionId });
-  } catch (err) {
-    return res.status(err.statusCode || 502).json({ error: err.message });
-  }
-});
-
-app.get("/api/scripture/pptx-preview-session/:sessionId", async (req, res) => {
-  await cleanupScriptureSessions();
-  const entry = scriptureSessions.get(req.params.sessionId);
-
-  if (!entry || !entry.filePath) {
-    return res.status(404).json({ error: "PPTX 미리보기 세션을 찾을 수 없습니다." });
-  }
-
-  return res.json({
-    title: entry.payload?.title || "PPTX 미리보기",
-    filename: entry.payload?.filename || entry.filename,
-    slideCount: Array.isArray(entry.imagePaths) ? entry.imagePaths.length : 0,
-    slides: Array.isArray(entry.imagePaths)
-      ? entry.imagePaths.map((_, index) =>
-          `/api/scripture/pptx-preview-image/${encodeURIComponent(
-            req.params.sessionId
-          )}/${index}`
-        )
-      : [],
-    downloadUrl: `/api/scripture/pptx-preview-file/${encodeURIComponent(
-      req.params.sessionId
-    )}?download=1`,
-  });
-});
-
-app.get("/api/scripture/pptx-preview-file/:sessionId", async (req, res) => {
-  await cleanupScriptureSessions();
-  const entry = scriptureSessions.get(req.params.sessionId);
-
-  if (!entry || !entry.filePath) {
-    return res.status(404).json({ error: "PPTX 미리보기 파일을 찾을 수 없습니다." });
-  }
-
-  const downloadName = entry.payload?.filename || entry.filename || "preview.pptx";
-  const asciiFilename = sanitizeAsciiFilename(downloadName);
-  const encodedFilename = encodeURIComponent(downloadName);
-
-  res.setHeader(
-    "Content-Type",
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-  );
-  res.setHeader(
-    "Content-Disposition",
-    `${req.query.download === "1" ? "attachment" : "inline"}; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`
-  );
-
-  return res.sendFile(entry.filePath);
-});
-
-app.get("/api/scripture/pptx-preview-image/:sessionId/:index", async (req, res) => {
-  await cleanupScriptureSessions();
-  const entry = scriptureSessions.get(req.params.sessionId);
-  const index = Number.parseInt(req.params.index, 10);
-
-  if (!entry || !Array.isArray(entry.imagePaths) || !Number.isInteger(index)) {
-    return res.status(404).json({ error: "PPTX 미리보기 이미지를 찾을 수 없습니다." });
-  }
-
-  const imagePath = entry.imagePaths[index];
-  if (!imagePath) {
-    return res.status(404).json({ error: "PPTX 미리보기 이미지를 찾을 수 없습니다." });
-  }
-
-  return res.sendFile(imagePath);
 });
 
 async function writeScripturePptxFile(body, slideName) {

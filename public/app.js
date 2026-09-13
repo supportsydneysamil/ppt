@@ -8,8 +8,6 @@ const outputText = document.getElementById("outputText");
 const source = document.getElementById("source");
 const downloadBtn = document.getElementById("downloadBtn");
 const downloadPptxBtn = document.getElementById("downloadPptxBtn");
-const previewBtn = document.getElementById("previewBtn");
-const preview2Btn = document.getElementById("preview2Btn");
 const webViewBtn = document.getElementById("webViewBtn");
 const exportToPptGeneratorBtn = document.getElementById(
   "exportToPptGeneratorBtn"
@@ -46,8 +44,6 @@ const titleSlideTypeGroup = document.getElementById("titleSlideTypeGroup");
 let dataCache = null;
 let lastVersePayload = null;
 let lastVerseRequest = null;
-let lastPreviewSessionId = null;
-let lastPreviewSignature = "";
 
 async function loadBooks() {
   const resp = await fetch("/api/books");
@@ -176,8 +172,6 @@ async function handleSubmit(event) {
   setDownloadState(false);
   lastVersePayload = null;
   lastVerseRequest = null;
-  lastPreviewSessionId = null;
-  lastPreviewSignature = "";
 
   if (!koVersionSelect.value && !enVersionSelect.value) {
     outputText.textContent = "번역을 하나 이상 선택하세요.";
@@ -338,8 +332,6 @@ testamentSelect.addEventListener("change", renderBooks);
 form.addEventListener("submit", handleSubmit);
 downloadBtn.addEventListener("click", handleDownload);
 downloadPptxBtn.addEventListener("click", handlePptxDownload);
-previewBtn.addEventListener("click", handleOpenPptxPreview);
-preview2Btn.addEventListener("click", handleOpenPptxPreview2);
 webViewBtn.addEventListener("click", handleOpenWebView);
 exportToPptGeneratorBtn.addEventListener("click", openScriptureExportModal);
 resetBtn.addEventListener("click", handleReset);
@@ -394,8 +386,6 @@ function handleReset() {
   source.textContent = "";
   lastVersePayload = null;
   lastVerseRequest = null;
-  lastPreviewSessionId = null;
-  lastPreviewSignature = "";
   setDownloadState(false);
 }
 
@@ -423,32 +413,6 @@ async function handlePptxDownload() {
 
   try {
     const payload = await buildPptxPayload();
-    const signature = JSON.stringify(payload);
-
-    if (lastPreviewSessionId && lastPreviewSignature === signature) {
-      const resp = await fetch(
-        `/api/scripture/pptx-preview-file/${encodeURIComponent(
-          lastPreviewSessionId
-        )}?download=1`
-      );
-      if (!resp.ok) {
-        throw new Error("기존 preview 파일을 가져오지 못했습니다.");
-      }
-
-      const blob = await resp.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download =
-        getFilenameFromDisposition(resp.headers.get("content-disposition")) ||
-        buildFilename("pptx");
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      return;
-    }
-
     const resp = await fetch("/api/pptx", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -533,8 +497,6 @@ function sanitizeFilename(value) {
 function setDownloadState(enabled) {
   downloadBtn.disabled = !enabled;
   downloadPptxBtn.disabled = !enabled;
-  previewBtn.disabled = !enabled;
-  preview2Btn.disabled = !enabled;
   webViewBtn.disabled = !enabled;
   exportToPptGeneratorBtn.disabled = !enabled;
 }
@@ -714,82 +676,6 @@ async function handleOpenWebView() {
     }
     alert(err?.message || "웹 뷰를 여는 중 오류가 발생했습니다.");
   }
-}
-
-async function handleOpenPptxPreview() {
-  let popup = null;
-
-  try {
-    popup = window.open("", "_blank", "width=1440,height=960");
-    if (!popup) {
-      throw new Error("새 창을 열 수 없습니다. 팝업 차단을 확인하세요.");
-    }
-
-    popup.document.write(
-      "<!doctype html><html lang='ko'><head><meta charset='utf-8'><title>PPTX 미리보기 준비 중...</title></head><body style='margin:0;display:grid;place-items:center;min-height:100vh;background:#0b0f16;color:#f3f0ea;font-family:Work Sans, sans-serif;'>PPTX 미리보기를 준비하고 있습니다...</body></html>"
-    );
-    popup.document.close();
-
-    const sessionId = await ensurePptxPreviewSession();
-    popup.location = `/scripture-pptx-preview.html?session=${encodeURIComponent(
-      sessionId
-    )}`;
-  } catch (err) {
-    if (popup && !popup.closed) {
-      popup.close();
-    }
-    alert(err?.message || "PPTX 미리보기를 여는 중 오류가 발생했습니다.");
-  }
-}
-
-async function handleOpenPptxPreview2() {
-  let popup = null;
-
-  try {
-    popup = window.open("", "_blank", "width=1440,height=960");
-    if (!popup) {
-      throw new Error("새 창을 열 수 없습니다. 팝업 차단을 확인하세요.");
-    }
-
-    popup.document.write(
-      "<!doctype html><html lang='ko'><head><meta charset='utf-8'><title>PPTX 슬라이드쇼 준비 중...</title></head><body style='margin:0;display:grid;place-items:center;min-height:100vh;background:#000;color:#f3f0ea;font-family:Work Sans, sans-serif;'>PPTX 슬라이드쇼를 준비하고 있습니다...</body></html>"
-    );
-    popup.document.close();
-
-    const sessionId = await ensurePptxPreviewSession();
-    popup.location = `/scripture-pptx-preview-plain.html?session=${encodeURIComponent(
-      sessionId
-    )}`;
-  } catch (err) {
-    if (popup && !popup.closed) {
-      popup.close();
-    }
-    alert(err?.message || "PPTX 슬라이드쇼를 여는 중 오류가 발생했습니다.");
-  }
-}
-
-async function ensurePptxPreviewSession() {
-  const payload = await buildPptxPayload();
-  const signature = JSON.stringify(payload);
-
-  if (lastPreviewSessionId && lastPreviewSignature === signature) {
-    return lastPreviewSessionId;
-  }
-
-  const resp = await fetch("/api/scripture/pptx-preview-session", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const sessionPayload = await resp.json();
-
-  if (!resp.ok) {
-    throw new Error(sessionPayload.error || "PPTX 미리보기 생성에 실패했습니다.");
-  }
-
-  lastPreviewSessionId = sessionPayload.sessionId;
-  lastPreviewSignature = signature;
-  return sessionPayload.sessionId;
 }
 
 async function handleExportToPptGenerator(event) {
