@@ -10,3 +10,6 @@ debug_pptx.js
 data/slides.json
 .claude/
 test_bongdok.js
+tmp-lo-profile/
+tmp-render/
+tmp-render.mjs
