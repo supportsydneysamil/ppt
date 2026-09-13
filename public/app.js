@@ -59,6 +59,7 @@ async function loadBooks() {
   }
   dataCache = await resp.json();
   renderTestaments();
+  fillScriptureBookSelects();
 }
 
 function renderTestaments() {
@@ -89,6 +90,57 @@ function renderBooks() {
     option.textContent = book.name;
     bookSelect.appendChild(option);
   });
+}
+
+function fillScriptureBookSelects(preferred = {}) {
+  const testamentEl = document.getElementById("scriptureTestament");
+  const bookEl = document.getElementById("scriptureBook");
+  if (!testamentEl || !bookEl || !dataCache) {
+    return;
+  }
+
+  const previousTestament = preferred.testament || testamentEl.value;
+  const previousBook = preferred.book || bookEl.value;
+
+  testamentEl.innerHTML = "";
+  dataCache.testaments.forEach((testament) => {
+    const option = document.createElement("option");
+    option.value = testament.id;
+    option.textContent = testament.label;
+    testamentEl.appendChild(option);
+  });
+
+  testamentEl.value =
+    previousTestament || dataCache.testaments[0]?.id || "";
+
+  fillScriptureBooks(previousBook);
+}
+
+function fillScriptureBooks(preferredBook) {
+  const testamentEl = document.getElementById("scriptureTestament");
+  const bookEl = document.getElementById("scriptureBook");
+  if (!testamentEl || !bookEl || !dataCache) {
+    return;
+  }
+
+  const selected = dataCache.testaments.find(
+    (testament) => testament.id === testamentEl.value
+  );
+  bookEl.innerHTML = "";
+  if (!selected) {
+    return;
+  }
+
+  selected.books.forEach((book) => {
+    const option = document.createElement("option");
+    option.value = book.slugKo;
+    option.textContent = book.name;
+    bookEl.appendChild(option);
+  });
+
+  if (preferredBook) {
+    bookEl.value = preferredBook;
+  }
 }
 
 function buildParams() {
@@ -208,21 +260,34 @@ function parsePositiveNumber(value) {
 }
 
 function syncVerseRange(changedInput) {
-  const startValue = parsePositiveNumber(startInput.value);
-  const endValue = parsePositiveNumber(endInput.value);
+  const pairs = [
+    [startInput, endInput],
+    [
+      document.getElementById("scriptureStartVerse"),
+      document.getElementById("scriptureEndVerse"),
+    ],
+  ];
 
-  if (changedInput === startInput && startValue !== null) {
-    if (endValue !== null && endValue < startValue) {
-      endInput.value = String(startValue);
+  pairs.forEach(([startEl, endEl]) => {
+    if (changedInput !== startEl && changedInput !== endEl) {
+      return;
     }
-    return;
-  }
-
-  if (changedInput === endInput && endValue !== null) {
-    if (startValue !== null && endValue < startValue) {
-      startInput.value = String(endValue);
+    if (!(startEl instanceof HTMLInputElement) || !(endEl instanceof HTMLInputElement)) {
+      return;
     }
-  }
+    const startValue = parsePositiveNumber(startEl.value);
+    const endValue = parsePositiveNumber(endEl.value);
+    if (changedInput === startEl && startValue !== null) {
+      if (endValue !== null && endValue < startValue) {
+        endEl.value = String(startValue);
+      }
+    }
+    if (changedInput === endEl && endValue !== null) {
+      if (startValue !== null && endValue < startValue) {
+        startEl.value = String(endValue);
+      }
+    }
+  });
 }
 
 function normalizeNumberInput(input) {
@@ -236,7 +301,12 @@ function normalizeNumberInput(input) {
     input.value = String(value);
   }
 
-  if (input === startInput || input === endInput) {
+  if (
+    input === startInput ||
+    input === endInput ||
+    input.id === "scriptureStartVerse" ||
+    input.id === "scriptureEndVerse"
+  ) {
     syncVerseRange(input);
   }
 }
@@ -254,7 +324,12 @@ function handleStepperButtonClick(event) {
   const nextValue = direction === "down" ? Math.max(1, currentValue - 1) : currentValue + 1;
   input.value = String(nextValue);
 
-  if (input === startInput || input === endInput) {
+  if (
+    input === startInput ||
+    input === endInput ||
+    input.id === "scriptureStartVerse" ||
+    input.id === "scriptureEndVerse"
+  ) {
     syncVerseRange(input);
   }
 
@@ -821,6 +896,22 @@ const hymnIncludeTitle = document.getElementById("hymnIncludeTitle");
 const hymnTitleFields = document.getElementById("hymnTitleFields");
 const hymnKorTitleInput = document.getElementById("hymnKorTitle");
 const hymnEngTitleInput = document.getElementById("hymnEngTitle");
+const scriptureSlideSettings = document.getElementById("scriptureSlideSettings");
+const scriptureTestamentSelect = document.getElementById("scriptureTestament");
+const scriptureBookSelect = document.getElementById("scriptureBook");
+const scriptureKoVersionSelect = document.getElementById("scriptureKoVersion");
+const scriptureEnVersionSelect = document.getElementById("scriptureEnVersion");
+const scriptureChapterInput = document.getElementById("scriptureChapter");
+const scriptureStartInput = document.getElementById("scriptureStartVerse");
+const scriptureEndInput = document.getElementById("scriptureEndVerse");
+const scripturePptxThemeSelect = document.getElementById("scripturePptxTheme");
+const scripturePptxImageInput = document.getElementById("scripturePptxImage");
+const scripturePptxImageClearBtn = document.getElementById("scripturePptxImageClear");
+const scripturePptxImageStatus = document.getElementById("scripturePptxImageStatus");
+const scriptureSettingsAccordion = document.getElementById("scriptureSettingsAccordion");
+const scriptureIncludeTitle = document.getElementById("scriptureIncludeTitle");
+const scriptureTitleSlideTypeGroup = document.getElementById("scriptureTitleSlideTypeGroup");
+const scriptureGenerateBtn = document.getElementById("scriptureGenerateBtn");
 const userPptxFile = document.getElementById("userPptxFile");
 const adContentSettings = document.getElementById("adContentSettings");
 const adTitleInput = document.getElementById("adTitle");
@@ -1063,6 +1154,13 @@ slideTypeSelect.addEventListener('change', () => {
   if (slideTypeSelect.value === 'custom-title') {
     maybeAutoNameCustomTitleSlide();
   }
+  if (slideTypeSelect.value === 'scripture') {
+    fillScriptureBookSelects();
+    if (scriptureIncludeTitle) scriptureIncludeTitle.checked = true;
+    setScriptureTitleSlideType("말씀");
+    syncScriptureTitleTypeUi();
+    syncScriptureImageUI(slides.find((s) => s.id === currentSlideId));
+  }
   updateSettingsVisibility();
   hasUnsavedChanges = true;
   renderPreview();
@@ -1156,6 +1254,295 @@ hymnIncludeTitle.addEventListener('change', async () => {
   }
   renderPreview();
   hasUnsavedChanges = true;
+});
+
+function getScriptureTitleSlideType() {
+  const selected = document.querySelector(
+    'input[name="scriptureTitleSlideType"]:checked'
+  );
+  return selected ? selected.value : "말씀";
+}
+
+function setScriptureTitleSlideType(value) {
+  const radios = document.querySelectorAll(
+    'input[name="scriptureTitleSlideType"]'
+  );
+  radios.forEach((radio) => {
+    radio.checked = radio.value === (value || "말씀");
+  });
+}
+
+function syncScriptureTitleTypeUi() {
+  if (!scriptureTitleSlideTypeGroup || !scriptureIncludeTitle) {
+    return;
+  }
+  scriptureTitleSlideTypeGroup.classList.toggle(
+    "hidden",
+    !scriptureIncludeTitle.checked
+  );
+}
+
+function syncScriptureImageUI(slide) {
+  if (!scripturePptxImageStatus || !scripturePptxImageClearBtn) {
+    return;
+  }
+  const file = scripturePptxImageInput?.files?.[0];
+  if (file) {
+    scripturePptxImageStatus.textContent = `선택된 이미지: ${file.name}`;
+    scripturePptxImageClearBtn.hidden = false;
+    return;
+  }
+  if (slide?.customImageData) {
+    scripturePptxImageStatus.textContent = "이전에 선택한 이미지 사용 중";
+    scripturePptxImageClearBtn.hidden = false;
+    return;
+  }
+  scripturePptxImageStatus.textContent = "선택한 이미지 없음";
+  scripturePptxImageClearBtn.hidden = true;
+}
+
+function populateScriptureEditor(slide) {
+  fillScriptureBookSelects(slide);
+  scriptureKoVersionSelect.value =
+    slide.koVersion !== undefined ? slide.koVersion : "새번역";
+  scriptureEnVersionSelect.value =
+    slide.enVersion !== undefined ? slide.enVersion : "web";
+  scriptureChapterInput.value = slide.chapter || "";
+  scriptureStartInput.value = slide.start || "";
+  scriptureEndInput.value = slide.end || "";
+  scripturePptxThemeSelect.value =
+    slide.themeId || localStorage.getItem("biblics-pptx-theme") || "dark";
+  scriptureIncludeTitle.checked =
+    slide.includeTitle === undefined ? true : !!slide.includeTitle;
+  setScriptureTitleSlideType(slide.titleSlideType || "말씀");
+  syncScriptureTitleTypeUi();
+  if (scripturePptxImageInput) {
+    scripturePptxImageInput.value = "";
+  }
+  syncScriptureImageUI(slide);
+}
+
+function collectScriptureSlideFields() {
+  return {
+    testament: scriptureTestamentSelect.value,
+    book: scriptureBookSelect.value,
+    chapter: scriptureChapterInput.value.trim(),
+    start: scriptureStartInput.value.trim(),
+    end: scriptureEndInput.value.trim(),
+    koVersion: scriptureKoVersionSelect.value || "",
+    enVersion: scriptureEnVersionSelect.value || "",
+    themeId: scripturePptxThemeSelect.value || "dark",
+    includeTitle: scriptureIncludeTitle.checked,
+    titleSlideType: getScriptureTitleSlideType(),
+  };
+}
+
+function buildScriptureSignature(slide) {
+  return JSON.stringify({
+    testament: slide.testament,
+    book: slide.book,
+    chapter: slide.chapter,
+    start: slide.start,
+    end: slide.end,
+    koVersion: slide.koVersion,
+    enVersion: slide.enVersion,
+    themeId: slide.themeId,
+    includeTitle: !!slide.includeTitle,
+    titleSlideType: slide.titleSlideType || "말씀",
+    customImage: Boolean(slide.customImageData),
+    customImageSize: slide.customImageData?.length || 0,
+  });
+}
+
+async function generateScriptureSlideFile(slideName, slide) {
+  const languages = [];
+  if (slide.koVersion) languages.push("ko");
+  if (slide.enVersion) languages.push("en");
+  const body = {
+    slideName,
+    testament: slide.testament,
+    book: slide.book,
+    chapter: slide.chapter,
+    start: slide.start,
+    end: slide.end,
+    koVersion: slide.koVersion,
+    enVersion: slide.enVersion,
+    lang: languages.join(","),
+    themeId: slide.themeId,
+    includeTitleSlide: slide.includeTitle,
+    titleSlideType: slide.titleSlideType || "말씀",
+  };
+  if (slide.customImageData) {
+    body.useCustomImage = true;
+    body.customImageData = slide.customImageData;
+  }
+  const resp = await fetch("/api/scripture/generate-slide", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await resp.json();
+  if (!resp.ok) {
+    throw new Error(data.error || "생성 실패");
+  }
+  return data;
+}
+
+async function applyScriptureSlideSettings(slide) {
+  const fields = collectScriptureSlideFields();
+  if (!fields.koVersion && !fields.enVersion) {
+    alert("번역을 하나 이상 선택하세요.");
+    return false;
+  }
+  if (!fields.testament || !fields.book || !fields.chapter) {
+    alert("구분, 책, 장을 입력하세요.");
+    return false;
+  }
+
+  Object.assign(slide, fields);
+  slide.type = "scripture";
+  slide.sourceType = "upload";
+
+  const imageFile = scripturePptxImageInput?.files?.[0];
+  if (imageFile) {
+    slide.customImageData = await readFileAsDataUrl(imageFile);
+  }
+
+  return true;
+}
+
+async function ensureScriptureSlideFile(slide, slideName, button, busyLabel) {
+  const signature = buildScriptureSignature(slide);
+  if (slide.serverFilePath && slide.scriptureSignature === signature) {
+    return true;
+  }
+
+  const originalText = button ? button.textContent : "";
+  if (button) {
+    button.disabled = true;
+    button.textContent = busyLabel;
+  }
+
+  try {
+    const generated = await generateScriptureSlideFile(slideName, slide);
+    slide.serverFilePath = generated.path;
+    slide.fileName = generated.originalName;
+    slide.thumbnail = generated.thumbnail || null;
+    slide.scriptureSignature = signature;
+    if (slidePreview) {
+      slidePreview.dataset.lastRenderedUrl = "";
+      slidePreview.dataset.lastRenderedPath = "";
+    }
+    renderPreview(slide);
+    return true;
+  } catch (e) {
+    alert("성경 말씀 슬라이드 생성 실패: " + e.message);
+    return false;
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+  }
+}
+
+if (scriptureGenerateBtn) {
+  scriptureGenerateBtn.addEventListener("click", async () => {
+    const slide = slides.find((s) => s.id === currentSlideId);
+    if (!slide) {
+      return;
+    }
+
+    if (!(await applyScriptureSlideSettings(slide))) {
+      return;
+    }
+
+    const slideName = slideNameInput.value.trim() || slide.name || "성경말씀";
+    await ensureScriptureSlideFile(
+      slide,
+      slideName,
+      scriptureGenerateBtn,
+      "생성 중..."
+    );
+    hasUnsavedChanges = true;
+    updateButtonsState(slide);
+  });
+}
+
+if (scriptureTestamentSelect) {
+  scriptureTestamentSelect.addEventListener("change", () => {
+    fillScriptureBooks();
+    hasUnsavedChanges = true;
+  });
+}
+
+if (scriptureIncludeTitle) {
+  scriptureIncludeTitle.addEventListener("change", () => {
+    syncScriptureTitleTypeUi();
+    hasUnsavedChanges = true;
+    renderPreview();
+  });
+}
+
+if (scripturePptxImageInput) {
+  scripturePptxImageInput.addEventListener("change", () => {
+    const current = slides.find((s) => s.id === currentSlideId);
+    if (current && scripturePptxImageInput.files?.[0]) {
+      current.customImageData = null;
+    }
+    syncScriptureImageUI(current);
+    hasUnsavedChanges = true;
+  });
+}
+
+if (scripturePptxImageClearBtn) {
+  scripturePptxImageClearBtn.addEventListener("click", () => {
+    if (scripturePptxImageInput) scripturePptxImageInput.value = "";
+    const current = slides.find((s) => s.id === currentSlideId);
+    if (current) current.customImageData = null;
+    syncScriptureImageUI(current);
+    hasUnsavedChanges = true;
+  });
+}
+
+if (scriptureSettingsAccordion) {
+  scriptureSettingsAccordion.addEventListener("toggle", () => {
+    const chevron = scriptureSettingsAccordion.querySelector(".chevron");
+    if (chevron) {
+      chevron.textContent = scriptureSettingsAccordion.open ? "▴" : "▾";
+    }
+  });
+}
+
+[
+  scriptureBookSelect,
+  scriptureKoVersionSelect,
+  scriptureEnVersionSelect,
+  scriptureChapterInput,
+  scriptureStartInput,
+  scriptureEndInput,
+  scripturePptxThemeSelect,
+].forEach((el) => {
+  if (!el) return;
+  el.addEventListener("input", () => {
+    hasUnsavedChanges = true;
+  });
+  el.addEventListener("change", () => {
+    hasUnsavedChanges = true;
+  });
+});
+
+document.querySelectorAll('input[name="scriptureTitleSlideType"]').forEach((radio) => {
+  radio.addEventListener("change", () => {
+    hasUnsavedChanges = true;
+    renderPreview();
+  });
+});
+
+[scriptureChapterInput, scriptureStartInput, scriptureEndInput].forEach((input) => {
+  if (!input) return;
+  input.addEventListener("change", () => normalizeNumberInput(input));
+  input.addEventListener("blur", () => normalizeNumberInput(input));
 });
 
 // --- Navigation ---
@@ -1415,6 +1802,9 @@ function getSlideTypeLabel(slide) {
   if (slide.type === "hymn") {
     return "찬송가";
   }
+  if (slide.type === "scripture") {
+    return "성경 말씀";
+  }
   if (slide.type === "title") {
     return "타이틀";
   }
@@ -1566,6 +1956,16 @@ function renderPreview(slideOverride) {
         hymnEngTitle: hymnEngTitleInput.value.trim(),
       };
       data.sourceType = 'upload';
+    } else if (type === 'scripture') {
+      const current = slides.find((s) => s.id === currentSlideId) || {};
+      data = {
+        ...current,
+        type: 'scripture',
+        name: slideNameInput.value,
+        includeTitle: scriptureIncludeTitle.checked,
+        titleSlideType: getScriptureTitleSlideType(),
+        sourceType: current.serverFilePath ? 'upload' : 'basic',
+      };
     } else if (type === 'title') {
       data = {
         name: slideNameInput.value,
@@ -1685,6 +2085,15 @@ function renderPreview(slideOverride) {
   slidePreview.dataset.lastRenderedPath = "";
 
   slidePreview.innerHTML = "";
+
+  if (data.type === 'scripture' && !data.serverFilePath) {
+    slidePreview.classList.remove('preview-scroll-mode');
+    const ph = document.createElement('div');
+    ph.className = 'preview-placeholder';
+    ph.textContent = '"생성 (미리보기)"를 누르면 슬라이드가 만들어지고 미리보기가 표시됩니다.';
+    slidePreview.appendChild(ph);
+    return;
+  }
 
   if (data.type === 'title') {
     slidePreview.classList.remove('preview-scroll-mode');
@@ -2172,12 +2581,19 @@ function populateEditor(slide) {
   hymnKorTitleInput.value = slide.hymnKorTitle || '';
   hymnEngTitleInput.value = slide.hymnEngTitle || '';
 
-  if (slide.type === 'hymn') {
+  if (slide.type === 'scripture') {
+    simpleSlideSettings.style.display = 'none';
+    hymnSlideSettings.style.display = 'none';
+    if (scriptureSlideSettings) scriptureSlideSettings.style.display = 'block';
+    populateScriptureEditor(slide);
+  } else if (slide.type === 'hymn') {
     simpleSlideSettings.style.display = 'none';
     hymnSlideSettings.style.display = 'block';
+    if (scriptureSlideSettings) scriptureSlideSettings.style.display = 'none';
   } else if (slide.type === 'title') {
     simpleSlideSettings.style.display = 'none';
     hymnSlideSettings.style.display = 'none';
+    if (scriptureSlideSettings) scriptureSlideSettings.style.display = 'none';
 
     titleDesignSelect.value = normalizeTitleDesign(slide.titleDesign);
     syncTitleDesignCards(titleDesignSelect.value);
@@ -2188,6 +2604,7 @@ function populateEditor(slide) {
   } else if (slide.type === 'custom-title') {
     simpleSlideSettings.style.display = 'none';
     hymnSlideSettings.style.display = 'none';
+    if (scriptureSlideSettings) scriptureSlideSettings.style.display = 'none';
 
     customTitleDesignSelect.value = normalizeCustomTitleDesign(
       slide.customTitleDesign
@@ -2198,6 +2615,7 @@ function populateEditor(slide) {
   } else if (slide.type === 'ad') {
     simpleSlideSettings.style.display = 'block';
     hymnSlideSettings.style.display = 'none';
+    if (scriptureSlideSettings) scriptureSlideSettings.style.display = 'none';
 
     sourceRadios.forEach(r => {
       r.checked = r.value === slide.sourceType;
@@ -2234,6 +2652,7 @@ function populateEditor(slide) {
   } else {
     simpleSlideSettings.style.display = 'block';
     hymnSlideSettings.style.display = 'none';
+    if (scriptureSlideSettings) scriptureSlideSettings.style.display = 'none';
 
     slideContentInput.value = slide.content;
     slideFontSelect.value = slide.font;
@@ -2996,6 +3415,10 @@ function updateSettingsVisibility(overrideMode) {
       type === "custom-title" ? "grid" : "none";
   }
 
+  if (scriptureSlideSettings) {
+    scriptureSlideSettings.style.display = type === "scripture" ? "block" : "none";
+  }
+
   if (type === "title" || type === "custom-title") {
     simpleSlideSettings.style.display = "none";
     hymnSlideSettings.style.display = "none";
@@ -3005,6 +3428,12 @@ function updateSettingsVisibility(overrideMode) {
   if (type === "hymn") {
     simpleSlideSettings.style.display = "none";
     hymnSlideSettings.style.display = "block";
+    return;
+  }
+
+  if (type === "scripture") {
+    simpleSlideSettings.style.display = "none";
+    hymnSlideSettings.style.display = "none";
     return;
   }
 
@@ -3211,7 +3640,7 @@ function renderSlideList() {
 
     const typeBadge = document.createElement("span");
     typeBadge.className = "slide-type-badge";
-    typeBadge.textContent = slide.type === "title" ? "TITLE" : slide.type === "custom-title" ? "TITLE+" : slide.type === "ad" ? "AD" : slide.sourceType === "upload" ? "PPT/PPTX" : "TEXT";
+    typeBadge.textContent = slide.type === "title" ? "TITLE" : slide.type === "custom-title" ? "TITLE+" : slide.type === "ad" ? "AD" : slide.type === "scripture" ? "말씀" : slide.sourceType === "upload" ? "PPT/PPTX" : "TEXT";
 
     const saveBadge = document.createElement("span");
     saveBadge.className = `slide-save-badge${slide.saved ? "" : " unsaved"}`;
@@ -3315,6 +3744,22 @@ async function saveCurrentSlide() {
       slide.includeTitle = hymnIncludeTitle.checked;
       slide.hymnKorTitle = hymnKorTitleInput.value.trim();
       slide.hymnEngTitle = hymnEngTitleInput.value.trim();
+      slide.saved = true;
+
+    } else if (slide.type === 'scripture') {
+      if (!(await applyScriptureSlideSettings(slide))) {
+        return;
+      }
+
+      const generated = await ensureScriptureSlideFile(
+        slide,
+        name,
+        document.getElementById("editorSaveBtn"),
+        "생성 중..."
+      );
+      if (!generated) {
+        return;
+      }
       slide.saved = true;
 
     } else if (slide.type === 'ad') {
@@ -3744,6 +4189,18 @@ function buildSerializableSlide(slide) {
     customTitleDesign: slide.customTitleDesign,
     customTitleKo: slide.customTitleKo,
     customTitleEn: slide.customTitleEn,
+    includeTitle: slide.includeTitle,
+    titleSlideType: slide.titleSlideType,
+    testament: slide.testament,
+    book: slide.book,
+    chapter: slide.chapter,
+    start: slide.start,
+    end: slide.end,
+    koVersion: slide.koVersion,
+    enVersion: slide.enVersion,
+    themeId: slide.themeId,
+    customImageData: slide.customImageData,
+    scriptureSignature: slide.scriptureSignature,
   };
 }
 

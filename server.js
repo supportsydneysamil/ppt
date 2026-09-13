@@ -155,6 +155,18 @@ function sanitizeSlideForTemplate(slide) {
     customTitleDesign: slide.customTitleDesign || null,
     customTitleKo: slide.customTitleKo || "",
     customTitleEn: slide.customTitleEn || "",
+    includeTitle: Boolean(slide.includeTitle),
+    titleSlideType: slide.titleSlideType || "말씀",
+    testament: slide.testament || "",
+    book: slide.book || "",
+    chapter: slide.chapter || "",
+    start: slide.start || "",
+    end: slide.end || "",
+    koVersion: slide.koVersion || "",
+    enVersion: slide.enVersion || "",
+    themeId: slide.themeId || "dark",
+    customImageData: slide.customImageData || null,
+    scriptureSignature: slide.scriptureSignature || "",
   };
 }
 
@@ -1274,6 +1286,46 @@ app.get("/api/scripture/pptx-preview-image/:sessionId/:index", async (req, res) 
   return res.sendFile(imagePath);
 });
 
+async function writeScripturePptxFile(body, slideName) {
+  const includeTitleSlide =
+    body?.includeTitleSlide === true || body?.includeTitleSlide === "true";
+  const titleSlideType = body?.titleSlideType || "말씀";
+  const payload = await getVersePayload(body);
+  const theme = resolvePptxTheme(body);
+  const originalFilename = sanitizeFilename(
+    `${(slideName || "성경말씀").trim() || "성경말씀"}.pptx`
+  );
+  const serverFilename = `${Date.now()}-${originalFilename}`;
+  const outputPath = path.join(uploadsDir, serverFilename);
+  const pptx = buildPptx(payload, theme, {
+    includeTitleSlide,
+    titleSlideType,
+    referenceText: buildScriptureReferenceText(payload.meta, body),
+  });
+
+  let buffer = await pptx.write({ outputType: "nodebuffer" });
+  buffer = injectThumbnail(buffer);
+  await fs.writeFile(outputPath, buffer);
+  const thumbnail = await extractThumbnail(outputPath, uploadsDir);
+
+  return {
+    path: `/uploads/${serverFilename}`,
+    originalName: originalFilename,
+    thumbnail,
+  };
+}
+
+app.post("/api/scripture/generate-slide", async (req, res) => {
+  try {
+    const file = await writeScripturePptxFile(req.body, req.body?.slideName);
+    return res.json({ success: true, ...file });
+  } catch (err) {
+    return res.status(err.statusCode || 502).json({
+      error: err.message || "성경 말씀 슬라이드 생성 중 오류가 발생했습니다.",
+    });
+  }
+});
+
 app.post("/api/scripture/export-slide", async (req, res) => {
   try {
     const requestedName = (req.body?.slideName || "").trim();
@@ -1281,33 +1333,14 @@ app.post("/api/scripture/export-slide", async (req, res) => {
       return res.status(400).json({ error: "슬라이드 제목이 필요합니다." });
     }
 
-    const includeTitleSlide =
-      req.body?.includeTitleSlide === true ||
-      req.body?.includeTitleSlide === "true";
-    const titleSlideType = req.body?.titleSlideType || "말씀";
-    const payload = await getVersePayload(req.body);
-    const theme = resolvePptxTheme(req.body);
     const savedSlides = JSON.parse((await fs.readFile(slidesPath, "utf-8")) || "[]");
     const finalSlideName = buildUniqueSlideName(requestedName, savedSlides);
-    const originalFilename = sanitizeFilename(`${finalSlideName}.pptx`);
-    const serverFilename = `${Date.now()}-${originalFilename}`;
-    const outputPath = path.join(uploadsDir, serverFilename);
-    const pptx = buildPptx(payload, theme, {
-      includeTitleSlide,
-      titleSlideType,
-      referenceText: buildScriptureReferenceText(payload.meta, req.body),
-    });
-
-    let buffer = await pptx.write({ outputType: "nodebuffer" });
-    buffer = injectThumbnail(buffer);
-    await fs.writeFile(outputPath, buffer);
-
-    const thumbnail = await extractThumbnail(outputPath, uploadsDir);
+    const file = await writeScripturePptxFile(req.body, finalSlideName);
     const slideRecord = buildUploadSlideRecord({
       slideName: finalSlideName,
-      serverFilename,
-      originalFilename,
-      thumbnail,
+      serverFilename: path.basename(file.path),
+      originalFilename: file.originalName,
+      thumbnail: file.thumbnail,
     });
 
     savedSlides.push(slideRecord);

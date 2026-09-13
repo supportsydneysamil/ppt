@@ -318,6 +318,7 @@
                 <select id="slideType">
                   <option value="simple">단순 슬라이드</option>
                   <option value="hymn">찬송가 (한영)</option>
+                  <option value="scripture">성경 말씀</option>
                   <option value="ad">광고</option>
                   <option value="title">타이틀 (주일 예배)</option>
                   <option value="custom-title">타이틀 (Custom)</option>
@@ -589,6 +590,191 @@
                       <input id="hymnEngTitle" type="text" placeholder="예: Praise Him, Praise Him">
                     </div>
                   </div>
+                </div>
+              </div>
+            </div>
+
+            <div id="scriptureSlideSettings" class="settings-group" style="display:none;">
+              <div class="settings-section">
+                <label class="field">
+                  <span class="field-label">구분</span>
+                  <select id="scriptureTestament"></select>
+                </label>
+
+                <label class="field">
+                  <span class="field-label">책</span>
+                  <select id="scriptureBook"></select>
+                </label>
+
+                <div class="split-fields">
+                  <label class="field">
+                    <span class="field-label">한글 번역</span>
+                    <select id="scriptureKoVersion">
+                      <option value="">선택안함</option>
+                      <option value="새번역" selected>새번역</option>
+                      <option value="개역한글">개역한글</option>
+                      <option value="현대인의-성경">현대인의 성경</option>
+                    </select>
+                  </label>
+
+                  <label class="field">
+                    <span class="field-label">영어 번역</span>
+                    <select id="scriptureEnVersion">
+                      <option value="">선택안함</option>
+                      <option value="web" selected>WEB</option>
+                      <option value="kjv">KJV</option>
+                    </select>
+                  </label>
+                </div>
+
+                <label class="field">
+                  <span class="field-label">장</span>
+                  <div class="number-stepper">
+                    <button
+                      type="button"
+                      class="stepper-btn"
+                      data-step-target="scriptureChapter"
+                      data-step-direction="down"
+                      aria-label="장 줄이기"
+                    >
+                      -
+                    </button>
+                    <input id="scriptureChapter" type="number" min="1" inputmode="numeric" placeholder="예: 3" />
+                    <button
+                      type="button"
+                      class="stepper-btn"
+                      data-step-target="scriptureChapter"
+                      data-step-direction="up"
+                      aria-label="장 늘리기"
+                    >
+                      +
+                    </button>
+                  </div>
+                </label>
+
+                <div class="range">
+                  <label class="field">
+                    <span class="field-label">시작 절</span>
+                    <div class="number-stepper">
+                      <button
+                        type="button"
+                        class="stepper-btn"
+                        data-step-target="scriptureStartVerse"
+                        data-step-direction="down"
+                        aria-label="시작 절 줄이기"
+                      >
+                        -
+                      </button>
+                      <input id="scriptureStartVerse" type="number" min="1" inputmode="numeric" placeholder="예: 1" />
+                      <button
+                        type="button"
+                        class="stepper-btn"
+                        data-step-target="scriptureStartVerse"
+                        data-step-direction="up"
+                        aria-label="시작 절 늘리기"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </label>
+                  <label class="field">
+                    <span class="field-label">끝 절</span>
+                    <div class="number-stepper">
+                      <button
+                        type="button"
+                        class="stepper-btn"
+                        data-step-target="scriptureEndVerse"
+                        data-step-direction="down"
+                        aria-label="끝 절 줄이기"
+                      >
+                        -
+                      </button>
+                      <input id="scriptureEndVerse" type="number" min="1" inputmode="numeric" placeholder="예: 12" />
+                      <button
+                        type="button"
+                        class="stepper-btn"
+                        data-step-target="scriptureEndVerse"
+                        data-step-direction="up"
+                        aria-label="끝 절 늘리기"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </label>
+                </div>
+
+                <details class="settings" id="scriptureSettingsAccordion">
+                  <summary class="settings-summary">
+                    <span>상세 설정</span>
+                    <span class="chevron">▾</span>
+                  </summary>
+                  <div class="settings-body">
+                    <label class="field">
+                      <span class="field-label">출력 슬라이드 테마</span>
+                      <select id="scripturePptxTheme">
+                        <option value="dark" selected>다크 (시그니처)</option>
+                        <option value="light">라이트 (시그니처)</option>
+                        <option value="navy">네이비 스테인드 글로우</option>
+                        <option value="forest">포레스트 채플</option>
+                        <option value="burgundy">버건디 이브</option>
+                        <option value="navy-solid">네이비 & 골드</option>
+                        <option value="forest-solid">포레스트 & 크림</option>
+                        <option value="burgundy-solid">버건디 & 아이보리</option>
+                      </select>
+                    </label>
+
+                    <div class="field">
+                      <div class="field-label-row">
+                        <span class="field-label">사용자 배경 이미지</span>
+                        <button
+                          type="button"
+                          class="info-badge"
+                          aria-label="배경 이미지 도움말"
+                        >
+                          !
+                          <span class="info-tooltip">
+                            선택한 이미지는 어둡게 보정되고 투명 오버레이가 적용되어 본문 가독성을 우선합니다.
+                          </span>
+                        </button>
+                      </div>
+                      <div class="file-picker-row">
+                        <input id="scripturePptxImage" type="file" accept="image/*" />
+                        <button type="button" id="scripturePptxImageClear" class="ghost ghost-subtle" hidden>
+                          제거
+                        </button>
+                      </div>
+                      <p id="scripturePptxImageStatus" class="field-meta">선택한 이미지 없음</p>
+                    </div>
+                  </div>
+                </details>
+              </div>
+
+              <div class="rte-panel">
+                <div class="rte-panel-label">제목 슬라이드</div>
+                <div class="rte-panel-body">
+                  <label class="checkbox-row checkbox-row-clickable">
+                    <input type="checkbox" id="scriptureIncludeTitle" checked>
+                    <span>맨 앞에 제목 슬라이드 추가</span>
+                  </label>
+                  <div id="scriptureTitleSlideTypeGroup" class="title-slide-type-group">
+                    <label class="radio-row">
+                      <input type="radio" name="scriptureTitleSlideType" value="말씀" checked />
+                      <span>성경 말씀</span>
+                    </label>
+                    <label class="radio-row">
+                      <input type="radio" name="scriptureTitleSlideType" value="봉독" />
+                      <span>성경 봉독</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div class="settings-section">
+                <div class="field">
+                  <button id="scriptureGenerateBtn" type="button" class="ghost">
+                    생성 (미리보기)
+                  </button>
+                  <p class="hint">저장하기 전에 슬라이드를 만들어 미리 확인할 수 있습니다. 설정을 바꾸면 다시 생성하세요.</p>
                 </div>
               </div>
             </div>
