@@ -2,9 +2,11 @@ import {
   createSnapshot,
   deriveSaveButtonState,
   getUnsavedChangesMessage,
+  isDiscardComplete,
   isSlideUnsaved,
   isSnapshotDirty,
   isTemplateDirty,
+  planDiscard,
   runGuardedTransition,
   selectTransientPreviewFiles,
   shouldRecaptureSlideBaseline,
@@ -1185,30 +1187,43 @@ function showUnsavedChangesDialog(scopes) {
 // edited slide falls back to its stored model, and template edits are replaced
 // by the server copy. Returns false when nothing was discarded.
 async function discardPendingChanges() {
-  const restoringTemplate = isTemplateMode() && hasPendingTemplateChanges;
+  const current = slides.find((slide) => slide.id === currentSlideId);
+  const plan = planDiscard({
+    slideDirty,
+    slideUnsaved: isSlideUnsaved(current),
+    templateMode: isTemplateMode(),
+    templateDirty: hasPendingTemplateChanges,
+  });
   const templateId = activeTemplateId;
 
   // Refetch before touching anything: without the server copy there is no
   // baseline to discard onto, and the draft has to survive untouched.
-  if (restoringTemplate && !(await loadTemplatesFromServer())) {
+  if (plan.restoringTemplate && !(await loadTemplatesFromServer())) {
     alert(
       "서버에서 템플릿을 다시 불러오지 못했습니다. 변경사항을 되돌리지 않았습니다."
     );
     return false;
   }
 
-  const current = slides.find((slide) => slide.id === currentSlideId);
+  // Pinned straight after the refetch and before any local mutation, so the
+  // slide branch below cannot overwrite the entry that was just fetched.
+  const restoredTemplate = plan.restoringTemplate
+    ? templates.find((template) => template.id === templateId) || null
+    : null;
 
-  if (slideDirty && isSlideUnsaved(current)) {
+  if (plan.dropSlide) {
     slides = slides.filter((slide) => slide.id !== currentSlideId);
     resetEditorSelection();
-    // The dropped draft must not survive inside the template working copy.
-    syncWorkingSlidesToState();
-    if (isTemplateMode()) {
-      refreshTemplateDirtyState();
+    // Only meaningful when no server restore follows: the restore replaces the
+    // whole working copy, so syncing the local list there would clobber it.
+    if (plan.syncLocalSlides) {
+      syncWorkingSlidesToState();
+      if (isTemplateMode()) {
+        refreshTemplateDirtyState();
+      }
     }
     renderSlideList();
-  } else if (slideDirty && current) {
+  } else if (plan.repopulateSlide && current) {
     slideRuntimeDraft = {};
     populateEditor(current);
     slideBaselineSnapshot = createSnapshot(collectCurrentSlideDraft());
@@ -1216,17 +1231,17 @@ async function discardPendingChanges() {
     updateButtonsState(current);
   }
 
-  if (restoringTemplate) {
-    const restored = templates.find((template) => template.id === templateId);
-    activeTemplateId = restored ? templateId : null;
-    loadWorkspaceSlides(restored ? restored.slides || [] : []);
+  if (plan.restoringTemplate) {
+    activeTemplateId = restoredTemplate ? templateId : null;
+    loadWorkspaceSlides(restoredTemplate ? restoredTemplate.slides || [] : []);
     captureTemplateBaseline();
     refreshTemplateDirtyState();
     renderTemplateGallery();
   }
 
   refreshSaveState();
-  return true;
+  // Only a verified-clean workspace may let the transition through.
+  return isDiscardComplete(getSaveState());
 }
 
 // Runs one scope of the save sequence and guarantees the user sees why a
@@ -3990,9 +4005,9 @@ function resetCurrentSlide() {
   populateEditor(slide);
   slideRuntimeDraft = {};
   renderPreview(slide);
-  slideBaselineSnapshot = slide.saved
-    ? createSnapshot(collectCurrentSlideDraft())
-    : null;
+  slideBaselineSnapshot = isSlideUnsaved(slide)
+    ? null
+    : createSnapshot(collectCurrentSlideDraft());
   refreshSaveState();
   updateButtonsState(slide);
 }

@@ -8,8 +8,10 @@ import {
   getPendingChangeScopes,
   getSaveSequence,
   getUnsavedChangesMessage,
+  isDiscardComplete,
   isSaveBusy,
   isSlideUnsaved,
+  planDiscard,
   runGuardedTransition,
   saveAllPendingScopes,
   selectTransientPreviewFiles,
@@ -433,6 +435,108 @@ describe("pending save sequence", () => {
       false
     );
     assert.deepEqual(attempted, ["slide", "slide", "slide"]);
+  });
+});
+
+describe("discard plan", () => {
+  it("never syncs the local slide list into a template being restored", () => {
+    assert.deepEqual(
+      planDiscard({
+        slideDirty: true,
+        slideUnsaved: true,
+        templateMode: true,
+        templateDirty: true,
+      }),
+      {
+        restoringTemplate: true,
+        dropSlide: true,
+        repopulateSlide: false,
+        syncLocalSlides: false,
+      }
+    );
+  });
+
+  it("syncs the dropped draft out of a clean template", () => {
+    assert.deepEqual(
+      planDiscard({
+        slideDirty: true,
+        slideUnsaved: true,
+        templateMode: true,
+        templateDirty: false,
+      }),
+      {
+        restoringTemplate: false,
+        dropSlide: true,
+        repopulateSlide: false,
+        syncLocalSlides: true,
+      }
+    );
+  });
+
+  it("syncs the dropped draft out of the main slide list", () => {
+    assert.deepEqual(
+      planDiscard({
+        slideDirty: true,
+        slideUnsaved: true,
+        templateMode: false,
+        templateDirty: false,
+      }),
+      {
+        restoringTemplate: false,
+        dropSlide: true,
+        repopulateSlide: false,
+        syncLocalSlides: true,
+      }
+    );
+  });
+
+  it("repopulates an edited slide instead of dropping or syncing it", () => {
+    assert.deepEqual(
+      planDiscard({
+        slideDirty: true,
+        slideUnsaved: false,
+        templateMode: true,
+        templateDirty: true,
+      }),
+      {
+        restoringTemplate: true,
+        dropSlide: false,
+        repopulateSlide: true,
+        syncLocalSlides: false,
+      }
+    );
+  });
+
+  it("touches no slide state when only the template is dirty", () => {
+    assert.deepEqual(
+      planDiscard({
+        slideDirty: false,
+        slideUnsaved: false,
+        templateMode: true,
+        templateDirty: true,
+      }),
+      {
+        restoringTemplate: true,
+        dropSlide: false,
+        repopulateSlide: false,
+        syncLocalSlides: false,
+      }
+    );
+  });
+
+  it("counts a discard as complete only once no scope is dirty", () => {
+    assert.equal(
+      isDiscardComplete({ slideDirty: false, templateDirty: false }),
+      true
+    );
+    assert.equal(
+      isDiscardComplete({ slideDirty: true, templateDirty: false }),
+      false
+    );
+    assert.equal(
+      isDiscardComplete({ slideDirty: false, templateDirty: true }),
+      false
+    );
   });
 });
 
