@@ -11,6 +11,7 @@ import http from "http";
 import { createWriteStream } from "fs";
 import { exec, execFile } from "child_process";
 import { promisify } from "util";
+import { appendTitleSlide } from "./lib/title-slide.js";
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -146,6 +147,10 @@ function sanitizeSlideForTemplate(slide) {
     adBgImageUrl: slide.adBgImageUrl || null,
     adBgOpacity:
       typeof slide.adBgOpacity === "number" ? slide.adBgOpacity : 30,
+    titleDesign: slide.titleDesign || null,
+    churchName: slide.churchName || "",
+    serviceDate: slide.serviceDate || "",
+    titleSubtitle: slide.titleSubtitle || "",
   };
 }
 
@@ -601,6 +606,11 @@ async function appendSlideDefinitionToDeck(pptx, slideData, tempDirs) {
     addHymnTitleSlide(pptx, slideData.hymnNumber, slideData.hymnKorTitle, slideData.hymnEngTitle);
   }
 
+  if (slideData.type === "title") {
+    appendTitleSlide(pptx, slideData);
+    return;
+  }
+
   if (slideData.sourceType === "upload") {
     await appendUploadedSlideDeck(pptx, slideData, tempDirs);
     return;
@@ -660,6 +670,8 @@ const upload = multer({
 app.use(express.json({ limit: "50mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 app.use('/uploads', express.static(uploadsDir)); // Serve uploaded files
+// Date/season helpers are shared with the browser, so the module is served as-is.
+app.use('/lib', express.static(path.join(__dirname, "lib")));
 
 // --- Slide Persistence APIs ---
 
@@ -1030,6 +1042,24 @@ app.post("/api/create-ad-slide-pptx", async (req, res) => {
     return res.send(buffer);
   } catch (err) {
     console.error("Ad slide PPTX generation error:", err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/create-title-slide-pptx", async (req, res) => {
+  try {
+    const pptx = new PptxGenJS();
+    pptx.layout = "LAYOUT_WIDE";
+    appendTitleSlide(pptx, req.body);
+    let buffer = await pptx.write({ outputType: "nodebuffer" });
+    buffer = injectThumbnail(buffer);
+    const filename = `title_slide_${Date.now()}.pptx`;
+    const asciiFilename = sanitizeAsciiFilename(filename);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
+    res.setHeader("Content-Disposition", `attachment; filename="${asciiFilename}"`);
+    return res.send(buffer);
+  } catch (err) {
+    console.error("Title slide PPTX generation error:", err);
     return res.status(500).json({ error: err.message });
   }
 });

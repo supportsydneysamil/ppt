@@ -319,6 +319,7 @@
                   <option value="simple">단순 슬라이드</option>
                   <option value="hymn">찬송가 (한영)</option>
                   <option value="ad">광고</option>
+                  <option value="title">타이틀 (주일 예배)</option>
                 </select>
               </label>
             </div>
@@ -591,6 +592,67 @@
               </div>
             </div>
 
+            <!-- Title (Sunday worship cover) Settings -->
+            <div id="titleSlideSettings" class="settings-group" style="display:none;">
+              <div class="rte-panel">
+                <div class="rte-panel-label">디자인</div>
+                <div class="rte-panel-body">
+                  <div class="theme-option-grid" id="titleDesignGrid" role="list" aria-label="타이틀 디자인 목록">
+                    <button type="button" class="theme-option-card is-active" data-title-design="chapel">
+                      <span class="title-design-preview title-preview-chapel"><span>주일예배</span></span>
+                      <span class="theme-option-copy">
+                        <strong>클래식 채플</strong>
+                        <small>검정 · 금색 괘선</small>
+                      </span>
+                    </button>
+                    <button type="button" class="theme-option-card" data-title-design="editorial">
+                      <span class="title-design-preview title-preview-editorial"><span>주일예배</span></span>
+                      <span class="theme-option-copy">
+                        <strong>모던 에디토리얼</strong>
+                        <small>아이보리 · 좌측 정렬</small>
+                      </span>
+                    </button>
+                    <button type="button" class="theme-option-card" data-title-design="glow">
+                      <span class="title-design-preview title-preview-glow"><span>주일예배</span></span>
+                      <span class="theme-option-copy">
+                        <strong>스테인드 글로우</strong>
+                        <small>네이비 · 금색 글로우</small>
+                      </span>
+                    </button>
+                  </div>
+                  <select id="titleDesign" class="hidden-select">
+                    <option value="chapel" selected>클래식 채플</option>
+                    <option value="editorial">모던 에디토리얼</option>
+                    <option value="glow">스테인드 글로우</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="rte-panel">
+                <div class="rte-panel-label">예배 정보</div>
+                <div class="rte-panel-body">
+                  <div class="rte-panel-row">
+                    <span class="rte-row-label">교회 이름</span>
+                    <input id="titleChurchName" type="text" class="rte-url-input" placeholder="예: 삼일교회" />
+                  </div>
+                  <div class="rte-panel-row">
+                    <span class="rte-row-label">주일 날짜</span>
+                    <select id="titleServiceDate" class="rte-select"></select>
+                  </div>
+                  <div class="rte-panel-row">
+                    <span class="rte-row-label">부제 <span class="rte-panel-hint">선택</span></span>
+                    <div class="rte-row-main">
+                      <input id="titleSubtitle" type="text" class="rte-url-input" placeholder="예: 성찬 예배" />
+                      <button type="button" id="titleSeasonSuggestBtn" class="ghost ghost-subtle" hidden></button>
+                    </div>
+                  </div>
+                  <p class="hint rte-hint">
+                    날짜는 다음 주일이 기본값이고, 절기에 해당하면 부제를 자동으로 제안합니다.
+                  </p>
+                </div>
+              </div>
+            </div>
+
           </form>
 
           <div class="preview-area">
@@ -764,6 +826,11 @@
   <script src="https://cdn.jsdelivr.net/gh/meshesha/PPTXjs@latest/js/nv.d3.min.js"></script>
   <script src="https://cdn.jsdelivr.net/gh/meshesha/PPTXjs@latest/js/pptxjs.js"></script>
 
+  <script type="module">
+    // Same helpers the server renders with, so preview dates never drift.
+    import * as titleSlideDate from "/lib/title-slide-date.js";
+    window.TitleSlideDate = titleSlideDate;
+  </script>
   <script src="/app.js"></script>
 </body>
 

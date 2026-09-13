@@ -839,6 +839,13 @@ const adBgOpacity = document.getElementById("adBgOpacity");
 const adBgOpacityValue = document.getElementById("adBgOpacityValue");
 const bgSettings = document.getElementById("bgSettings");
 const dimOverlayRow = document.getElementById("dimOverlayRow");
+const titleSlideSettings = document.getElementById("titleSlideSettings");
+const titleDesignGrid = document.getElementById("titleDesignGrid");
+const titleDesignSelect = document.getElementById("titleDesign");
+const titleChurchNameInput = document.getElementById("titleChurchName");
+const titleServiceDateSelect = document.getElementById("titleServiceDate");
+const titleSubtitleInput = document.getElementById("titleSubtitle");
+const titleSeasonSuggestBtn = document.getElementById("titleSeasonSuggestBtn");
 
 // State
 let slides = [];
@@ -1045,6 +1052,9 @@ function cleanupPreviewResources() {
 
 // --- Event Listeners for Hymn Type ---
 slideTypeSelect.addEventListener('change', () => {
+  if (slideTypeSelect.value === 'title') {
+    prepareTitleSlideFields();
+  }
   updateSettingsVisibility();
   hasUnsavedChanges = true;
   renderPreview();
@@ -1397,6 +1407,9 @@ function getSlideTypeLabel(slide) {
   if (slide.type === "hymn") {
     return "찬송가";
   }
+  if (slide.type === "title") {
+    return "타이틀";
+  }
   if (slide.type === "ad") {
     return slide.sourceType === "upload" ? "광고 업로드" : "광고";
   }
@@ -1431,6 +1444,10 @@ function createSlide() {
     adBgImagePath: null,
     adBgImageUrl: null,
     adBgOpacity: 30,
+    titleDesign: "chapel",
+    churchName: "",
+    serviceDate: "",
+    titleSubtitle: "",
   };
   slides.push(newSlide);
   // Do NOT save to storage yet
@@ -1535,6 +1552,13 @@ function renderPreview(slideOverride) {
         hymnEngTitle: hymnEngTitleInput.value.trim(),
       };
       data.sourceType = 'upload';
+    } else if (type === 'title') {
+      data = {
+        name: slideNameInput.value,
+        type: 'title',
+        sourceType: 'basic',
+        ...collectTitleSlideData(),
+      };
     } else if (type === 'ad') {
       data = {
         name: slideNameInput.value,
@@ -1638,6 +1662,14 @@ function renderPreview(slideOverride) {
   slidePreview.dataset.lastRenderedPath = "";
 
   slidePreview.innerHTML = "";
+
+  if (data.type === 'title') {
+    slidePreview.classList.remove('preview-scroll-mode');
+    slidePreview.appendChild(
+      buildTitleSlidePreview(data, slidePreview.offsetWidth || 400)
+    );
+    return;
+  }
 
   if (data.sourceType === 'upload') {
     slidePreview.classList.add('preview-scroll-mode'); // Enable scroll layout
@@ -2094,6 +2126,10 @@ function populateEditor(slide) {
   slideNameInput.value = slide.name;
   slideTypeSelect.value = slide.type;
 
+  if (titleSlideSettings) {
+    titleSlideSettings.style.display = slide.type === 'title' ? 'grid' : 'none';
+  }
+
   hymnNumberInput.value = slide.hymnNumber || '';
   hymnIncludeTitle.checked = !!slide.includeTitle;
   hymnTitleFields.style.display = slide.includeTitle ? 'block' : 'none';
@@ -2103,6 +2139,16 @@ function populateEditor(slide) {
   if (slide.type === 'hymn') {
     simpleSlideSettings.style.display = 'none';
     hymnSlideSettings.style.display = 'block';
+  } else if (slide.type === 'title') {
+    simpleSlideSettings.style.display = 'none';
+    hymnSlideSettings.style.display = 'none';
+
+    titleDesignSelect.value = normalizeTitleDesign(slide.titleDesign);
+    syncTitleDesignCards(titleDesignSelect.value);
+    titleChurchNameInput.value = slide.churchName || rememberedChurchName();
+    titleSubtitleInput.value = slide.titleSubtitle || '';
+    ensureTitleServiceDateOptions(slide.serviceDate || defaultServiceDate());
+    updateTitleSeasonSuggestion();
   } else if (slide.type === 'ad') {
     simpleSlideSettings.style.display = 'block';
     hymnSlideSettings.style.display = 'none';
@@ -2224,6 +2270,412 @@ function syncAdTextColorTabs(value) {
   });
 }
 
+// --- Title slide (Sunday worship cover) helpers ---
+
+const TITLE_DESIGNS = ["chapel", "editorial", "glow"];
+const TITLE_CHURCH_STORAGE_KEY = "ppt.titleChurchName";
+
+// Loaded as a module, so it lands after this script's top-level run.
+// Always reach for it from inside a function, never at load time.
+function titleDateApi() {
+  return window.TitleSlideDate || null;
+}
+
+function normalizeTitleDesign(value) {
+  return TITLE_DESIGNS.includes(value) ? value : "chapel";
+}
+
+function formatTitleDateKo(isoDate) {
+  const api = titleDateApi();
+  return api ? api.formatServiceDateKo(isoDate) : "";
+}
+
+function formatTitleDateEn(isoDate) {
+  const api = titleDateApi();
+  return api ? api.formatServiceDateEn(isoDate) : "";
+}
+
+function defaultServiceDate() {
+  const api = titleDateApi();
+  return api ? api.upcomingSundays(1)[0] || "" : "";
+}
+
+function rememberedChurchName() {
+  try {
+    return localStorage.getItem(TITLE_CHURCH_STORAGE_KEY) || "";
+  } catch (e) {
+    return "";
+  }
+}
+
+function rememberChurchName(value) {
+  if (!value) return;
+  try {
+    localStorage.setItem(TITLE_CHURCH_STORAGE_KEY, value);
+  } catch (e) {
+    // Storage can be unavailable in private mode; the field still works.
+  }
+}
+
+function syncTitleDesignCards(value) {
+  if (!titleDesignGrid) return;
+  titleDesignGrid.querySelectorAll("[data-title-design]").forEach((card) => {
+    card.classList.toggle("is-active", card.dataset.titleDesign === value);
+  });
+}
+
+function ensureTitleServiceDateOptions(selectedIso) {
+  const api = titleDateApi();
+  if (!api || !titleServiceDateSelect) return;
+
+  const sundays = api.upcomingSundays(12);
+  const values =
+    selectedIso && !sundays.includes(selectedIso)
+      ? [selectedIso, ...sundays]
+      : sundays;
+  const signature = values.join(",");
+
+  if (titleServiceDateSelect.dataset.signature !== signature) {
+    titleServiceDateSelect.innerHTML = "";
+    values.forEach((iso) => {
+      const option = document.createElement("option");
+      option.value = iso;
+      option.textContent = api.formatServiceDateKo(iso);
+      titleServiceDateSelect.appendChild(option);
+    });
+    titleServiceDateSelect.dataset.signature = signature;
+  }
+
+  titleServiceDateSelect.value = selectedIso || values[0] || "";
+}
+
+function updateTitleSeasonSuggestion() {
+  if (!titleSeasonSuggestBtn) return;
+
+  const api = titleDateApi();
+  const suggestion = api
+    ? api.suggestSeasonLabel(titleServiceDateSelect.value)
+    : "";
+
+  if (!suggestion || titleSubtitleInput.value.trim() === suggestion) {
+    titleSeasonSuggestBtn.hidden = true;
+    return;
+  }
+
+  titleSeasonSuggestBtn.hidden = false;
+  titleSeasonSuggestBtn.textContent = `${suggestion} 넣기`;
+  titleSeasonSuggestBtn.dataset.suggestion = suggestion;
+}
+
+function collectTitleSlideData() {
+  const isoDate = titleServiceDateSelect.value;
+  return {
+    titleDesign: normalizeTitleDesign(titleDesignSelect.value),
+    churchName: titleChurchNameInput.value.trim(),
+    serviceDate: isoDate,
+    titleSubtitle: titleSubtitleInput.value.trim(),
+  };
+}
+
+function buildTitleSlideName(isoDate) {
+  const compact = isoDate ? isoDate.slice(5).replace("-", "") : "";
+  return compact ? `주일예배 ${compact}` : "주일예배";
+}
+
+// --- Title slide preview (mirrors lib/title-slide.js coordinates) ---
+
+const TITLE_SANS = "'Malgun Gothic','Apple SD Gothic Neo',sans-serif";
+const TITLE_SERIF = "Batang,'Nanum Myeongjo',serif";
+const TITLE_LATIN = "Arial,Helvetica,sans-serif";
+
+function titlePreviewNode(cssText, text) {
+  const node = document.createElement("div");
+  node.style.cssText = cssText;
+  if (text) node.textContent = text;
+  return node;
+}
+
+function buildChapelPreview(container, content, unit) {
+  const { inch, pt } = unit;
+  const gold = "#D6B36A";
+  const bracket = Math.max(1, inch(0.014));
+
+  [["top", "left"], ["top", "right"], ["bottom", "left"], ["bottom", "right"]].forEach(
+    ([vertical, horizontal]) => {
+      container.appendChild(
+        titlePreviewNode(
+          `position:absolute;${vertical}:${inch(0.38)}px;${horizontal}:${inch(0.38)}px;` +
+            `width:${inch(0.52)}px;height:${inch(0.52)}px;opacity:0.7;` +
+            `border-${vertical}:${bracket}px solid ${gold};border-${horizontal}:${bracket}px solid ${gold};`
+        )
+      );
+    }
+  );
+
+  const stack = titlePreviewNode(
+    "position:relative;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;"
+  );
+  const rule = (marginTop) =>
+    titlePreviewNode(
+      `width:${inch(2.9)}px;height:${Math.max(1, inch(0.009))}px;background:${gold};` +
+        `opacity:0.55;margin-top:${inch(marginTop)}px;flex-shrink:0;`
+    );
+
+  stack.appendChild(
+    titlePreviewNode(
+      `font-family:${TITLE_SANS};font-weight:700;font-size:${pt(18)}px;` +
+        `letter-spacing:${pt(18) * 0.22}px;padding-left:${pt(18) * 0.22}px;color:${gold};`,
+      content.church
+    )
+  );
+  stack.appendChild(rule(0.28));
+  stack.appendChild(
+    titlePreviewNode(
+      `font-family:${TITLE_SERIF};font-weight:700;font-size:${pt(96)}px;line-height:1.1;` +
+        `letter-spacing:${inch(0.1)}px;padding-left:${inch(0.1)}px;color:#FFFFFF;` +
+        `margin-top:${inch(0.3)}px;`,
+      "주일예배"
+    )
+  );
+  if (content.subtitle) {
+    stack.appendChild(
+      titlePreviewNode(
+        `font-family:${TITLE_SANS};font-weight:600;font-size:${pt(22)}px;color:#E8E2D4;` +
+          `margin-top:${inch(0.2)}px;`,
+        content.subtitle
+      )
+    );
+  }
+  stack.appendChild(
+    titlePreviewNode(
+      `font-family:${TITLE_LATIN};font-weight:700;font-size:${pt(16)}px;` +
+        `letter-spacing:${pt(16) * 0.6}px;padding-left:${pt(16) * 0.6}px;color:${gold};` +
+        `margin-top:${inch(0.28)}px;`,
+      "SUNDAY WORSHIP"
+    )
+  );
+  stack.appendChild(rule(0.3));
+  if (content.koDate) {
+    stack.appendChild(
+      titlePreviewNode(
+        `font-family:${TITLE_SANS};font-size:${pt(24)}px;color:#DCD6C8;margin-top:${inch(0.26)}px;`,
+        content.koDate
+      )
+    );
+  }
+
+  container.style.background = "#0E1117";
+  container.appendChild(stack);
+}
+
+function buildEditorialPreview(container, content, unit) {
+  const { inch, pt } = unit;
+  const ink = "#17150F";
+  const muted = "#8A7659";
+  const hair = "#C6BAA4";
+
+  container.style.background = "#F5F0E7";
+  container.appendChild(
+    titlePreviewNode(
+      `position:absolute;top:0;left:0;width:${inch(0.16)}px;height:100%;background:${ink};`
+    )
+  );
+
+  const frame = titlePreviewNode(
+    `position:relative;height:100%;box-sizing:border-box;display:flex;flex-direction:column;` +
+      `padding:${inch(0.78)}px ${inch(0.9)}px ${inch(0.7)}px ${inch(1.05)}px;`
+  );
+
+  const head = titlePreviewNode(
+    `display:flex;align-items:flex-start;justify-content:space-between;gap:${inch(0.3)}px;`
+  );
+  head.appendChild(
+    titlePreviewNode(
+      `font-family:${TITLE_SANS};font-weight:700;font-size:${pt(18)}px;` +
+        `letter-spacing:${pt(18) * 0.18}px;color:${muted};`,
+      content.church
+    )
+  );
+  if (content.subtitle) {
+    head.appendChild(
+      titlePreviewNode(
+        `font-family:${TITLE_SANS};font-weight:600;font-size:${pt(15)}px;color:${ink};` +
+          `white-space:nowrap;`,
+        content.subtitle
+      )
+    );
+  }
+  frame.appendChild(head);
+
+  const middle = titlePreviewNode(
+    "flex:1;display:flex;flex-direction:column;justify-content:center;"
+  );
+  middle.appendChild(
+    titlePreviewNode(
+      `font-family:${TITLE_SANS};font-weight:800;font-size:${pt(112)}px;line-height:1;color:${ink};`,
+      "주일예배"
+    )
+  );
+  middle.appendChild(
+    titlePreviewNode(
+      `width:${inch(4.4)}px;height:${Math.max(1, inch(0.009))}px;background:${hair};` +
+        `margin-top:${inch(0.36)}px;`
+    )
+  );
+  middle.appendChild(
+    titlePreviewNode(
+      `font-family:${TITLE_LATIN};font-weight:700;font-size:${pt(14)}px;` +
+        `letter-spacing:${pt(14) * 0.55}px;color:${muted};margin-top:${inch(0.2)}px;`,
+      "SUNDAY WORSHIP SERVICE"
+    )
+  );
+  frame.appendChild(middle);
+
+  if (content.koDate) {
+    const dateBlock = titlePreviewNode("align-self:flex-end;text-align:right;");
+    dateBlock.appendChild(
+      titlePreviewNode(
+        `font-family:${TITLE_LATIN};font-weight:700;font-size:${pt(11)}px;` +
+          `letter-spacing:${pt(11) * 0.5}px;color:${muted};`,
+        "DATE"
+      )
+    );
+    dateBlock.appendChild(
+      titlePreviewNode(
+        `font-family:${TITLE_SANS};font-weight:700;font-size:${pt(28)}px;color:${ink};` +
+          `margin-top:${inch(0.06)}px;`,
+        content.koDate
+      )
+    );
+    dateBlock.appendChild(
+      titlePreviewNode(
+        `font-family:${TITLE_LATIN};font-size:${pt(13)}px;letter-spacing:${pt(13) * 0.28}px;` +
+          `color:${muted};margin-top:${inch(0.05)}px;`,
+        content.enDate
+      )
+    );
+    frame.appendChild(dateBlock);
+  }
+
+  container.appendChild(frame);
+}
+
+function buildGlowPreview(container, content, unit) {
+  const { inch, pt } = unit;
+  const gold = "#F2C15B";
+  const bandHeight = inch(1.74);
+
+  container.style.background =
+    "radial-gradient(58% 68% at 80% 14%, rgba(242,193,91,0.22), rgba(242,193,91,0) 72%)," +
+    "linear-gradient(135deg, #0B1A33 0%, #1C2F52 100%)";
+
+  const upper = titlePreviewNode(
+    `position:relative;height:calc(100% - ${bandHeight}px);display:flex;flex-direction:column;` +
+      `align-items:center;justify-content:center;`
+  );
+
+  if (content.subtitle) {
+    upper.appendChild(
+      titlePreviewNode(
+        `font-family:${TITLE_SANS};font-weight:600;font-size:${pt(18)}px;` +
+          `letter-spacing:${pt(18) * 0.2}px;padding-left:${pt(18) * 0.2}px;color:${gold};` +
+          `margin-bottom:${inch(0.22)}px;`,
+        content.subtitle
+      )
+    );
+  }
+
+  const letters = titlePreviewNode(
+    `display:flex;align-items:flex-start;gap:${inch(0.06)}px;`
+  );
+  ["주", "일", "예", "배"].forEach((letter, index) => {
+    letters.appendChild(
+      titlePreviewNode(
+        `font-family:${TITLE_SERIF};font-weight:700;font-size:${pt(88)}px;line-height:1.05;` +
+          `color:#FFFFFF;width:${inch(1.3)}px;text-align:center;` +
+          `margin-top:${index % 2 === 1 ? inch(0.34) : 0}px;`,
+        letter
+      )
+    );
+  });
+  upper.appendChild(letters);
+
+  const rule = titlePreviewNode(
+    `position:relative;width:${inch(4.6)}px;height:${Math.max(1, inch(0.011))}px;` +
+      `background:${gold};opacity:0.85;margin-top:${inch(0.36)}px;`
+  );
+  [`left:${-inch(0.05)}px`, `right:${-inch(0.05)}px`].forEach((side) => {
+    rule.appendChild(
+      titlePreviewNode(
+        `position:absolute;${side};top:${-inch(0.045)}px;width:${inch(0.1)}px;` +
+          `height:${inch(0.1)}px;border-radius:50%;background:${gold};`
+      )
+    );
+  });
+  upper.appendChild(rule);
+
+  upper.appendChild(
+    titlePreviewNode(
+      `font-family:${TITLE_LATIN};font-weight:700;font-size:${pt(17)}px;` +
+        `letter-spacing:${pt(17) * 0.62}px;padding-left:${pt(17) * 0.62}px;color:#F3E6C8;` +
+        `margin-top:${inch(0.24)}px;`,
+      "SUNDAY WORSHIP"
+    )
+  );
+  container.appendChild(upper);
+
+  const band = titlePreviewNode(
+    `position:absolute;left:0;bottom:0;width:100%;height:${bandHeight}px;box-sizing:border-box;` +
+      `background:rgba(4,10,22,0.55);border-top:${Math.max(1, inch(0.008))}px solid rgba(242,193,91,0.5);` +
+      `display:flex;flex-direction:column;align-items:center;justify-content:center;gap:${inch(0.12)}px;`
+  );
+  band.appendChild(
+    titlePreviewNode(
+      `font-family:${TITLE_SANS};font-weight:700;font-size:${pt(26)}px;color:#FFFFFF;`,
+      content.church
+    )
+  );
+  if (content.koDate) {
+    band.appendChild(
+      titlePreviewNode(
+        `font-family:${TITLE_SANS};font-size:${pt(17)}px;color:#E9DFC8;`,
+        content.koDate
+      )
+    );
+  }
+  container.appendChild(band);
+}
+
+function buildTitleSlidePreview(data, previewWidth) {
+  const width = previewWidth || 400;
+  const perInch = width / 13.333;
+  const unit = {
+    inch: (value) => value * perInch,
+    pt: (value) => (value / 72) * perInch,
+  };
+  const content = {
+    church: (data.churchName || "").trim() || "교회 이름",
+    subtitle: (data.titleSubtitle || "").trim(),
+    koDate: formatTitleDateKo(data.serviceDate),
+    enDate: formatTitleDateEn(data.serviceDate),
+  };
+
+  const container = document.createElement("div");
+  container.style.cssText =
+    `position:relative;width:${width}px;height:${width * 0.5625}px;overflow:hidden;`;
+
+  const design = normalizeTitleDesign(data.titleDesign);
+  if (design === "editorial") {
+    buildEditorialPreview(container, content, unit);
+  } else if (design === "glow") {
+    buildGlowPreview(container, content, unit);
+  } else {
+    buildChapelPreview(container, content, unit);
+  }
+
+  return container;
+}
+
 function toggleSettingsMode(mode) {
   updateSettingsVisibility(mode);
 }
@@ -2234,6 +2686,16 @@ function updateSettingsVisibility(overrideMode) {
     overrideMode ||
     (document.querySelector('input[name="sourceType"]:checked') || {}).value ||
     "basic";
+
+  if (titleSlideSettings) {
+    titleSlideSettings.style.display = type === "title" ? "grid" : "none";
+  }
+
+  if (type === "title") {
+    simpleSlideSettings.style.display = "none";
+    hymnSlideSettings.style.display = "none";
+    return;
+  }
 
   if (type === "hymn") {
     simpleSlideSettings.style.display = "none";
@@ -2444,7 +2906,7 @@ function renderSlideList() {
 
     const typeBadge = document.createElement("span");
     typeBadge.className = "slide-type-badge";
-    typeBadge.textContent = slide.type === "ad" ? "AD" : slide.sourceType === "upload" ? "PPT/PPTX" : "TEXT";
+    typeBadge.textContent = slide.type === "title" ? "TITLE" : slide.type === "ad" ? "AD" : slide.sourceType === "upload" ? "PPT/PPTX" : "TEXT";
 
     const saveBadge = document.createElement("span");
     saveBadge.className = `slide-save-badge${slide.saved ? "" : " unsaved"}`;
@@ -2624,6 +3086,22 @@ async function saveCurrentSlide() {
       
       slide.saved = true;
 
+    } else if (slide.type === 'title') {
+      const titleData = collectTitleSlideData();
+      if (!titleData.churchName) {
+        alert("교회 이름을 입력하세요.");
+        return;
+      }
+      if (!titleData.serviceDate) {
+        alert("주일 날짜를 선택하세요.");
+        return;
+      }
+
+      Object.assign(slide, titleData);
+      rememberChurchName(titleData.churchName);
+      slide.sourceType = 'basic';
+      slide.saved = true;
+
     } else {
       // Simple Slide Logic
       const sourceRadio = document.querySelector('input[name="sourceType"]:checked');
@@ -2717,6 +3195,42 @@ async function downloadSlide() {
   if (!currentSlideId) return;
   const slide = slides.find(s => s.id === currentSlideId);
   if (!slide || !slide.saved) return;
+
+  if (slide.type === 'title') {
+    try {
+      const resp = await fetch('/api/create-title-slide-pptx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          titleDesign: slide.titleDesign,
+          churchName: slide.churchName,
+          serviceDate: slide.serviceDate,
+          titleSubtitle: slide.titleSubtitle,
+        })
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json();
+        alert("다운로드 실패: " + (err.error || "Unknown Error"));
+        return;
+      }
+
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${slide.name || buildTitleSlideName(slide.serviceDate)}.pptx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      return;
+    } catch (e) {
+      alert("다운로드 중 오류가 발생했습니다.");
+      console.error(e);
+      return;
+    }
+  }
 
   // Ad slide download
   if (slide.type === 'ad' && slide.sourceType === 'basic') {
@@ -2872,6 +3386,10 @@ function buildSerializableSlide(slide) {
     adBgImagePath: slide.adBgImagePath,
     adBgImageUrl: slide.adBgImageUrl,
     adBgOpacity: slide.adBgOpacity,
+    titleDesign: slide.titleDesign,
+    churchName: slide.churchName,
+    serviceDate: slide.serviceDate,
+    titleSubtitle: slide.titleSubtitle,
   };
 }
 
@@ -3347,6 +3865,65 @@ adBgImageUrl.addEventListener('input', () => {
 
 adBgOpacity.addEventListener('input', () => {
   adBgOpacityValue.textContent = `${adBgOpacity.value}%`;
+  hasUnsavedChanges = true;
+  renderPreview();
+});
+
+// --- Title slide listeners ---
+
+// Only replaces names the user has not personalised yet.
+function maybeAutoNameTitleSlide() {
+  const current = slideNameInput.value.trim();
+  const isUntouched =
+    !current || /^새 슬라이드\d*$/.test(current) || /^주일예배( \d{4})?$/.test(current);
+  if (isUntouched) {
+    slideNameInput.value = buildTitleSlideName(titleServiceDateSelect.value);
+  }
+}
+
+function prepareTitleSlideFields() {
+  if (!titleChurchNameInput.value.trim()) {
+    titleChurchNameInput.value = rememberedChurchName();
+  }
+  ensureTitleServiceDateOptions(
+    titleServiceDateSelect.value || defaultServiceDate()
+  );
+  updateTitleSeasonSuggestion();
+  maybeAutoNameTitleSlide();
+}
+
+if (titleDesignGrid) {
+  titleDesignGrid.addEventListener('click', (event) => {
+    const card = event.target.closest('[data-title-design]');
+    if (!card) return;
+    titleDesignSelect.value = normalizeTitleDesign(card.dataset.titleDesign);
+    syncTitleDesignCards(titleDesignSelect.value);
+    hasUnsavedChanges = true;
+    renderPreview();
+  });
+}
+
+titleChurchNameInput.addEventListener('input', () => {
+  hasUnsavedChanges = true;
+  renderPreview();
+});
+
+titleServiceDateSelect.addEventListener('change', () => {
+  updateTitleSeasonSuggestion();
+  maybeAutoNameTitleSlide();
+  hasUnsavedChanges = true;
+  renderPreview();
+});
+
+titleSubtitleInput.addEventListener('input', () => {
+  updateTitleSeasonSuggestion();
+  hasUnsavedChanges = true;
+  renderPreview();
+});
+
+titleSeasonSuggestBtn.addEventListener('click', () => {
+  titleSubtitleInput.value = titleSeasonSuggestBtn.dataset.suggestion || '';
+  updateTitleSeasonSuggestion();
   hasUnsavedChanges = true;
   renderPreview();
 });
