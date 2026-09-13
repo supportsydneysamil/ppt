@@ -42,11 +42,11 @@ async function loadSession() {
   const sessionId = url.searchParams.get("session");
 
   if (!sessionId) {
-    setMessage("PPTX Preview 2 세션 정보가 없습니다.");
+    setMessage("PPTX 슬라이드쇼 세션 정보가 없습니다.");
     return;
   }
 
-  setMessage("PPTX Preview 2를 불러오는 중...");
+  setMessage("PPTX 슬라이드쇼를 불러오는 중...");
 
   try {
     const resp = await fetch(
@@ -55,7 +55,7 @@ async function loadSession() {
     const payload = await resp.json();
 
     if (!resp.ok) {
-      throw new Error(payload.error || "PPTX Preview 2 데이터를 불러오지 못했습니다.");
+      throw new Error(payload.error || "PPTX 슬라이드쇼 데이터를 불러오지 못했습니다.");
     }
 
     slides = Array.isArray(payload.slides) ? payload.slides : [];
@@ -67,7 +67,7 @@ async function loadSession() {
 
     showSlide(0);
   } catch (err) {
-    setMessage(err?.message || "PPTX Preview 2를 불러오는 중 오류가 발생했습니다.");
+    setMessage(err?.message || "PPTX 슬라이드쇼를 불러오는 중 오류가 발생했습니다.");
   }
 }
 

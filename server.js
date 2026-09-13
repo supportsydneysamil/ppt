@@ -100,7 +100,7 @@ async function runSoffice(args) {
 
   const err = new Error(configuredPath
     ? "SOFFICE_PATH에 지정된 LibreOffice 실행 파일을 찾을 수 없습니다. 경로를 확인한 후 서버를 다시 시작하세요."
-    : "Web View2에 필요한 LibreOffice를 찾을 수 없습니다. LibreOffice를 설치한 후 서버를 다시 시작하세요. 별도 경로에 설치했다면 SOFFICE_PATH 환경 변수에 실행 파일 경로를 지정하세요.");
+    : "PPTX 미리보기에 필요한 LibreOffice를 찾을 수 없습니다. LibreOffice를 설치한 후 서버를 다시 시작하세요. 별도 경로에 설치했다면 SOFFICE_PATH 환경 변수에 실행 파일 경로를 지정하세요.");
   err.statusCode = 503;
   throw err;
 }
@@ -1181,7 +1181,7 @@ app.get("/api/scripture/web-view-session/:sessionId", async (req, res) => {
   const entry = scriptureSessions.get(req.params.sessionId);
 
   if (!entry || !entry.payload) {
-    return res.status(404).json({ error: "Web View 세션을 찾을 수 없습니다." });
+    return res.status(404).json({ error: "웹 뷰 세션을 찾을 수 없습니다." });
   }
 
   return res.json(entry.payload);
@@ -1225,11 +1225,11 @@ app.get("/api/scripture/pptx-preview-session/:sessionId", async (req, res) => {
   const entry = scriptureSessions.get(req.params.sessionId);
 
   if (!entry || !entry.filePath) {
-    return res.status(404).json({ error: "PPTX Preview 세션을 찾을 수 없습니다." });
+    return res.status(404).json({ error: "PPTX 미리보기 세션을 찾을 수 없습니다." });
   }
 
   return res.json({
-    title: entry.payload?.title || "PPTX Preview",
+    title: entry.payload?.title || "PPTX 미리보기",
     filename: entry.payload?.filename || entry.filename,
     slideCount: Array.isArray(entry.imagePaths) ? entry.imagePaths.length : 0,
     slides: Array.isArray(entry.imagePaths)
@@ -1250,7 +1250,7 @@ app.get("/api/scripture/pptx-preview-file/:sessionId", async (req, res) => {
   const entry = scriptureSessions.get(req.params.sessionId);
 
   if (!entry || !entry.filePath) {
-    return res.status(404).json({ error: "PPTX Preview 파일을 찾을 수 없습니다." });
+    return res.status(404).json({ error: "PPTX 미리보기 파일을 찾을 수 없습니다." });
   }
 
   const downloadName = entry.payload?.filename || entry.filename || "preview.pptx";
@@ -1275,12 +1275,12 @@ app.get("/api/scripture/pptx-preview-image/:sessionId/:index", async (req, res) 
   const index = Number.parseInt(req.params.index, 10);
 
   if (!entry || !Array.isArray(entry.imagePaths) || !Number.isInteger(index)) {
-    return res.status(404).json({ error: "PPTX Preview 이미지를 찾을 수 없습니다." });
+    return res.status(404).json({ error: "PPTX 미리보기 이미지를 찾을 수 없습니다." });
   }
 
   const imagePath = entry.imagePaths[index];
   if (!imagePath) {
-    return res.status(404).json({ error: "PPTX Preview 이미지를 찾을 수 없습니다." });
+    return res.status(404).json({ error: "PPTX 미리보기 이미지를 찾을 수 없습니다." });
   }
 
   return res.sendFile(imagePath);

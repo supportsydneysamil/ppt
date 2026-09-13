@@ -31,9 +31,6 @@ const currentAppThemeLabel = document.getElementById("currentAppThemeLabel");
 const appThemeOptionButtons = document.querySelectorAll("[data-theme-value]");
 const scriptureExportModal = document.getElementById("scriptureExportModal");
 const scriptureExportForm = document.getElementById("scriptureExportForm");
-const scriptureExportCancelBtn = document.getElementById(
-  "scriptureExportCancelBtn"
-);
 const scriptureExportCloseBtn = document.getElementById(
   "scriptureExportCloseBtn"
 );
@@ -358,7 +355,6 @@ appThemeOptionButtons.forEach((button) => {
   button.addEventListener("click", handleAppThemeOptionClick);
 });
 scriptureExportForm.addEventListener("submit", handleExportToPptGenerator);
-scriptureExportCancelBtn.addEventListener("click", closeScriptureExportModal);
 scriptureExportCloseBtn.addEventListener("click", closeScriptureExportModal);
 exportIncludeTitleSlideInput.addEventListener("change", () => {
   titleSlideTypeGroup.classList.toggle("hidden", !exportIncludeTitleSlideInput.checked);
@@ -693,7 +689,7 @@ async function handleOpenWebView() {
     }
 
     popup.document.write(
-      "<!doctype html><html lang='ko'><head><meta charset='utf-8'><title>Web View 준비 중...</title></head><body style='margin:0;display:grid;place-items:center;min-height:100vh;background:#0b0f16;color:#f3f0ea;font-family:Work Sans, sans-serif;'>Web View를 준비하고 있습니다...</body></html>"
+      "<!doctype html><html lang='ko'><head><meta charset='utf-8'><title>웹 뷰 준비 중...</title></head><body style='margin:0;display:grid;place-items:center;min-height:100vh;background:#0b0f16;color:#f3f0ea;font-family:Work Sans, sans-serif;'>웹 뷰를 준비하고 있습니다...</body></html>"
     );
     popup.document.close();
 
@@ -706,7 +702,7 @@ async function handleOpenWebView() {
     const sessionPayload = await resp.json();
 
     if (!resp.ok) {
-      throw new Error(sessionPayload.error || "Web View 생성에 실패했습니다.");
+      throw new Error(sessionPayload.error || "웹 뷰 생성에 실패했습니다.");
     }
 
     popup.location = `/scripture-web-view.html?session=${encodeURIComponent(
@@ -716,7 +712,7 @@ async function handleOpenWebView() {
     if (popup && !popup.closed) {
       popup.close();
     }
-    alert(err?.message || "Web View를 여는 중 오류가 발생했습니다.");
+    alert(err?.message || "웹 뷰를 여는 중 오류가 발생했습니다.");
   }
 }
 
@@ -730,7 +726,7 @@ async function handleOpenPptxPreview() {
     }
 
     popup.document.write(
-      "<!doctype html><html lang='ko'><head><meta charset='utf-8'><title>PPTX Preview 준비 중...</title></head><body style='margin:0;display:grid;place-items:center;min-height:100vh;background:#0b0f16;color:#f3f0ea;font-family:Work Sans, sans-serif;'>PPTX Preview를 준비하고 있습니다...</body></html>"
+      "<!doctype html><html lang='ko'><head><meta charset='utf-8'><title>PPTX 미리보기 준비 중...</title></head><body style='margin:0;display:grid;place-items:center;min-height:100vh;background:#0b0f16;color:#f3f0ea;font-family:Work Sans, sans-serif;'>PPTX 미리보기를 준비하고 있습니다...</body></html>"
     );
     popup.document.close();
 
@@ -742,7 +738,7 @@ async function handleOpenPptxPreview() {
     if (popup && !popup.closed) {
       popup.close();
     }
-    alert(err?.message || "PPTX Preview를 여는 중 오류가 발생했습니다.");
+    alert(err?.message || "PPTX 미리보기를 여는 중 오류가 발생했습니다.");
   }
 }
 
@@ -756,7 +752,7 @@ async function handleOpenPptxPreview2() {
     }
 
     popup.document.write(
-      "<!doctype html><html lang='ko'><head><meta charset='utf-8'><title>PPTX Preview 2 준비 중...</title></head><body style='margin:0;display:grid;place-items:center;min-height:100vh;background:#000;color:#f3f0ea;font-family:Work Sans, sans-serif;'>PPTX Preview 2를 준비하고 있습니다...</body></html>"
+      "<!doctype html><html lang='ko'><head><meta charset='utf-8'><title>PPTX 슬라이드쇼 준비 중...</title></head><body style='margin:0;display:grid;place-items:center;min-height:100vh;background:#000;color:#f3f0ea;font-family:Work Sans, sans-serif;'>PPTX 슬라이드쇼를 준비하고 있습니다...</body></html>"
     );
     popup.document.close();
 
@@ -768,7 +764,7 @@ async function handleOpenPptxPreview2() {
     if (popup && !popup.closed) {
       popup.close();
     }
-    alert(err?.message || "PPTX Preview 2를 여는 중 오류가 발생했습니다.");
+    alert(err?.message || "PPTX 슬라이드쇼를 여는 중 오류가 발생했습니다.");
   }
 }
 
@@ -788,7 +784,7 @@ async function ensurePptxPreviewSession() {
   const sessionPayload = await resp.json();
 
   if (!resp.ok) {
-    throw new Error(sessionPayload.error || "PPTX Preview 생성에 실패했습니다.");
+    throw new Error(sessionPayload.error || "PPTX 미리보기 생성에 실패했습니다.");
   }
 
   lastPreviewSessionId = sessionPayload.sessionId;
@@ -807,7 +803,7 @@ async function handleExportToPptGenerator(event) {
   }
 
   scriptureExportConfirmBtn.disabled = true;
-  scriptureExportConfirmBtn.textContent = "Export 중...";
+  scriptureExportConfirmBtn.textContent = "보내는 중...";
 
   try {
     const payload = await buildPptxPayload();
@@ -824,7 +820,7 @@ async function handleExportToPptGenerator(event) {
     const responsePayload = await resp.json();
 
     if (!resp.ok) {
-      throw new Error(responsePayload.error || "슬라이드 export에 실패했습니다.");
+      throw new Error(responsePayload.error || "슬라이드를 보내지 못했습니다.");
     }
 
     mainSlides.push(cloneSlide(responsePayload.slide));
@@ -835,10 +831,10 @@ async function handleExportToPptGenerator(event) {
     selectSlide(responsePayload.slide.id);
     alert(`슬라이드가 추가되었습니다: ${responsePayload.slide.name}`);
   } catch (err) {
-    alert(err?.message || "슬라이드 export 중 오류가 발생했습니다.");
+    alert(err?.message || "슬라이드를 보내는 중 오류가 발생했습니다.");
   } finally {
     scriptureExportConfirmBtn.disabled = false;
-    scriptureExportConfirmBtn.textContent = "Export";
+    scriptureExportConfirmBtn.textContent = "보내기";
   }
 }
 

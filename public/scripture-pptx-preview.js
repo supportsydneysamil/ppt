@@ -49,7 +49,7 @@ async function loadSession() {
   const sessionId = url.searchParams.get("session");
 
   if (!sessionId) {
-    setMessage("PPTX Preview 세션 정보가 없습니다.");
+    setMessage("PPTX 미리보기 세션 정보가 없습니다.");
     return;
   }
 
@@ -62,10 +62,10 @@ async function loadSession() {
     const payload = await resp.json();
 
     if (!resp.ok) {
-      throw new Error(payload.error || "PPTX Preview 데이터를 불러오지 못했습니다.");
+      throw new Error(payload.error || "PPTX 미리보기 데이터를 불러오지 못했습니다.");
     }
 
-    deckTitle.textContent = payload.title || "PPTX Preview";
+    deckTitle.textContent = payload.title || "PPTX 미리보기";
     deckFilename.textContent = payload.filename || "";
     downloadLink.href = payload.downloadUrl || "#";
     slides = Array.isArray(payload.slides) ? payload.slides : [];
@@ -77,7 +77,7 @@ async function loadSession() {
 
     showSlide(0);
   } catch (err) {
-    setMessage(err?.message || "PPTX Preview를 불러오는 중 오류가 발생했습니다.");
+    setMessage(err?.message || "PPTX 미리보기를 불러오는 중 오류가 발생했습니다.");
   }
 }
 

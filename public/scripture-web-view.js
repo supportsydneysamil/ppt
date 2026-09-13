@@ -148,7 +148,7 @@ async function loadSession() {
   const sessionId = url.searchParams.get("session");
 
   if (!sessionId) {
-    setMessage("Web View 세션 정보가 없습니다.");
+    setMessage("웹 뷰 세션 정보가 없습니다.");
     return;
   }
 
@@ -159,7 +159,7 @@ async function loadSession() {
     const payload = await resp.json();
 
     if (!resp.ok) {
-      throw new Error(payload.error || "Web View 데이터를 불러오지 못했습니다.");
+      throw new Error(payload.error || "웹 뷰 데이터를 불러오지 못했습니다.");
     }
 
     deckData = payload;
@@ -168,7 +168,7 @@ async function loadSession() {
     renderSlide();
     applyScale();
   } catch (err) {
-    setMessage(err?.message || "Web View를 불러오는 중 오류가 발생했습니다.");
+    setMessage(err?.message || "웹 뷰를 불러오는 중 오류가 발생했습니다.");
   }
 }
 
