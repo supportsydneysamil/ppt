@@ -834,6 +834,8 @@ const customTitleDesignGrid = document.getElementById("customTitleDesignGrid");
 const customTitleDesignSelect = document.getElementById("customTitleDesign");
 const customTitleKoInput = document.getElementById("customTitleKo");
 const customTitleEnInput = document.getElementById("customTitleEn");
+const customSlideEditorRoot = document.getElementById("customSlideEditor");
+const slidePreviewArea = slidePreview ? slidePreview.closest(".preview-area") : null;
 
 // State
 let slides = [];
@@ -914,6 +916,8 @@ function markTemplateDirty() {
 function resetEditorSelection() {
   currentSlideId = null;
   hasUnsavedChanges = false;
+  releaseCustomEditorSlide();
+  updateSaveButtonState();
   emptyEditorState.style.display = "flex";
   slideEditor.style.display = "none";
 }
@@ -1283,7 +1287,15 @@ slideTypeSelect.addEventListener('change', () => {
     syncScriptureImageUI(slides.find((s) => s.id === currentSlideId));
   }
   updateSettingsVisibility();
+  if (slideTypeSelect.value === 'custom') {
+    const current = slides.find((s) => s.id === currentSlideId);
+    // Switching type is itself an unsaved change, so the canvas starts dirty.
+    showCustomSlideInEditor(current, { markSaved: false });
+  } else {
+    releaseCustomEditorSlide();
+  }
   hasUnsavedChanges = true;
+  updateSaveButtonState();
   renderPreview();
 });
 
@@ -1708,18 +1720,20 @@ templateNameDisplay.addEventListener("click", renameActiveTemplate);
 
 // --- Storage (Server Side) ---
 
-async function saveSlidesToServer() {
+// `nextSlides` lets a caller persist a staged list before committing it to the
+// in-memory records, so a failed request leaves those records untouched.
+async function saveSlidesToServer(nextSlides = slides) {
   try {
     const resp = await fetch("/api/slides", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(slides),
+      body: JSON.stringify(nextSlides),
     });
     if (!resp.ok) {
       console.error("Failed to save slides");
       return false;
     }
-    mainSlides = slides.map((slide) => cloneSlide(slide));
+    mainSlides = nextSlides.map((slide) => cloneSlide(slide));
     return true;
   } catch (e) {
     console.error("Network error saving slides", e);
@@ -1763,8 +1777,8 @@ async function saveActiveTemplateToServer() {
   }
 }
 
-async function persistCurrentWorkspace() {
-  return saveSlidesToServer();
+async function persistCurrentWorkspace(nextSlides = slides) {
+  return saveSlidesToServer(nextSlides);
 }
 
 async function loadSlidesFromServer() {
@@ -1935,6 +1949,9 @@ function getSlideTypeLabel(slide) {
   if (slide.type === "custom-title") {
     return "타이틀 (Custom)";
   }
+  if (slide.type === "custom") {
+    return "커스텀 편집";
+  }
   if (slide.type === "ad") {
     return slide.sourceType === "upload" ? "광고 업로드" : "광고";
   }
@@ -1976,6 +1993,7 @@ function createSlide() {
     customTitleDesign: "aurora",
     customTitleKo: "",
     customTitleEn: "",
+    customSlide: emptyCustomSlideModel(),
   };
   slides.push(newSlide);
   // Do NOT save to storage yet
@@ -2065,6 +2083,11 @@ function buildHymnTitleSlidePreview(hymnNumber, korTitle, engTitle) {
 
 function renderPreview(slideOverride) {
   if (!slidePreview) return;
+
+  // The custom canvas is the live WYSIWYG preview; never clear or replace it.
+  if ((slideOverride?.type ?? slideTypeSelect.value) === 'custom') {
+    return;
+  }
 
   let data = slideOverride;
 
@@ -2698,7 +2721,14 @@ function populateEditor(slide) {
 
   updateSettingsVisibility(slide.sourceType);
 
-  if (slide.type === 'scripture') {
+  if (slide.type !== 'custom') {
+    // Detach the canvas so a later stray change cannot touch this slide.
+    releaseCustomEditorSlide();
+  }
+
+  if (slide.type === 'custom') {
+    showCustomSlideInEditor(slide);
+  } else if (slide.type === 'scripture') {
     populateScriptureEditor(slide);
   } else if (slide.type === 'title') {
 
@@ -3492,6 +3522,206 @@ function buildCustomTitleSlidePreview(data, previewWidth) {
   return container;
 }
 
+// --- Custom (WYSIWYG) slide editor integration ---
+
+// The bridge and the editor are ES modules while this file is a classic script,
+// so they are pulled in dynamically. The import starts at load time, but every
+// caller still has to cope with it not being ready yet.
+let customSlideBridge = null;
+let customSlideBridgePromise = null;
+let customEditorSession = null;
+let customEditorSessionPromise = null;
+
+function loadCustomSlideBridge() {
+  if (!customSlideBridgePromise) {
+    customSlideBridgePromise = import("/custom-slide-bridge.js").then((module) => {
+      customSlideBridge = module;
+      return module;
+    });
+  }
+  return customSlideBridgePromise;
+}
+
+loadCustomSlideBridge().catch((e) => {
+  console.error("커스텀 편집기 모듈을 불러오지 못했습니다:", e);
+});
+
+// Mirrors createDefaultCustomSlide() for the short window before the module
+// lands; the bridge is authoritative once it has loaded.
+function emptyCustomSlideModel() {
+  if (customSlideBridge) {
+    return customSlideBridge.createEmptyCustomSlide();
+  }
+  return {
+    version: 1,
+    width: 1280,
+    height: 720,
+    background: { color: "#ffffff" },
+    elements: [],
+  };
+}
+
+function copyCustomSlideModel(model) {
+  if (model === null || model === undefined) {
+    return null;
+  }
+  if (customSlideBridge) {
+    return customSlideBridge.copyCustomSlideModel(model);
+  }
+  return JSON.parse(JSON.stringify(model));
+}
+
+function resolveCustomDirtyState(state) {
+  if (customSlideBridge) {
+    return customSlideBridge.resolveCustomDirtyState(state);
+  }
+  return !state.slideSaved || Boolean(state.editorDirty) || Boolean(state.formDirty);
+}
+
+// The name and type fields live outside the canvas, so a canvas undo back to
+// its clean baseline must not swallow a pending rename or type switch.
+function isCustomFormDirty(slide) {
+  if (!slideNameInput) return false;
+  const typeValue = slideTypeSelect ? slideTypeSelect.value : undefined;
+  if (customSlideBridge) {
+    return customSlideBridge.resolveCustomFormDirty(slideNameInput.value, slide, typeValue);
+  }
+  if (String(slideNameInput.value ?? "").trim() !== String(slide?.name ?? "").trim()) {
+    return true;
+  }
+  if (typeValue === null || typeValue === undefined) return false;
+  return String(typeValue).trim() !== String(slide?.type ?? "").trim();
+}
+
+function updateSaveButtonState() {
+  if (!editorSaveBtn) return;
+  editorSaveBtn.classList.toggle("is-dirty", Boolean(hasUnsavedChanges));
+}
+
+// One editor instance for the whole workspace, created at most once.
+function ensureCustomEditorSession() {
+  if (!customEditorSessionPromise) {
+    customEditorSessionPromise = (async () => {
+      const bridge = await loadCustomSlideBridge();
+      if (!customSlideEditorRoot) {
+        throw new Error("커스텀 편집기 영역을 찾을 수 없습니다.");
+      }
+      const { createCustomSlideEditor } = await import("/custom-slide-editor.js");
+      const session = bridge.createCustomEditorSession({
+        root: customSlideEditorRoot,
+        createEditor: createCustomSlideEditor,
+        uploadImage: (file) => bridge.uploadCustomImage(file),
+        onChange: handleCustomEditorChange,
+        onError: (message) => console.warn("커스텀 편집기:", message),
+      });
+      await session.ensureEditor();
+      customEditorSession = session;
+      return session;
+    })().catch((error) => {
+      customEditorSessionPromise = null;
+      throw error;
+    });
+  }
+  return customEditorSessionPromise;
+}
+
+function handleCustomEditorChange({ slideId, dirty }) {
+  if (!slideId || slideId !== currentSlideId) {
+    return;
+  }
+  const slide = slides.find((s) => s.id === slideId);
+  hasUnsavedChanges = resolveCustomDirtyState({
+    slideSaved: Boolean(slide?.saved),
+    editorDirty: dirty,
+    formDirty: isCustomFormDirty(slide),
+  });
+  updateSaveButtonState();
+}
+
+// Loads a slide's canvas. Stale loads are dropped by the session, so switching
+// slides quickly can never leave one slide showing another's artwork.
+function showCustomSlideInEditor(slide, { markSaved = Boolean(slide?.saved) } = {}) {
+  if (!slide) return Promise.resolve();
+
+  const slideId = slide.id;
+  const model = copyCustomSlideModel(slide.customSlide) || emptyCustomSlideModel();
+
+  return ensureCustomEditorSession()
+    .then((session) => session.showSlide(slideId, model, { markSaved }))
+    .then((result) => {
+      if (!result?.applied || slideId !== currentSlideId) {
+        return;
+      }
+      const currentSlide = slides.find((s) => s.id === slideId);
+      hasUnsavedChanges = resolveCustomDirtyState({
+        slideSaved: markSaved && Boolean(currentSlide?.saved),
+        editorDirty: result.dirty,
+        formDirty: isCustomFormDirty(currentSlide),
+      });
+      updateSaveButtonState();
+    })
+    .catch((error) => {
+      console.error("커스텀 편집기 로드 실패:", error);
+      alert("커스텀 편집기를 불러오지 못했습니다: " + error.message);
+    });
+}
+
+function releaseCustomEditorSlide() {
+  if (customEditorSession) {
+    customEditorSession.release();
+  }
+}
+
+/**
+ * Saves a custom slide as a transaction: the staged values are persisted first
+ * and only written to the slide record once the request succeeded, so a failed
+ * save leaves the record, the canvas baseline and the name field as they were.
+ */
+async function saveCustomSlide(slide, name) {
+  const serialized = customEditorSession
+    ? customEditorSession.serialize(slide.id)
+    : null;
+  if (!serialized) {
+    alert("커스텀 편집기를 불러오는 중입니다. 잠시 후 다시 저장해주세요.");
+    return;
+  }
+
+  const bridge = customSlideBridge;
+  if (!bridge) {
+    alert("커스텀 편집기 모듈을 불러오는 중입니다. 잠시 후 다시 저장해주세요.");
+    return;
+  }
+
+  const staged = bridge.stageCustomSlideSave({ name, serialized });
+
+  if (isTemplateMode()) {
+    // The template working model is the stage-1 target: committing here is what
+    // makes the change visible to the later template save.
+    Object.assign(slide, staged);
+    markTemplateDirty();
+  } else {
+    const saved = await persistCurrentWorkspace(
+      bridge.withStagedSlide(slides, slide.id, staged)
+    );
+    if (!saved) {
+      alert("저장 중 오류 발생: 슬라이드를 서버에 저장하지 못했습니다.");
+      return;
+    }
+    Object.assign(slide, staged);
+    syncWorkingSlidesToState();
+  }
+
+  if (customEditorSession) {
+    customEditorSession.markSaved(slide.id);
+  }
+
+  hasUnsavedChanges = false;
+  updateSaveButtonState();
+  updateButtonsState(slide);
+  renderSlideList();
+  alert("저장되었습니다.");
+}
+
 function toggleSettingsMode(mode) {
   updateSettingsVisibility(mode);
 }
@@ -3519,6 +3749,17 @@ function updateSettingsVisibility(overrideMode) {
   setHidden(scriptureSlideSettings, !isScripture);
   setHidden(hymnSlideSettings, !isHymn);
   setHidden(simpleSlideSettings, !isSimpleFamily);
+
+  // A custom slide edits itself on the canvas: no form settings, and the canvas
+  // replaces the separate preview instead of doubling it.
+  const customVisibility = customSlideBridge
+    ? customSlideBridge.decideCustomVisibility(type)
+    : {
+        showCustomWorkspace: type === "custom",
+        showPreview: type !== "custom",
+      };
+  setHidden(customSlideEditorRoot, !customVisibility.showCustomWorkspace);
+  setHidden(slidePreviewArea, !customVisibility.showPreview);
 
   if (!isSimpleFamily) return;
 
@@ -3557,6 +3798,7 @@ function resetCurrentSlide() {
   populateEditor(slide);
   renderPreview(slide);
   hasUnsavedChanges = false;
+  updateSaveButtonState();
   updateButtonsState(slide);
 }
 
@@ -3707,7 +3949,7 @@ function renderSlideList() {
 
     const typeBadge = document.createElement("span");
     typeBadge.className = "slide-type-badge";
-    typeBadge.textContent = slide.type === "title" ? "TITLE" : slide.type === "custom-title" ? "TITLE+" : slide.type === "ad" ? "AD" : slide.type === "scripture" ? "말씀" : slide.sourceType === "upload" ? "PPT/PPTX" : "TEXT";
+    typeBadge.textContent = slide.type === "title" ? "TITLE" : slide.type === "custom-title" ? "TITLE+" : slide.type === "custom" ? "커스텀" : slide.type === "ad" ? "AD" : slide.type === "scripture" ? "말씀" : slide.sourceType === "upload" ? "PPT/PPTX" : "TEXT";
 
     const saveBadge = document.createElement("span");
     saveBadge.className = `slide-save-badge${slide.saved ? "" : " unsaved"}`;
@@ -3765,6 +4007,13 @@ async function saveCurrentSlide() {
   }
 
   try {
+    // Custom slides commit nothing until their save succeeds, so they run
+    // before the shared name/type assignment below.
+    if (slideTypeSelect.value === 'custom') {
+      await saveCustomSlide(slide, name);
+      return;
+    }
+
     slide.name = name;
     slide.type = slideTypeSelect.value;
 
@@ -4010,6 +4259,7 @@ async function saveCurrentSlide() {
     }
 
     hasUnsavedChanges = false;
+    updateSaveButtonState();
     updateButtonsState(slide);
     renderSlideList();
     alert("저장되었습니다.");
@@ -4087,6 +4337,53 @@ async function downloadSlide() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+      return;
+    } catch (e) {
+      alert("다운로드 중 오류가 발생했습니다.");
+      console.error(e);
+      return;
+    }
+  }
+
+  if (slide.type === 'custom') {
+    try {
+      const resp = await fetch('/api/create-custom-slide-pptx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: slide.name,
+          customSlide: copyCustomSlideModel(slide.customSlide) || emptyCustomSlideModel(),
+        })
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        alert("다운로드 실패: " + (err.error || "Unknown Error"));
+        return;
+      }
+
+      const skippedImages = customSlideBridge
+        ? customSlideBridge.parseSkippedImageWarnings(
+            resp.headers.get('X-Custom-Slide-Warnings')
+          )
+        : 0;
+
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = customSlideBridge
+        ? customSlideBridge.customSlideDownloadFilename(slide.name)
+        : `${slide.name || 'custom_slide'}.pptx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      // The download already succeeded; this only reports what was left out.
+      if (skippedImages > 0) {
+        alert(`이미지 ${skippedImages}개를 불러올 수 없어 건너뛰고 저장했습니다.`);
+      }
       return;
     } catch (e) {
       alert("다운로드 중 오류가 발생했습니다.");
@@ -4300,6 +4597,8 @@ function buildSerializableSlide(slide) {
     themeId: slide.themeId,
     customImageData: slide.customImageData,
     scriptureSignature: slide.scriptureSignature,
+    // Deep copy so clones and templates never share a canvas model.
+    customSlide: copyCustomSlideModel(slide.customSlide),
   };
 }
 
@@ -4545,6 +4844,12 @@ async function downloadSelectedSlidesBundle() {
       throw new Error(payload.error || "선택 슬라이드 묶음 생성에 실패했습니다.");
     }
 
+    const skippedImages = customSlideBridge
+      ? customSlideBridge.parseSkippedImageWarnings(
+          resp.headers.get("X-Custom-Slide-Warnings")
+        )
+      : 0;
+
     const blob = await resp.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -4556,6 +4861,11 @@ async function downloadSelectedSlidesBundle() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+
+    // The download already succeeded; this only reports what was left out.
+    if (skippedImages > 0) {
+      alert(`이미지 ${skippedImages}개를 불러올 수 없어 건너뛰고 저장했습니다.`);
+    }
   } catch (err) {
     alert(err.message || "선택 슬라이드 다운로드 중 오류가 발생했습니다.");
   }
@@ -4609,6 +4919,8 @@ function cancelEdit() {
     slides = slides.filter(s => s.id !== currentSlideId);
     currentSlideId = null;
     hasUnsavedChanges = false;
+    releaseCustomEditorSlide();
+    updateSaveButtonState();
 
     emptyEditorState.style.display = "flex";
     slideEditor.style.display = "none";
@@ -4616,6 +4928,8 @@ function cancelEdit() {
   } else {
     currentSlideId = null;
     hasUnsavedChanges = false;
+    releaseCustomEditorSlide();
+    updateSaveButtonState();
     emptyEditorState.style.display = "flex";
     slideEditor.style.display = "none";
     renderSlideList();
@@ -4668,6 +4982,7 @@ templateDeleteBtn.addEventListener("click", deleteActiveTemplate);
 ].forEach((el) => {
   el.addEventListener("input", () => {
     hasUnsavedChanges = true;
+    updateSaveButtonState();
     renderPreview();
   });
 });
