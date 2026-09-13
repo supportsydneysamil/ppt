@@ -8,8 +8,13 @@ import {
   getPendingChangeScopes,
   getSaveSequence,
   getUnsavedChangesMessage,
+  isSaveBusy,
+  isSlideUnsaved,
+  runGuardedTransition,
+  saveAllPendingScopes,
   selectTransientPreviewFiles,
   shouldRecaptureSlideBaseline,
+  shouldWarnBeforeUnload,
   toFileMetadata,
   withTransientFiles,
 } from "../lib/save-state.js";
@@ -274,5 +279,268 @@ describe("save state decisions", () => {
       }),
       false
     );
+  });
+
+  it("treats a slide without a saved flag as unsaved", () => {
+    assert.equal(isSlideUnsaved({}), true);
+    assert.equal(isSlideUnsaved({ saved: false }), true);
+    assert.equal(isSlideUnsaved({ saved: undefined }), true);
+    assert.equal(isSlideUnsaved({ saved: true }), false);
+    assert.equal(isSlideUnsaved(null), false);
+    assert.equal(isSlideUnsaved(undefined), false);
+  });
+
+  it("warns before unload only for actual dirty state", () => {
+    assert.equal(
+      shouldWarnBeforeUnload({ slideDirty: false, templateDirty: false }),
+      false
+    );
+    assert.equal(
+      shouldWarnBeforeUnload({ slideDirty: true, templateDirty: false }),
+      true
+    );
+    assert.equal(
+      shouldWarnBeforeUnload({ slideDirty: false, templateDirty: true }),
+      true
+    );
+    assert.equal(
+      shouldWarnBeforeUnload({ slideDirty: true, templateDirty: true }),
+      true
+    );
+  });
+
+  it("reports a save as busy while either scope is in flight", () => {
+    assert.equal(isSaveBusy({ slideSaving: false, templateSaving: false }), false);
+    assert.equal(isSaveBusy({ slideSaving: true, templateSaving: false }), true);
+    assert.equal(isSaveBusy({ slideSaving: false, templateSaving: true }), true);
+  });
+});
+
+// Drives the save sequence and the popup choices without touching the DOM, so
+// the orchestration decisions are covered by real assertions.
+function createGuardHarness(overrides = {}) {
+  const state = {
+    slideDirty: false,
+    templateDirty: false,
+    slideSaving: false,
+    templateSaving: false,
+    ...(overrides.state || {}),
+  };
+  const calls = {
+    dialog: [],
+    saved: [],
+    discard: 0,
+    transition: 0,
+    busy: [],
+    blocked: 0,
+  };
+  const choices = overrides.choices ? [...overrides.choices] : [];
+
+  return {
+    state,
+    calls,
+    options: {
+      getState: () => ({ ...state }),
+      showDialog: async (scopes) => {
+        calls.dialog.push(scopes);
+        return choices.length ? choices.shift() : "cancel";
+      },
+      saveScope: async (scope) => {
+        calls.saved.push(scope);
+        return overrides.saveScope
+          ? overrides.saveScope(scope, state)
+          : true;
+      },
+      discard: async () => {
+        calls.discard += 1;
+        return overrides.discard ? overrides.discard(state) : true;
+      },
+      transition: async () => {
+        calls.transition += 1;
+      },
+      setBusy: (busy) => calls.busy.push(busy),
+      onBlocked: () => {
+        calls.blocked += 1;
+      },
+    },
+  };
+}
+
+describe("pending save sequence", () => {
+  it("asks for nothing when the workspace is already clean", async () => {
+    const attempted = [];
+    assert.equal(
+      await saveAllPendingScopes({
+        getState: () => ({ slideDirty: false, templateDirty: false }),
+        saveScope: async (scope) => {
+          attempted.push(scope);
+          return true;
+        },
+      }),
+      true
+    );
+    assert.deepEqual(attempted, []);
+  });
+
+  it("saves the template that the slide save just made dirty", async () => {
+    const state = { slideDirty: true, templateDirty: false };
+    const attempted = [];
+
+    assert.equal(
+      await saveAllPendingScopes({
+        getState: () => ({ ...state }),
+        saveScope: async (scope) => {
+          attempted.push(scope);
+          if (scope === "slide") {
+            state.slideDirty = false;
+            state.templateDirty = true;
+          } else {
+            state.templateDirty = false;
+          }
+          return true;
+        },
+      }),
+      true
+    );
+    assert.deepEqual(attempted, ["slide", "template"]);
+  });
+
+  it("stops at the first failing scope", async () => {
+    const attempted = [];
+    assert.equal(
+      await saveAllPendingScopes({
+        getState: () => ({ slideDirty: true, templateDirty: true }),
+        saveScope: async (scope) => {
+          attempted.push(scope);
+          return false;
+        },
+      }),
+      false
+    );
+    assert.deepEqual(attempted, ["slide"]);
+  });
+
+  it("gives up instead of spinning when a save never goes clean", async () => {
+    const attempted = [];
+    assert.equal(
+      await saveAllPendingScopes({
+        getState: () => ({ slideDirty: true, templateDirty: false }),
+        saveScope: async (scope) => {
+          attempted.push(scope);
+          return true;
+        },
+      }),
+      false
+    );
+    assert.deepEqual(attempted, ["slide", "slide", "slide"]);
+  });
+});
+
+describe("guarded transition orchestration", () => {
+  it("proceeds straight through a clean workspace", async () => {
+    const harness = createGuardHarness();
+
+    assert.equal(await runGuardedTransition(harness.options), true);
+    assert.equal(harness.calls.transition, 1);
+    assert.deepEqual(harness.calls.dialog, []);
+    assert.deepEqual(harness.calls.saved, []);
+  });
+
+  it("blocks the dialog and the transition while a save is in flight", async () => {
+    const slideBusy = createGuardHarness({
+      state: { slideDirty: true, slideSaving: true },
+    });
+    assert.equal(await runGuardedTransition(slideBusy.options), false);
+    assert.equal(slideBusy.calls.transition, 0);
+    assert.deepEqual(slideBusy.calls.dialog, []);
+    assert.equal(slideBusy.calls.blocked, 1);
+
+    const templateBusy = createGuardHarness({
+      state: { templateDirty: true, templateSaving: true },
+    });
+    assert.equal(await runGuardedTransition(templateBusy.options), false);
+    assert.equal(templateBusy.calls.transition, 0);
+    assert.deepEqual(templateBusy.calls.dialog, []);
+    assert.equal(templateBusy.calls.blocked, 1);
+  });
+
+  it("transitions only after every required save succeeds", async () => {
+    const harness = createGuardHarness({
+      state: { slideDirty: true },
+      choices: ["save"],
+      saveScope: (scope, state) => {
+        if (scope === "slide") {
+          state.slideDirty = false;
+          state.templateDirty = true;
+        } else {
+          state.templateDirty = false;
+        }
+        return true;
+      },
+    });
+
+    assert.equal(await runGuardedTransition(harness.options), true);
+    assert.deepEqual(harness.calls.dialog, [["slide"]]);
+    assert.deepEqual(harness.calls.saved, ["slide", "template"]);
+    assert.deepEqual(harness.calls.busy, [true, false]);
+    assert.equal(harness.calls.transition, 1);
+  });
+
+  it("does not transition when a required save fails, and stays retryable", async () => {
+    const harness = createGuardHarness({
+      state: { slideDirty: true, templateDirty: true },
+      choices: ["save", "cancel"],
+      saveScope: () => false,
+    });
+
+    assert.equal(await runGuardedTransition(harness.options), false);
+    assert.equal(harness.calls.transition, 0);
+    assert.deepEqual(harness.calls.saved, ["slide"]);
+    // The popup was offered again instead of closing on the failure.
+    assert.deepEqual(harness.calls.dialog, [
+      ["slide", "template"],
+      ["slide", "template"],
+    ]);
+    assert.deepEqual(harness.calls.busy, [true, false]);
+  });
+
+  it("does not transition when the discard cannot restore saved state", async () => {
+    const harness = createGuardHarness({
+      state: { templateDirty: true },
+      choices: ["discard", "cancel"],
+      discard: () => false,
+    });
+
+    assert.equal(await runGuardedTransition(harness.options), false);
+    assert.equal(harness.calls.discard, 1);
+    assert.equal(harness.calls.transition, 0);
+    assert.deepEqual(harness.calls.dialog, [["template"], ["template"]]);
+  });
+
+  it("transitions after a successful discard", async () => {
+    const harness = createGuardHarness({
+      state: { slideDirty: true },
+      choices: ["discard"],
+      discard: (state) => {
+        state.slideDirty = false;
+        return true;
+      },
+    });
+
+    assert.equal(await runGuardedTransition(harness.options), true);
+    assert.equal(harness.calls.discard, 1);
+    assert.equal(harness.calls.transition, 1);
+  });
+
+  it("keeps the workspace put when the user chooses to keep editing", async () => {
+    const harness = createGuardHarness({
+      state: { slideDirty: true },
+      choices: ["cancel"],
+    });
+
+    assert.equal(await runGuardedTransition(harness.options), false);
+    assert.equal(harness.calls.transition, 0);
+    assert.deepEqual(harness.calls.saved, []);
+    assert.equal(harness.calls.discard, 0);
   });
 });

@@ -1079,11 +1079,16 @@
       </div>
     </dialog>
 
-    <dialog id="unsavedChangesModal" class="modal-dialog">
+    <dialog
+      id="unsavedChangesModal"
+      class="modal-dialog"
+      aria-labelledby="unsavedChangesTitle"
+      aria-describedby="unsavedChangesMessage"
+    >
       <div class="modal-card">
         <div class="modal-header">
           <div>
-            <h3>저장하지 않은 변경사항</h3>
+            <h3 id="unsavedChangesTitle">저장하지 않은 변경사항</h3>
             <p id="unsavedChangesMessage"></p>
           </div>
         </div>
