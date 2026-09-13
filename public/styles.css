@@ -2897,7 +2897,7 @@ body[data-theme="light"] .rte-textarea {
 
 /* Keeps the stage at the same full-width 16:9 footprint the other slide types
    preview at, so the panels stack underneath instead of stealing its width. */
-.custom-editor[data-react-chrome="true"] {
+.custom-editor[data-react-chrome="true"]:not([hidden]) {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-template-areas:
