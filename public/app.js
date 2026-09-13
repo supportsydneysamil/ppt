@@ -1,3 +1,5 @@
+// The bundler roots at public/, so the shared lib is reached through the same
+// alias main.jsx uses rather than a server URL path.
 import {
   applyReorder,
   createSnapshot,
@@ -21,7 +23,7 @@ import {
   toFileMetadata,
   withTransientFiles,
   WORKSPACE_INIT_FAILED_MESSAGE,
-} from "/lib/save-state.js";
+} from "@lib/save-state.js";
 
 const testamentSelect = document.getElementById("testament");
 const bookSelect = document.getElementById("book");
@@ -887,6 +889,8 @@ const unsavedSaveBtn = document.getElementById("unsavedSaveBtn");
 const unsavedDiscardBtn = document.getElementById("unsavedDiscardBtn");
 const unsavedCancelBtn = document.getElementById("unsavedCancelBtn");
 const appToastRegion = document.getElementById("appToastRegion");
+const customSlideEditorRoot = document.getElementById("customSlideEditor");
+const slidePreviewArea = slidePreview ? slidePreview.closest(".preview-area") : null;
 
 // State
 let slides = [];
@@ -902,6 +906,10 @@ let currentSlideId = null;
 let slideBaselineSnapshot = null;
 let slideRuntimeDraft = {};
 let slideDirty = false;
+// Canvas dirtiness for the custom slide the editor is currently attached to.
+// The canvas tracks it against its own saved baseline, so it is kept beside
+// the snapshot state rather than folded into it.
+let customEditorDirty = false;
 let slideSaving = false;
 let templateSaving = false;
 // Main slide reorder persists immediately, so its request counts as a save in
@@ -1023,6 +1031,12 @@ function collectCurrentSlideDraft() {
   } else if (draft.type === "custom-title") {
     Object.assign(draft, collectCustomTitleSlideData());
     draft.sourceType = "basic";
+  } else if (draft.type === "custom") {
+    // A custom slide has no form fields beyond its name: the artwork lives on
+    // the canvas, which keeps its own baseline and is folded into the dirty
+    // state by refreshSaveState(). The stored model is carried through
+    // untouched so the projection never drops a saved slide's content.
+    draft.sourceType = "basic";
   } else if (draft.type === "hymn") {
     draft.hymnNumber = hymnNumberInput.value;
     draft.includeTitle = hymnIncludeTitle.checked;
@@ -1076,11 +1090,22 @@ function collectCurrentSlidePreviewDraft(slideOverride) {
 
 function refreshSaveState() {
   const draft = collectCurrentSlideDraft();
-  slideDirty = Boolean(
+  const recordDirty = Boolean(
     draft &&
       (slideBaselineSnapshot === null ||
         isSnapshotDirty(draft, slideBaselineSnapshot))
   );
+
+  // The canvas keeps its own baseline, so an undo back to the saved artwork
+  // reads as clean again while a pending rename or type switch still counts.
+  slideDirty =
+    draft?.type === "custom"
+      ? resolveCustomDirtyState({
+          slideSaved: slideBaselineSnapshot !== null,
+          editorDirty: customEditorDirty,
+          formDirty: recordDirty,
+        })
+      : recordDirty;
 
   const state = deriveSaveButtonState({
     hasSlide: Boolean(draft),
@@ -1093,6 +1118,9 @@ function refreshSaveState() {
   });
   if (editorSaveBtn) {
     editorSaveBtn.disabled = state.slideDisabled;
+    // Unsaved work is easy to miss on the canvas, where there is no form to
+    // look at, so the button carries a dot as well as its enabled state.
+    editorSaveBtn.classList.toggle("is-dirty", Boolean(slideDirty));
   }
   if (templateSaveBtn) {
     templateSaveBtn.disabled = state.templateDisabled;
@@ -1121,6 +1149,9 @@ function resetEditorSelection() {
   slideRuntimeDraft = {};
   slideDirty = false;
   clearTransientSlideFileInputs();
+  // Detach the canvas so a later stray change cannot touch the slide that was
+  // just left; refreshSaveState() below recomputes the buttons.
+  releaseCustomEditorSlide();
   emptyEditorState.style.display = "flex";
   slideEditor.style.display = "none";
   refreshSaveState();
@@ -1742,6 +1773,13 @@ slideTypeSelect.addEventListener('change', () => {
     syncScriptureImageUI(slides.find((s) => s.id === currentSlideId));
   }
   updateSettingsVisibility();
+  if (slideTypeSelect.value === 'custom') {
+    const current = slides.find((s) => s.id === currentSlideId);
+    // Switching type is itself an unsaved change, so the canvas starts dirty.
+    showCustomSlideInEditor(current, { markSaved: false });
+  } else {
+    releaseCustomEditorSlide();
+  }
   renderPreview();
   refreshSaveState();
 });
@@ -2204,18 +2242,20 @@ templateNameDisplay.addEventListener("click", renameActiveTemplate);
 
 // --- Storage (Server Side) ---
 
-async function saveSlidesToServer() {
+// `nextSlides` lets a caller persist a staged list before committing it to the
+// in-memory records, so a failed request leaves those records untouched.
+async function saveSlidesToServer(nextSlides = slides) {
   try {
     const resp = await fetch("/api/slides", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(slides),
+      body: JSON.stringify(nextSlides),
     });
     if (!resp.ok) {
       console.error("Failed to save slides");
       return false;
     }
-    mainSlides = slides.map((slide) => cloneSlide(slide));
+    mainSlides = nextSlides.map((slide) => cloneSlide(slide));
     return true;
   } catch (e) {
     console.error("Network error saving slides", e);
@@ -2293,8 +2333,8 @@ async function saveActiveTemplateToServer({ silent = false } = {}) {
   }
 }
 
-async function persistCurrentWorkspace() {
-  return saveSlidesToServer();
+async function persistCurrentWorkspace(nextSlides = slides) {
+  return saveSlidesToServer(nextSlides);
 }
 
 async function loadSlidesFromServer() {
@@ -2511,6 +2551,9 @@ function getSlideTypeLabel(slide) {
   if (slide.type === "custom-title") {
     return "타이틀 (Custom)";
   }
+  if (slide.type === "custom") {
+    return "커스텀 편집";
+  }
   if (slide.type === "ad") {
     return slide.sourceType === "upload" ? "광고 업로드" : "광고";
   }
@@ -2560,6 +2603,7 @@ function appendNewSlide() {
     customTitleDesign: "aurora",
     customTitleKo: "",
     customTitleEn: "",
+    customSlide: emptyCustomSlideModel(),
   };
   slides.push(newSlide);
   // Do NOT save to storage yet
@@ -2649,6 +2693,11 @@ function buildHymnTitleSlidePreview(hymnNumber, korTitle, engTitle) {
 
 function renderPreview(slideOverride) {
   if (!slidePreview) return;
+
+  // The custom canvas is the live WYSIWYG preview; never clear or replace it.
+  if ((slideOverride?.type ?? slideTypeSelect.value) === 'custom') {
+    return;
+  }
 
   let data = collectCurrentSlidePreviewDraft(slideOverride);
 
@@ -3272,7 +3321,10 @@ function clearTransientSlideFileInputs() {
   if (scripturePptxImageInput) scripturePptxImageInput.value = "";
 }
 
-function populateEditor(slide) {
+// `reloadCustomCanvas` is only turned off right after a successful custom save,
+// where the canvas already holds exactly what was committed and reloading it
+// would needlessly drop the user's selection.
+function populateEditor(slide, { reloadCustomCanvas = true } = {}) {
   clearTransientSlideFileInputs();
   slideNameInput.value = slide.name;
   slideTypeSelect.value = slide.type;
@@ -3285,7 +3337,16 @@ function populateEditor(slide) {
 
   updateSettingsVisibility(slide.sourceType);
 
-  if (slide.type === 'scripture') {
+  if (slide.type !== 'custom') {
+    // Detach the canvas so a later stray change cannot touch this slide.
+    releaseCustomEditorSlide();
+  }
+
+  if (slide.type === 'custom') {
+    if (reloadCustomCanvas) {
+      showCustomSlideInEditor(slide);
+    }
+  } else if (slide.type === 'scripture') {
     populateScriptureEditor(slide);
   } else if (slide.type === 'title') {
 
@@ -4079,6 +4140,168 @@ function buildCustomTitleSlidePreview(data, previewWidth) {
   return container;
 }
 
+// --- Custom (WYSIWYG) slide editor integration ---
+
+// The bridge and the editor are ES modules while this file is a classic script,
+// so they are pulled in dynamically. The import starts at load time, but every
+// caller still has to cope with it not being ready yet.
+let customSlideBridge = null;
+let customSlideBridgePromise = null;
+let customEditorSession = null;
+let customEditorSessionPromise = null;
+
+function loadCustomSlideBridge() {
+  if (!customSlideBridgePromise) {
+    customSlideBridgePromise = import("./custom-slide-bridge.js").then((module) => {
+      customSlideBridge = module;
+      return module;
+    });
+  }
+  return customSlideBridgePromise;
+}
+
+loadCustomSlideBridge().catch((e) => {
+  console.error("커스텀 편집기 모듈을 불러오지 못했습니다:", e);
+});
+
+// Mirrors createDefaultCustomSlide() for the short window before the module
+// lands; the bridge is authoritative once it has loaded.
+function emptyCustomSlideModel() {
+  if (customSlideBridge) {
+    return customSlideBridge.createEmptyCustomSlide();
+  }
+  return {
+    version: 1,
+    width: 1280,
+    height: 720,
+    background: { color: "#ffffff" },
+    elements: [],
+  };
+}
+
+function copyCustomSlideModel(model) {
+  if (model === null || model === undefined) {
+    return null;
+  }
+  if (customSlideBridge) {
+    return customSlideBridge.copyCustomSlideModel(model);
+  }
+  return JSON.parse(JSON.stringify(model));
+}
+
+function resolveCustomDirtyState(state) {
+  if (customSlideBridge) {
+    return customSlideBridge.resolveCustomDirtyState(state);
+  }
+  return !state.slideSaved || Boolean(state.editorDirty) || Boolean(state.formDirty);
+}
+
+// One editor instance for the whole workspace, created at most once.
+function ensureCustomEditorSession() {
+  if (!customEditorSessionPromise) {
+    customEditorSessionPromise = (async () => {
+      const bridge = await loadCustomSlideBridge();
+      if (!customSlideEditorRoot) {
+        throw new Error("커스텀 편집기 영역을 찾을 수 없습니다.");
+      }
+      const { createCustomSlideEditor } = await import("./custom-slide-editor.js");
+      const session = bridge.createCustomEditorSession({
+        root: customSlideEditorRoot,
+        createEditor: createCustomSlideEditor,
+        uploadImage: (file) => bridge.uploadCustomImage(file),
+        onChange: handleCustomEditorChange,
+        onError: (message) => console.warn("커스텀 편집기:", message),
+      });
+      await session.ensureEditor();
+      customEditorSession = session;
+      return session;
+    })().catch((error) => {
+      customEditorSessionPromise = null;
+      throw error;
+    });
+  }
+  return customEditorSessionPromise;
+}
+
+function handleCustomEditorChange({ slideId, dirty }) {
+  if (!slideId || slideId !== currentSlideId) {
+    return;
+  }
+  customEditorDirty = Boolean(dirty);
+  // Same path as a keystroke in the form: the guard, the save buttons and the
+  // beforeunload warning all read the state this recomputes.
+  refreshSaveState();
+}
+
+// Loads a slide's canvas. Stale loads are dropped by the session, so switching
+// slides quickly can never leave one slide showing another's artwork.
+function showCustomSlideInEditor(slide, { markSaved = Boolean(slide?.saved) } = {}) {
+  if (!slide) return Promise.resolve();
+
+  const slideId = slide.id;
+  const model = copyCustomSlideModel(slide.customSlide) || emptyCustomSlideModel();
+
+  return ensureCustomEditorSession()
+    .then((session) => session.showSlide(slideId, model, { markSaved }))
+    .then((result) => {
+      if (!result?.applied || slideId !== currentSlideId) {
+        return;
+      }
+      customEditorDirty = Boolean(result.dirty);
+      refreshSaveState();
+    })
+    .catch((error) => {
+      console.error("커스텀 편집기 로드 실패:", error);
+      alert("커스텀 편집기를 불러오지 못했습니다: " + error.message);
+    });
+}
+
+function releaseCustomEditorSlide() {
+  customEditorDirty = false;
+  if (customEditorSession) {
+    customEditorSession.release();
+  }
+}
+
+/**
+ * The fields a custom save will commit, read off the live canvas. Nothing is
+ * written to the slide record here: the caller commits them only once
+ * persistence succeeded, so a failed save leaves the record, the canvas
+ * baseline and the name field exactly as they were. Returns null - with the
+ * reason already reported - when the editor is not ready to be read.
+ */
+function stageCustomSlideCandidate(slide, name) {
+  const bridge = customSlideBridge;
+  if (!bridge) {
+    reportSaveFailure("커스텀 편집기 모듈을 불러오는 중입니다. 잠시 후 다시 저장해주세요.");
+    return null;
+  }
+
+  const serialized = customEditorSession
+    ? customEditorSession.serialize(slide.id)
+    : null;
+  if (!serialized) {
+    reportSaveFailure("커스텀 편집기를 불러오는 중입니다. 잠시 후 다시 저장해주세요.");
+    return null;
+  }
+
+  return bridge.stageCustomSlideSave({ name, serialized });
+}
+
+/**
+ * Rebases the canvas onto the model that was just committed. Reports whether
+ * the canvas is the one that was saved, so the caller knows it does not have
+ * to reload it.
+ */
+function markCustomEditorSaved(slideId) {
+  if (!customEditorSession || !customEditorSession.isActive(slideId)) {
+    return false;
+  }
+  customEditorSession.markSaved(slideId);
+  customEditorDirty = false;
+  return true;
+}
+
 function toggleSettingsMode(mode) {
   updateSettingsVisibility(mode);
 }
@@ -4106,6 +4329,17 @@ function updateSettingsVisibility(overrideMode) {
   setHidden(scriptureSlideSettings, !isScripture);
   setHidden(hymnSlideSettings, !isHymn);
   setHidden(simpleSlideSettings, !isSimpleFamily);
+
+  // A custom slide edits itself on the canvas: no form settings, and the canvas
+  // replaces the separate preview instead of doubling it.
+  const customVisibility = customSlideBridge
+    ? customSlideBridge.decideCustomVisibility(type)
+    : {
+        showCustomWorkspace: type === "custom",
+        showPreview: type !== "custom",
+      };
+  setHidden(customSlideEditorRoot, !customVisibility.showCustomWorkspace);
+  setHidden(slidePreviewArea, !customVisibility.showPreview);
 
   if (!isSimpleFamily) return;
 
@@ -4299,7 +4533,7 @@ function renderSlideList() {
 
     const typeBadge = document.createElement("span");
     typeBadge.className = "slide-type-badge";
-    typeBadge.textContent = slide.type === "title" ? "TITLE" : slide.type === "custom-title" ? "TITLE+" : slide.type === "ad" ? "AD" : slide.type === "scripture" ? "말씀" : slide.sourceType === "upload" ? "PPT/PPTX" : "TEXT";
+    typeBadge.textContent = slide.type === "title" ? "TITLE" : slide.type === "custom-title" ? "TITLE+" : slide.type === "custom" ? "커스텀" : slide.type === "ad" ? "AD" : slide.type === "scripture" ? "말씀" : slide.sourceType === "upload" ? "PPT/PPTX" : "TEXT";
 
     const saveBadge = document.createElement("span");
     saveBadge.className = `slide-save-badge${slide.saved ? "" : " unsaved"}`;
@@ -4431,7 +4665,17 @@ async function saveCurrentSlide({ silent = false } = {}) {
   slideSaving = true;
   refreshSaveState();
   try {
-    if (slide.type === 'hymn') {
+    if (slide.type === 'custom') {
+      // The canvas is the record for a custom slide, so the staged values come
+      // from the editor. Nothing is written to the stored slide here:
+      // commitSlideCandidate() below is what makes the save a transaction.
+      const staged = stageCustomSlideCandidate(slide, name);
+      if (!staged) {
+        return false;
+      }
+      Object.assign(slide, staged);
+
+    } else if (slide.type === 'hymn') {
       const number = hymnNumberInput.value;
       if (!number) {
         reportSaveFailure("찬송가 장수를 입력하세요.");
@@ -4762,7 +5006,11 @@ async function saveCurrentSlide({ silent = false } = {}) {
     // Never write the saved model into an editor that has moved on to another
     // slide, which a programmatic save could otherwise do.
     if (currentSlideId === savingSlideId) {
-      populateEditor(slide);
+      // The canvas already holds exactly what was committed, so it is rebased
+      // onto the new baseline in place instead of being reloaded: a reload
+      // would drop the user's selection right after a successful save.
+      const canvasInPlace = markCustomEditorSaved(slide.id);
+      populateEditor(slide, { reloadCustomCanvas: !canvasInPlace });
       slideRuntimeDraft = {};
       slideBaselineSnapshot = createSnapshot(collectCurrentSlideDraft());
       updateButtonsState(slide);
@@ -4855,6 +5103,53 @@ async function downloadSlide() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+      return;
+    } catch (e) {
+      alert("다운로드 중 오류가 발생했습니다.");
+      console.error(e);
+      return;
+    }
+  }
+
+  if (slide.type === 'custom') {
+    try {
+      const resp = await fetch('/api/create-custom-slide-pptx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: slide.name,
+          customSlide: copyCustomSlideModel(slide.customSlide) || emptyCustomSlideModel(),
+        })
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        alert("다운로드 실패: " + (err.error || "Unknown Error"));
+        return;
+      }
+
+      const skippedImages = customSlideBridge
+        ? customSlideBridge.parseSkippedImageWarnings(
+            resp.headers.get('X-Custom-Slide-Warnings')
+          )
+        : 0;
+
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = customSlideBridge
+        ? customSlideBridge.customSlideDownloadFilename(slide.name)
+        : `${slide.name || 'custom_slide'}.pptx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      // The download already succeeded; this only reports what was left out.
+      if (skippedImages > 0) {
+        alert(`이미지 ${skippedImages}개를 불러올 수 없어 건너뛰고 저장했습니다.`);
+      }
       return;
     } catch (e) {
       alert("다운로드 중 오류가 발생했습니다.");
@@ -5068,6 +5363,8 @@ function buildSerializableSlide(slide) {
     themeId: slide.themeId,
     customImageData: slide.customImageData,
     scriptureSignature: slide.scriptureSignature,
+    // Deep copy so clones and templates never share a canvas model.
+    customSlide: copyCustomSlideModel(slide.customSlide),
   };
 }
 
@@ -5343,6 +5640,12 @@ async function downloadSelectedSlidesBundle() {
       throw new Error(payload.error || "선택 슬라이드 묶음 생성에 실패했습니다.");
     }
 
+    const skippedImages = customSlideBridge
+      ? customSlideBridge.parseSkippedImageWarnings(
+          resp.headers.get("X-Custom-Slide-Warnings")
+        )
+      : 0;
+
     const blob = await resp.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -5354,6 +5657,11 @@ async function downloadSelectedSlidesBundle() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+
+    // The download already succeeded; this only reports what was left out.
+    if (skippedImages > 0) {
+      alert(`이미지 ${skippedImages}개를 불러올 수 없어 건너뛰고 저장했습니다.`);
+    }
   } catch (err) {
     alert(err.message || "선택 슬라이드 다운로드 중 오류가 발생했습니다.");
   }
@@ -5413,6 +5721,8 @@ function cancelEdit() {
         refreshTemplateDirtyState();
       }
     }
+    // resetEditorSelection() detaches the custom canvas and refreshes the
+    // buttons, so closing the editor needs nothing else here.
     resetEditorSelection();
     renderSlideList();
   });

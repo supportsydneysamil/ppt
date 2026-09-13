@@ -2,9 +2,11 @@
 //
 //   npm run test:browser
 //
-// Starts the app server on an ephemeral port, stubs every /api route inside the
-// browser and stops the server again, so no data file is ever written. Set
-// BASE_URL to point at a server you started yourself instead.
+// Builds the client bundle, starts the app server on an ephemeral port, stubs
+// every /api route inside the browser and stops the server again, so no data
+// file is ever written. The page entry point is bundled, so the server has to
+// serve dist/ rather than public/ for the app to boot at all. Set BASE_URL to
+// point at a server you started yourself instead.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
@@ -56,14 +58,36 @@ async function waitForServer(url, { timeoutMs = 60000, child = null } = {}) {
   }
 }
 
+// The scenarios exercise the shipped bundle, so they build it from the current
+// sources instead of trusting whatever dist/ happens to hold.
+function buildClient() {
+  return new Promise((resolve, reject) => {
+    const build = spawn(
+      process.execPath,
+      [path.join(repoRoot, "node_modules", "vite", "bin", "vite.js"), "build"],
+      { cwd: repoRoot, stdio: ["ignore", "ignore", "pipe"] }
+    );
+    let stderr = "";
+    build.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    build.once("error", reject);
+    build.once("exit", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`vite build failed with code ${code}: ${stderr}`));
+    });
+  });
+}
+
 async function startServer() {
   if (externalBaseURL) {
     await waitForServer(baseURL);
     return null;
   }
+  await buildClient();
   const child = spawn(process.execPath, ["server.js"], {
     cwd: repoRoot,
-    env: { ...process.env, PORT: String(port) },
+    env: { ...process.env, PORT: String(port), NODE_ENV: "production" },
     stdio: ["ignore", "pipe", "pipe"],
   });
   child.stdout.resume();

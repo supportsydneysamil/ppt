@@ -1918,6 +1918,13 @@ body {
   margin-left: auto;
 }
 
+/* Unsaved work is easy to miss on the canvas, where there is no form to look at. */
+#editorSaveBtn.is-dirty::after {
+  content: "•";
+  margin-left: 4px;
+  line-height: 1;
+}
+
 .small {
   min-height: var(--ctrl-h-sm);
   padding: 0 12px;
@@ -2002,6 +2009,11 @@ body {
   gap: 14px;
   border-top: 1px dashed var(--border);
   padding-top: 18px;
+}
+
+/* `display: grid` above would otherwise beat the hidden attribute. */
+.preview-area[hidden] {
+  display: none;
 }
 
 .preview-area h4 {
@@ -2713,4 +2725,308 @@ body[data-theme="light"] .rte-textarea {
 
 .slide-preview-box:hover .preview-filename-badge {
   opacity: 1;
+}
+
+/* --- Custom WYSIWYG slide editor --- */
+.custom-editor {
+  display: grid;
+  gap: var(--sp-3);
+}
+
+.custom-editor[hidden] {
+  display: none;
+}
+
+.custom-editor-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--sp-3);
+}
+
+.custom-editor-field {
+  display: grid;
+  gap: var(--sp-1);
+}
+
+.custom-editor-field select {
+  min-width: 180px;
+}
+
+.custom-editor-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-soft);
+}
+
+.custom-editor-tool-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  padding-right: var(--sp-2);
+  border-right: 1px solid var(--border);
+}
+
+.custom-editor-tool-group:last-child {
+  border-right: none;
+  padding-right: 0;
+}
+
+.custom-editor-tool {
+  height: var(--ctrl-h-sm);
+  padding: 0 10px;
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.custom-editor-tool:hover:not(:disabled) {
+  border-color: var(--brand-edge);
+  background: var(--brand-tint);
+}
+
+.custom-editor-tool:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.custom-editor-tool:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.custom-editor-tool[aria-pressed="true"] {
+  background: var(--brand-tint-strong);
+  border-color: var(--brand-edge);
+}
+
+.custom-editor-tool.danger {
+  color: var(--danger);
+}
+
+/* The stage stands in for the preview box the other slide types show, so it
+   keeps that full-width 16:9 footprint and the props sit underneath. */
+.custom-editor-body {
+  display: grid;
+  gap: var(--sp-3);
+}
+
+.custom-editor-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: #2a2a2a;
+}
+
+.custom-editor-stage .canvas-container {
+  margin: 0 auto;
+}
+
+.custom-editor-props {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  align-items: start;
+  gap: var(--sp-3) var(--sp-5);
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-soft);
+}
+
+.custom-editor-panel {
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.custom-editor-panel[hidden] {
+  display: none;
+}
+
+.custom-editor-panel-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.custom-editor-row {
+  display: grid;
+  gap: var(--sp-1);
+}
+
+.custom-editor-row-inline {
+  grid-auto-flow: column;
+  justify-content: start;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.custom-editor-row textarea {
+  resize: vertical;
+}
+
+.custom-editor-status {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  min-height: 18px;
+}
+
+.custom-editor-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.custom-editor-error[hidden] {
+  display: none;
+}
+
+.custom-editor-react-root {
+  display: none;
+}
+
+/* Keeps the stage at the same full-width 16:9 footprint the other slide types
+   preview at, so the panels stack underneath instead of stealing its width. */
+.custom-editor[data-react-chrome="true"] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "bar"
+    "tools"
+    "stage"
+    "side";
+  gap: var(--sp-3);
+}
+
+.custom-editor[data-react-chrome="true"] > .custom-editor-bar,
+.custom-editor[data-react-chrome="true"] > .custom-editor-toolbar,
+.custom-editor[data-react-chrome="true"] > .custom-editor-body > .custom-editor-props {
+  display: none;
+}
+
+.custom-editor[data-react-chrome="true"] .custom-editor-react-root {
+  display: contents;
+}
+
+.custom-editor[data-react-chrome="true"] .custom-editor-chrome {
+  display: contents;
+}
+
+.custom-editor[data-react-chrome="true"] .custom-editor-bar {
+  grid-area: bar;
+}
+
+.custom-editor[data-react-chrome="true"] .custom-editor-toolbar {
+  grid-area: tools;
+}
+
+.custom-editor[data-react-chrome="true"] .custom-editor-body {
+  grid-area: stage;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.custom-editor[data-react-chrome="true"] .custom-editor-side {
+  grid-area: side;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: var(--sp-3);
+  align-items: start;
+}
+
+.custom-editor-stage {
+  overflow: auto;
+}
+
+.custom-editor-context-toolbar {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  gap: var(--sp-1);
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.custom-editor-context-toolbar[hidden] {
+  display: none;
+}
+
+.custom-editor-context-menu {
+  position: absolute;
+  z-index: 6;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  min-width: 160px;
+}
+
+.custom-editor-context-menu[hidden] {
+  display: none;
+}
+
+.custom-editor-context-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+
+.custom-editor-layer-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.custom-editor-layer {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.custom-editor-layer.is-active {
+  outline: 1px solid var(--brand-edge);
+}
+
+.font-preview-select option {
+  font-size: 14px;
+}
+
+.custom-color-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.custom-color-picker-value {
+  width: 96px;
+}
+
+@media (max-width: 900px) {
+  .custom-editor-props {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .custom-editor[data-react-chrome="true"] .custom-editor-side {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
