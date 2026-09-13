@@ -54,6 +54,20 @@
    npm start
    ```
 
+3. 테스트
+   ```bash
+   npm test
+   ```
+
+4. 저장 상태·팝업 브라우저 회귀 테스트
+   ```bash
+   npx playwright install chromium
+   npm run test:browser
+   ```
+   - 서버를 빈 포트에 직접 띄우고 끝나면 종료합니다. 모든 `/api` 호출은 브라우저 안에서 가로채므로
+     `data/` 파일은 변경되지 않습니다.
+   - 이미 띄워 둔 서버를 쓰려면 `BASE_URL=http://127.0.0.1:3000 npm run test:browser`.
+
 ## 프로젝트 구조
 
 - **Backend (`server.js`)**:

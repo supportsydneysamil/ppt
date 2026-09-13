@@ -1,3 +1,30 @@
+// The bundler roots at public/, so the shared lib is reached through the same
+// alias main.jsx uses rather than a server URL path.
+import {
+  applyReorder,
+  createSnapshot,
+  deriveSaveButtonState,
+  getBooksUnavailableMessage,
+  getBusyBlockMessage,
+  getUnsavedChangesMessage,
+  isDiscardComplete,
+  isSaveBusy,
+  isSlideUnsaved,
+  isSnapshotDirty,
+  isTemplateDirty,
+  planDiscard,
+  planReorder,
+  REORDER_FAILURE_MESSAGE,
+  runGuardedTransition,
+  selectTransientPreviewFiles,
+  shouldRecaptureSlideBaseline,
+  shouldWarnBeforeUnload,
+  TEMPLATE_SAVE_BLOCKED_HINT,
+  toFileMetadata,
+  withTransientFiles,
+  WORKSPACE_INIT_FAILED_MESSAGE,
+} from "@lib/save-state.js";
+
 const testamentSelect = document.getElementById("testament");
 const bookSelect = document.getElementById("book");
 const chapterInput = document.getElementById("chapter");
@@ -44,6 +71,9 @@ const titleSlideTypeGroup = document.getElementById("titleSlideTypeGroup");
 let dataCache = null;
 let lastVersePayload = null;
 let lastVerseRequest = null;
+// The scripture editor reads its testament and book from this cache, so a
+// slide may not be selected or baselined before it is filled.
+let booksReady = false;
 
 async function loadBooks() {
   const resp = await fetch("/api/books");
@@ -51,6 +81,7 @@ async function loadBooks() {
     throw new Error("failed to load books");
   }
   dataCache = await resp.json();
+  booksReady = true;
   renderTestaments();
   fillScriptureBookSelects();
 }
@@ -324,6 +355,10 @@ function handleStepperButtonClick(event) {
     syncVerseRange(input);
   }
 
+  // A programmatic value change fires nothing on its own, so every stepper
+  // announces itself the same way a keystroke would.
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+
   input.focus();
   input.select();
 }
@@ -359,7 +394,9 @@ stepperButtons.forEach((button) => {
   input.addEventListener("blur", () => normalizeNumberInput(input));
 });
 
-loadBooks().catch(() => {
+// Pinned so the PPT workspace can wait for it: a scripture slide selected
+// before the book list exists would be baselined with an empty book.
+const booksSettled = loadBooks().catch(() => {
   outputText.textContent = "도서 목록을 불러오지 못했습니다.";
 });
 setDownloadState(false);
@@ -688,6 +725,13 @@ async function handleExportToPptGenerator(event) {
     return;
   }
 
+  // This flow jumps into the PPT workspace and resets it, so pending slide or
+  // template work has to be settled before the export starts. Cancelling here
+  // aborts the export instead of silently zeroing that work later.
+  if (!(await ensureNoPendingChanges())) {
+    return;
+  }
+
   scriptureExportConfirmBtn.disabled = true;
   scriptureExportConfirmBtn.textContent = "보내는 중...";
 
@@ -711,14 +755,17 @@ async function handleExportToPptGenerator(event) {
 
     mainSlides.push(cloneSlide(responsePayload.slide));
     closeScriptureExportModal();
-    switchView("ppt");
+    // The preflight guard already settled every pending change and the slide
+    // is stored on the server, so the jump uses the unguarded helpers.
+    applyViewChange("ppt");
     pptTab = "slides";
     activeTemplateId = null;
     hasPendingTemplateChanges = false;
+    templateBaselineSnapshot = null;
     loadWorkspaceSlides(mainSlides);
     renderPptScreen();
-    selectSlide(responsePayload.slide.id);
-    alert(`슬라이드가 추가되었습니다: ${responsePayload.slide.name}`);
+    applySlideSelection(responsePayload.slide.id);
+    showToast(`슬라이드가 추가되었습니다: ${responsePayload.slide.name}`);
   } catch (err) {
     alert(err?.message || "슬라이드를 보내는 중 오류가 발생했습니다.");
   } finally {
@@ -834,6 +881,14 @@ const customTitleDesignGrid = document.getElementById("customTitleDesignGrid");
 const customTitleDesignSelect = document.getElementById("customTitleDesign");
 const customTitleKoInput = document.getElementById("customTitleKo");
 const customTitleEnInput = document.getElementById("customTitleEn");
+const templateSaveHint = document.getElementById("templateSaveHint");
+const unsavedChangesModal = document.getElementById("unsavedChangesModal");
+const unsavedChangesCard = document.getElementById("unsavedChangesCard");
+const unsavedChangesMessage = document.getElementById("unsavedChangesMessage");
+const unsavedSaveBtn = document.getElementById("unsavedSaveBtn");
+const unsavedDiscardBtn = document.getElementById("unsavedDiscardBtn");
+const unsavedCancelBtn = document.getElementById("unsavedCancelBtn");
+const appToastRegion = document.getElementById("appToastRegion");
 const customSlideEditorRoot = document.getElementById("customSlideEditor");
 const slidePreviewArea = slidePreview ? slidePreview.closest(".preview-area") : null;
 
@@ -846,8 +901,23 @@ let templates = [];
 let pptTab = "slides";
 let activeTemplateId = null;
 let hasPendingTemplateChanges = false;
+let templateBaselineSnapshot = null;
 let currentSlideId = null;
-let hasUnsavedChanges = false;
+let slideBaselineSnapshot = null;
+let slideRuntimeDraft = {};
+let slideDirty = false;
+// Canvas dirtiness for the custom slide the editor is currently attached to.
+// The canvas tracks it against its own saved baseline, so it is kept beside
+// the snapshot state rather than folded into it.
+let customEditorDirty = false;
+let slideSaving = false;
+let templateSaving = false;
+// Main slide reorder persists immediately, so its request counts as a save in
+// flight: nothing may delete, reset or reorder again until it settles.
+let reorderSaving = false;
+// Depth > 0 means a guarded transition is already running, so nested helpers
+// must not raise a second unsaved-changes popup.
+let guardedTransitionDepth = 0;
 let selectedSlideIds = new Set();
 let draggedSlideId = null;
 
@@ -909,42 +979,463 @@ function markTemplateDirty() {
     return;
   }
   syncWorkingSlidesToState();
-  hasPendingTemplateChanges = true;
+  refreshTemplateDirtyState();
+}
+
+function collectActiveTemplateDraft() {
+  const template = getActiveTemplate();
+  return template
+    ? {
+        id: template.id,
+        name: template.name,
+        slides: slides.map(buildSerializableSlide),
+      }
+    : null;
+}
+
+function captureTemplateBaseline(template = getActiveTemplate(), templateSlides = slides) {
+  const draft = template
+    ? {
+        id: template.id,
+        name: template.name,
+        slides: templateSlides.map(buildSerializableSlide),
+      }
+    : null;
+  templateBaselineSnapshot = draft ? createSnapshot(draft) : null;
+}
+
+function refreshTemplateDirtyState() {
+  const draft = collectActiveTemplateDraft();
+  hasPendingTemplateChanges = Boolean(
+    draft &&
+      templateBaselineSnapshot &&
+      isTemplateDirty(draft, templateBaselineSnapshot)
+  );
   updateTemplateManagementUi();
+}
+
+function collectCurrentSlideDraft() {
+  const savedSlide = slides.find((slide) => slide.id === currentSlideId);
+  if (!savedSlide) return null;
+
+  const draft = { ...cloneSlide(savedSlide), ...slideRuntimeDraft };
+  draft.name = slideNameInput.value.trim();
+  draft.type = slideTypeSelect.value;
+
+  if (draft.type === "scripture") {
+    Object.assign(draft, collectScriptureSlideFields());
+    draft.sourceType = "upload";
+  } else if (draft.type === "title") {
+    Object.assign(draft, collectTitleSlideData());
+    draft.sourceType = "basic";
+  } else if (draft.type === "custom-title") {
+    Object.assign(draft, collectCustomTitleSlideData());
+    draft.sourceType = "basic";
+  } else if (draft.type === "custom") {
+    // A custom slide has no form fields beyond its name: the artwork lives on
+    // the canvas, which keeps its own baseline and is folded into the dirty
+    // state by refreshSaveState(). The stored model is carried through
+    // untouched so the projection never drops a saved slide's content.
+    draft.sourceType = "basic";
+  } else if (draft.type === "hymn") {
+    draft.hymnNumber = hymnNumberInput.value;
+    draft.includeTitle = hymnIncludeTitle.checked;
+    draft.hymnKorTitle = hymnKorTitleInput.value.trim();
+    draft.hymnEngTitle = hymnEngTitleInput.value.trim();
+    draft.sourceType = "upload";
+  } else {
+    draft.sourceType =
+      document.querySelector('input[name="sourceType"]:checked')?.value ||
+      "basic";
+    draft.content =
+      draft.type === "ad" ? adBodyContent.value : slideContentInput.value;
+    draft.font = draft.type === "ad" ? adBodyFont.value : slideFontSelect.value;
+    draft.fontSize =
+      draft.type === "ad" ? adBodyFontSize.value : slideFontSizeSelect.value;
+    draft.align =
+      draft.type === "ad" ? adBodyAlign.value : slideAlignSelect.value;
+    draft.bg = adTextColor.value;
+    draft.adBgSource =
+      document.querySelector('input[name="adBgSource"]:checked')?.value ||
+      "none";
+    draft.adBgImageUrl = adBgImageUrl.value;
+    draft.adBgOpacity = parseInt(adBgOpacity.value);
+
+    if (draft.type === "ad") {
+      draft.adTitle = adTitleInput.value;
+      draft.adTitleSize = adTitleSizeSelect.value;
+      draft.adTitleAlign = adTitleAlignSelect.value;
+    }
+  }
+
+  draft.pendingFile = toFileMetadata(userPptxFile?.files?.[0]);
+  draft.pendingBackgroundFile = toFileMetadata(adBgImageFile?.files?.[0]);
+  draft.pendingScriptureImage = toFileMetadata(
+    scripturePptxImageInput?.files?.[0]
+  );
+  return draft;
+}
+
+function collectCurrentSlidePreviewDraft(slideOverride) {
+  const draft = slideOverride || collectCurrentSlideDraft();
+  if (!draft) return null;
+  return withTransientFiles(
+    draft,
+    selectTransientPreviewFiles(draft, {
+      file: userPptxFile?.files?.[0],
+      backgroundFile: adBgImageFile?.files?.[0],
+    })
+  );
+}
+
+function refreshSaveState() {
+  const draft = collectCurrentSlideDraft();
+  const recordDirty = Boolean(
+    draft &&
+      (slideBaselineSnapshot === null ||
+        isSnapshotDirty(draft, slideBaselineSnapshot))
+  );
+
+  // The canvas keeps its own baseline, so an undo back to the saved artwork
+  // reads as clean again while a pending rename or type switch still counts.
+  slideDirty =
+    draft?.type === "custom"
+      ? resolveCustomDirtyState({
+          slideSaved: slideBaselineSnapshot !== null,
+          editorDirty: customEditorDirty,
+          formDirty: recordDirty,
+        })
+      : recordDirty;
+
+  const state = deriveSaveButtonState({
+    hasSlide: Boolean(draft),
+    hasTemplate: Boolean(getActiveTemplate()),
+    slideDirty,
+    templateDirty: hasPendingTemplateChanges,
+    slideSaving,
+    templateSaving,
+    reorderSaving,
+  });
+  if (editorSaveBtn) {
+    editorSaveBtn.disabled = state.slideDisabled;
+    // Unsaved work is easy to miss on the canvas, where there is no form to
+    // look at, so the button carries a dot as well as its enabled state.
+    editorSaveBtn.classList.toggle("is-dirty", Boolean(slideDirty));
+  }
+  if (templateSaveBtn) {
+    templateSaveBtn.disabled = state.templateDisabled;
+    // The two-stage flow is the one disabled reason a user cannot guess, so
+    // it is spelled out next to the button and as its description.
+    const explainStaging = state.templateDisabledReason === "slide-dirty";
+    if (templateSaveHint) {
+      templateSaveHint.hidden = !explainStaging;
+      templateSaveHint.textContent = explainStaging
+        ? TEMPLATE_SAVE_BLOCKED_HINT
+        : "";
+    }
+    if (explainStaging) {
+      templateSaveBtn.title = TEMPLATE_SAVE_BLOCKED_HINT;
+      templateSaveBtn.setAttribute("aria-describedby", "templateSaveHint");
+    } else {
+      templateSaveBtn.removeAttribute("title");
+      templateSaveBtn.removeAttribute("aria-describedby");
+    }
+  }
 }
 
 function resetEditorSelection() {
   currentSlideId = null;
-  hasUnsavedChanges = false;
+  slideBaselineSnapshot = null;
+  slideRuntimeDraft = {};
+  slideDirty = false;
+  clearTransientSlideFileInputs();
+  // Detach the canvas so a later stray change cannot touch the slide that was
+  // just left; refreshSaveState() below recomputes the buttons.
   releaseCustomEditorSlide();
-  updateSaveButtonState();
   emptyEditorState.style.display = "flex";
   slideEditor.style.display = "none";
+  refreshSaveState();
 }
 
-function confirmLeavingDirtyWorkspace() {
-  if (isTemplateMode() && hasPendingTemplateChanges) {
-    if (!confirm("템플릿에 저장되지 않은 변경사항이 있습니다. 저장하지 않고 이동하시겠습니까?")) {
-      return false;
+// --- Unsaved changes: one popup, one guard, non-blocking notices ---
+
+function showToast(message) {
+  if (!appToastRegion) {
+    return;
+  }
+  const toast = document.createElement("div");
+  toast.className = "app-toast";
+  toast.textContent = message;
+  appToastRegion.appendChild(toast);
+  window.setTimeout(() => toast.remove(), 2800);
+}
+
+function getSaveState() {
+  return {
+    slideDirty,
+    templateDirty: hasPendingTemplateChanges,
+    slideSaving,
+    templateSaving,
+    reorderSaving,
+  };
+}
+
+// The one gate in front of every destructive or reordering action. A save in
+// flight owns the drafts, the baselines and the files on the server, so these
+// actions report why they were refused instead of racing it.
+function blockedBySaveInProgress() {
+  const message = getBusyBlockMessage(getSaveState());
+  if (!message) {
+    return false;
+  }
+  showToast(message);
+  return true;
+}
+
+// Set by the save functions whenever they surface a failure reason, so the
+// guard can add a generic fallback only for the paths that cannot name one.
+let saveFailureReported = false;
+
+function reportSaveFailure(message) {
+  saveFailureReported = true;
+  alert(message);
+}
+
+// Set while the dialog waits for a choice. Escape, the backdrop and the close
+// button all resolve through it, so a stale click can never answer a newer
+// question.
+let unsavedDialogResolver = null;
+
+// Both busy phases talk to the server on the user's behalf and neither can be
+// abandoned without corrupting what it is doing - a half-applied save or a
+// discard whose refetch is still in flight - so the cancel button is disabled
+// rather than left focusable with nothing safe to do. The dialog itself
+// carries aria-busy so assistive tech hears the wait.
+function setUnsavedDialogBusy(busy, phase = "save") {
+  const hadFocusInside =
+    busy && unsavedChangesModal.contains(document.activeElement);
+  unsavedSaveBtn.disabled = busy;
+  unsavedDiscardBtn.disabled = busy;
+  unsavedCancelBtn.disabled = busy;
+  unsavedSaveBtn.textContent =
+    busy && phase === "save" ? "저장 중..." : "저장 후 이동";
+  unsavedDiscardBtn.textContent =
+    busy && phase === "discard" ? "되돌리는 중..." : "저장하지 않고 이동";
+  if (busy) {
+    unsavedChangesModal.setAttribute("aria-busy", "true");
+    // Disabling the buttons would drop focus out of the dialog, so the card
+    // itself takes it for the duration of the uninterruptible phase.
+    if (hadFocusInside && unsavedChangesCard) {
+      unsavedChangesCard.focus();
+    }
+  } else {
+    unsavedChangesModal.removeAttribute("aria-busy");
+  }
+}
+
+function closeUnsavedChangesDialog() {
+  unsavedDialogResolver = null;
+  setUnsavedDialogBusy(false);
+  if (unsavedChangesModal.open) {
+    unsavedChangesModal.close();
+  }
+}
+
+// Escape, the backdrop and "계속 편집" are the same answer. The dialog stays
+// open between rounds so a failed save can be retried in place.
+function showUnsavedChangesDialog(scopes) {
+  // A second request must never take over the resolver of a popup that is
+  // already waiting for an answer.
+  if (unsavedDialogResolver) {
+    console.warn("Unsaved changes dialog is already awaiting a choice");
+    return Promise.resolve("cancel");
+  }
+
+  unsavedChangesMessage.textContent = getUnsavedChangesMessage(scopes);
+  setUnsavedDialogBusy(false);
+
+  return new Promise((resolve) => {
+    unsavedDialogResolver = resolve;
+    const finish = (choice) => {
+      if (unsavedDialogResolver !== resolve) {
+        return;
+      }
+      unsavedDialogResolver = null;
+      resolve(choice);
+    };
+
+    unsavedSaveBtn.onclick = () => finish("save");
+    unsavedDiscardBtn.onclick = () => finish("discard");
+    unsavedCancelBtn.onclick = () => finish("cancel");
+    unsavedChangesModal.oncancel = (event) => {
+      event.preventDefault();
+      finish("cancel");
+    };
+    unsavedChangesModal.onclick = (event) => {
+      if (event.target === unsavedChangesModal) {
+        finish("cancel");
+      }
+    };
+
+    if (!unsavedChangesModal.open) {
+      unsavedChangesModal.showModal();
+    }
+  });
+}
+
+// Restores the exact saved baselines: a never-saved slide disappears, an
+// edited slide falls back to its stored model, and template edits are replaced
+// by the server copy. Returns false when nothing was discarded.
+async function discardPendingChanges() {
+  const current = slides.find((slide) => slide.id === currentSlideId);
+  const plan = planDiscard({
+    slideDirty,
+    slideUnsaved: isSlideUnsaved(current),
+    templateMode: isTemplateMode(),
+    templateDirty: hasPendingTemplateChanges,
+  });
+  const templateId = activeTemplateId;
+
+  // Refetch before touching anything: without the server copy there is no
+  // baseline to discard onto, and the draft has to survive untouched.
+  if (plan.restoringTemplate && !(await loadTemplatesFromServer())) {
+    alert(
+      "서버에서 템플릿을 다시 불러오지 못했습니다. 변경사항을 되돌리지 않았습니다."
+    );
+    return false;
+  }
+
+  // Pinned straight after the refetch and before any local mutation, so the
+  // slide branch below cannot overwrite the entry that was just fetched.
+  const restoredTemplate = plan.restoringTemplate
+    ? templates.find((template) => template.id === templateId) || null
+    : null;
+
+  if (plan.dropSlide) {
+    slides = slides.filter((slide) => slide.id !== currentSlideId);
+    resetEditorSelection();
+    // Only meaningful when no server restore follows: the restore replaces the
+    // whole working copy, so syncing the local list there would clobber it.
+    if (plan.syncLocalSlides) {
+      syncWorkingSlidesToState();
+      if (isTemplateMode()) {
+        refreshTemplateDirtyState();
+      }
+    }
+    renderSlideList();
+  } else if (plan.repopulateSlide && current) {
+    slideRuntimeDraft = {};
+    populateEditor(current);
+    slideBaselineSnapshot = createSnapshot(collectCurrentSlideDraft());
+    renderPreview(current);
+    updateButtonsState(current);
+  }
+
+  if (plan.restoringTemplate) {
+    activeTemplateId = restoredTemplate ? templateId : null;
+    loadWorkspaceSlides(restoredTemplate ? restoredTemplate.slides || [] : []);
+    captureTemplateBaseline();
+    refreshTemplateDirtyState();
+    renderTemplateGallery();
+    if (!restoredTemplate) {
+      // The refetch says the template is gone, so the workspace it was
+      // rendering has to give way to the gallery.
+      alert("템플릿이 서버에서 삭제되어 목록으로 이동합니다.");
+      renderPptScreen();
     }
   }
 
-  if (!currentSlideId) {
+  refreshSaveState();
+  // Only a verified-clean workspace may let the transition through.
+  return isDiscardComplete(getSaveState());
+}
+
+// Runs one scope of the save sequence and guarantees the user sees why a
+// failure happened, without repeating a reason the save already reported.
+async function saveScopeForGuard(scope) {
+  saveFailureReported = false;
+  const saved =
+    scope === "slide"
+      ? await saveCurrentSlide({ silent: true })
+      : await saveActiveTemplateToServer({ silent: true });
+
+  if (!saved && !saveFailureReported) {
+    alert("저장에 실패했습니다. 잠시 후 다시 시도해 주세요.");
+  }
+  return saved;
+}
+
+async function runTransition(transition) {
+  guardedTransitionDepth += 1;
+  try {
+    await transition();
+  } finally {
+    guardedTransitionDepth -= 1;
+  }
+}
+
+// True from the moment a guard opens until it settles, so a second guard
+// cannot stack a popup or a save behind the one already in progress.
+let unsavedGuardActive = false;
+
+// Every internal navigation funnels through here so only one popup can ever
+// be on screen, even when a guarded transition calls another guarded helper.
+async function guardTransition(transition) {
+  if (guardedTransitionDepth > 0) {
+    await transition();
     return true;
   }
 
-  const currentSlide = slides.find((slide) => slide.id === currentSlideId);
-  if (currentSlide && !currentSlide.saved) {
-    if (!confirm("이 슬라이드는 저장되지 않았습니다. 이동하면 삭제됩니다. 계속하시겠습니까?")) {
-      return false;
-    }
-  } else if (hasUnsavedChanges) {
-    if (!confirm("저장하지 않은 변경사항이 있습니다. 무시하고 이동하시겠습니까?")) {
-      return false;
-    }
+  if (unsavedGuardActive) {
+    console.warn("Ignoring navigation while an unsaved-changes guard is open");
+    showToast("저장 확인 창을 먼저 처리해 주세요.");
+    return false;
   }
 
-  return true;
+  unsavedGuardActive = true;
+  // Held until the popup is closed: a toast raised behind an open modal is
+  // never read out by the live region.
+  let pendingGuardToast = null;
+  try {
+    return await runGuardedTransition({
+      getState: getSaveState,
+      showDialog: showUnsavedChangesDialog,
+      saveScope: saveScopeForGuard,
+      discard: async () => {
+        // The refetch it may run cannot be abandoned midway, so the dialog is
+        // marked busy for the whole restore.
+        setUnsavedDialogBusy(true, "discard");
+        try {
+          return await discardPendingChanges();
+        } finally {
+          setUnsavedDialogBusy(false);
+        }
+      },
+      transition: async () => {
+        // Close first so the destination is never rendered behind the popup.
+        closeUnsavedChangesDialog();
+        if (pendingGuardToast) {
+          showToast(pendingGuardToast);
+          pendingGuardToast = null;
+        }
+        await runTransition(transition);
+      },
+      setBusy: setUnsavedDialogBusy,
+      onBlocked: () => showToast(getBusyBlockMessage(getSaveState())),
+      onSaved: () => {
+        pendingGuardToast = "변경사항을 저장했습니다";
+      },
+    });
+  } finally {
+    closeUnsavedChangesDialog();
+    unsavedGuardActive = false;
+  }
+}
+
+// Preflight for flows that jump into the PPT workspace on their own: settle
+// pending work first, then apply the jump with the unguarded helpers.
+function ensureNoPendingChanges() {
+  return guardTransition(async () => {});
 }
 
 function loadWorkspaceSlides(nextSlides) {
@@ -961,9 +1452,7 @@ function updateTemplateManagementUi() {
     templateNameDisplay.textContent = activeTemplate.name;
   }
 
-  if (templateSaveBtn) {
-    templateSaveBtn.disabled = !activeTemplate || !hasPendingTemplateChanges;
-  }
+  refreshSaveState();
 
   if (templateCountBadge) {
     templateCountBadge.textContent = String(templates.length);
@@ -1007,79 +1496,76 @@ function renderPptScreen() {
   updateTemplateManagementUi();
 }
 
-// Returns false when the user cancels. When they confirm discarding template
-// edits, the local template cache is refetched so an abandoned rename or slide
-// change does not linger in the gallery.
-async function leaveCurrentWorkspace() {
-  const hadTemplateEdits = isTemplateMode() && hasPendingTemplateChanges;
-
-  if (!confirmLeavingDirtyWorkspace()) {
-    return false;
-  }
-
+// By the time a transition body runs, the guard has already saved or
+// discarded everything, so leaving only has to drop the template context.
+function clearActiveWorkspace() {
   activeTemplateId = null;
   hasPendingTemplateChanges = false;
-
-  if (hadTemplateEdits) {
-    await loadTemplatesFromServer();
-  }
-
-  return true;
+  templateBaselineSnapshot = null;
 }
 
-async function setPptTab(tab) {
-  if (tab === pptTab && !(tab === "templates" && activeTemplateId)) {
-    return;
+function setPptTab(tab) {
+  const nextTab = tab === "templates" ? "templates" : "slides";
+  if (nextTab === pptTab && !(nextTab === "templates" && activeTemplateId)) {
+    return Promise.resolve(true);
   }
 
-  if (!(await leaveCurrentWorkspace())) {
-    return;
-  }
+  return guardTransition(async () => {
+    clearActiveWorkspace();
+    pptTab = nextTab;
 
-  pptTab = tab === "templates" ? "templates" : "slides";
+    if (pptTab === "slides") {
+      loadWorkspaceSlides(mainSlides);
+    } else {
+      renderTemplateGallery();
+    }
 
-  if (pptTab === "slides") {
-    loadWorkspaceSlides(mainSlides);
-  } else {
-    renderTemplateGallery();
-  }
-
-  renderPptScreen();
+    renderPptScreen();
+  });
 }
 
-async function openTemplateWorkspace(templateId) {
+function openTemplateWorkspace(templateId) {
   if (!templates.some((entry) => entry.id === templateId)) {
-    return;
+    return Promise.resolve(false);
   }
 
-  if (!(await leaveCurrentWorkspace())) {
-    return;
+  if (activeTemplateId === templateId) {
+    return Promise.resolve(true);
   }
 
-  // The cache may have been refetched while discarding edits, so look the
-  // template up again.
-  const template = templates.find((entry) => entry.id === templateId);
-  if (!template) {
+  return guardTransition(async () => {
+    clearActiveWorkspace();
+
+    // The cache may have been refetched while discarding edits, so look the
+    // template up again.
+    const template = templates.find((entry) => entry.id === templateId);
+    if (!template) {
+      renderTemplateGallery();
+      renderPptScreen();
+      return;
+    }
+
+    pptTab = "templates";
+    activeTemplateId = templateId;
+    loadWorkspaceSlides(template.slides || []);
+    captureTemplateBaseline();
+    refreshTemplateDirtyState();
+    renderPptScreen();
+  });
+}
+
+function closeTemplateWorkspace() {
+  if (!isTemplateMode()) {
+    return Promise.resolve(true);
+  }
+
+  return guardTransition(async () => {
+    clearActiveWorkspace();
+    pptTab = "templates";
+    loadWorkspaceSlides([]);
     renderTemplateGallery();
     renderPptScreen();
-    return;
-  }
-
-  pptTab = "templates";
-  activeTemplateId = templateId;
-  loadWorkspaceSlides(template.slides || []);
-  renderPptScreen();
-}
-
-async function closeTemplateWorkspace() {
-  if (!(await leaveCurrentWorkspace())) {
-    return;
-  }
-
-  pptTab = "templates";
-  loadWorkspaceSlides([]);
-  renderTemplateGallery();
-  renderPptScreen();
+  });
 }
 
 function formatTemplateDate(value) {
@@ -1294,9 +1780,8 @@ slideTypeSelect.addEventListener('change', () => {
   } else {
     releaseCustomEditorSlide();
   }
-  hasUnsavedChanges = true;
-  updateSaveButtonState();
   renderPreview();
+  refreshSaveState();
 });
 
 hymnLoadBtn.addEventListener('click', async () => {
@@ -1315,17 +1800,17 @@ hymnLoadBtn.addEventListener('click', async () => {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Download failed");
 
-    // Update current slide data (in memory)
-    const current = slides.find(s => s.id === currentSlideId);
-    if (current) {
-      current.hymnNumber = number;
-      current.serverFilePath = data.path;
-      current.fileName = data.originalName;
-      current.originalUrl = data.originalUrl;
-      current.thumbnail = null;
-      current.type = 'hymn';
-      current.sourceType = 'upload'; // Vital for renderPreview logic
-    }
+    const current = collectCurrentSlideDraft();
+    if (!current) return;
+    Object.assign(current, {
+      hymnNumber: number,
+      serverFilePath: data.path,
+      fileName: data.originalName,
+      originalUrl: data.originalUrl,
+      thumbnail: null,
+      type: "hymn",
+      sourceType: "upload",
+    });
 
     // Fetch title BEFORE rendering so title slide is included
     if (hymnIncludeTitle.checked) {
@@ -1344,8 +1829,15 @@ hymnLoadBtn.addEventListener('click', async () => {
         slidePreview.dataset.lastRenderedPath = '';
       }
 
+      slideRuntimeDraft = {
+        ...slideRuntimeDraft,
+        serverFilePath: current.serverFilePath,
+        fileName: current.fileName,
+        originalUrl: current.originalUrl,
+        thumbnail: current.thumbnail,
+      };
       renderPreview(current);
-      hasUnsavedChanges = true;
+      refreshSaveState();
       updateButtonsState(current);
     }
   } catch (e) {
@@ -1364,6 +1856,8 @@ async function fetchAndFillHymnTitle(number) {
     const data = await res.json();
     hymnKorTitleInput.value = data.kor || '';
     hymnEngTitleInput.value = data.eng || '';
+    renderPreview();
+    refreshSaveState();
   } catch (e) {
     // silently ignore
   }
@@ -1386,7 +1880,7 @@ hymnIncludeTitle.addEventListener('change', async () => {
     slidePreview.dataset.lastRenderedPath = '';
   }
   renderPreview();
-  hasUnsavedChanges = true;
+  refreshSaveState();
 });
 
 function getScriptureTitleSlideType() {
@@ -1522,13 +2016,21 @@ async function generateScriptureSlideFile(slideName, slide) {
 }
 
 async function applyScriptureSlideSettings(slide) {
+  // Without the book list the selects are empty, so saving here would write
+  // an empty or defaulted-wrong book into the stored slide.
+  const booksBlocked = getBooksUnavailableMessage({ booksReady });
+  if (booksBlocked) {
+    reportSaveFailure(booksBlocked);
+    return false;
+  }
+
   const fields = collectScriptureSlideFields();
   if (!fields.koVersion && !fields.enVersion) {
-    alert("번역을 하나 이상 선택하세요.");
+    reportSaveFailure("번역을 하나 이상 선택하세요.");
     return false;
   }
   if (!fields.testament || !fields.book || !fields.chapter) {
-    alert("구분, 책, 장을 입력하세요.");
+    reportSaveFailure("구분, 책, 장을 입력하세요.");
     return false;
   }
 
@@ -1569,7 +2071,7 @@ async function ensureScriptureSlideFile(slide, slideName, button, busyLabel) {
     renderPreview(slide);
     return true;
   } catch (e) {
-    alert("성경 말씀 슬라이드 생성 실패: " + e.message);
+    reportSaveFailure("성경 말씀 슬라이드 생성 실패: " + e.message);
     return false;
   } finally {
     if (button) {
@@ -1581,7 +2083,7 @@ async function ensureScriptureSlideFile(slide, slideName, button, busyLabel) {
 
 if (scriptureGenerateBtn) {
   scriptureGenerateBtn.addEventListener("click", async () => {
-    const slide = slides.find((s) => s.id === currentSlideId);
+    const slide = collectCurrentSlideDraft();
     if (!slide) {
       return;
     }
@@ -1591,13 +2093,22 @@ if (scriptureGenerateBtn) {
     }
 
     const slideName = slideNameInput.value.trim() || slide.name || "성경말씀";
-    await ensureScriptureSlideFile(
+    const generated = await ensureScriptureSlideFile(
       slide,
       slideName,
       scriptureGenerateBtn,
       "생성 중..."
     );
-    hasUnsavedChanges = true;
+    if (!generated) return;
+    slideRuntimeDraft = {
+      ...slideRuntimeDraft,
+      serverFilePath: slide.serverFilePath,
+      fileName: slide.fileName,
+      thumbnail: slide.thumbnail,
+      scriptureSignature: slide.scriptureSignature,
+      customImageData: slide.customImageData,
+    };
+    refreshSaveState();
     updateButtonsState(slide);
   });
 }
@@ -1605,36 +2116,36 @@ if (scriptureGenerateBtn) {
 if (scriptureTestamentSelect) {
   scriptureTestamentSelect.addEventListener("change", () => {
     fillScriptureBooks();
-    hasUnsavedChanges = true;
+    refreshSaveState();
   });
 }
 
 if (scriptureIncludeTitle) {
   scriptureIncludeTitle.addEventListener("change", () => {
     syncScriptureTitleTypeUi();
-    hasUnsavedChanges = true;
     renderPreview();
+    refreshSaveState();
   });
 }
 
 if (scripturePptxImageInput) {
   scripturePptxImageInput.addEventListener("change", () => {
-    const current = slides.find((s) => s.id === currentSlideId);
-    if (current && scripturePptxImageInput.files?.[0]) {
-      current.customImageData = null;
+    if (scripturePptxImageInput.files?.[0]) {
+      slideRuntimeDraft.customImageData = null;
     }
+    const current = collectCurrentSlideDraft();
     syncScriptureImageUI(current);
-    hasUnsavedChanges = true;
+    refreshSaveState();
   });
 }
 
 if (scripturePptxImageClearBtn) {
   scripturePptxImageClearBtn.addEventListener("click", () => {
     if (scripturePptxImageInput) scripturePptxImageInput.value = "";
-    const current = slides.find((s) => s.id === currentSlideId);
-    if (current) current.customImageData = null;
+    slideRuntimeDraft.customImageData = null;
+    const current = collectCurrentSlideDraft();
     syncScriptureImageUI(current);
-    hasUnsavedChanges = true;
+    refreshSaveState();
   });
 }
 
@@ -1658,35 +2169,46 @@ if (scriptureSettingsAccordion) {
 ].forEach((el) => {
   if (!el) return;
   el.addEventListener("input", () => {
-    hasUnsavedChanges = true;
+    refreshSaveState();
   });
   el.addEventListener("change", () => {
-    hasUnsavedChanges = true;
+    refreshSaveState();
   });
 });
 
 document.querySelectorAll('input[name="scriptureTitleSlideType"]').forEach((radio) => {
   radio.addEventListener("change", () => {
-    hasUnsavedChanges = true;
     renderPreview();
+    refreshSaveState();
   });
 });
 
 [scriptureChapterInput, scriptureStartInput, scriptureEndInput].forEach((input) => {
   if (!input) return;
-  input.addEventListener("change", () => normalizeNumberInput(input));
-  input.addEventListener("blur", () => normalizeNumberInput(input));
+  const normalizeAndRefresh = () => {
+    normalizeNumberInput(input);
+    refreshSaveState();
+  };
+  input.addEventListener("change", normalizeAndRefresh);
+  input.addEventListener("blur", normalizeAndRefresh);
 });
 
 // --- Navigation ---
 function switchView(viewName) {
-  if (hasUnsavedChanges) {
-    if (!confirm("저장하지 않은 변경사항이 있습니다. 정말 이동하시겠습니까?")) {
-      return;
-    }
-    hasUnsavedChanges = false;
+  const nextView = viewName === "extractor" ? "extractor" : "ppt";
+  const currentView = navExtractor.classList.contains("active")
+    ? "extractor"
+    : "ppt";
+  if (nextView === currentView) {
+    return Promise.resolve(true);
   }
 
+  return guardTransition(async () => {
+    applyViewChange(nextView);
+  });
+}
+
+function applyViewChange(viewName) {
   if (viewName === "extractor") {
     viewExtractor.style.display = "block";
     viewPpt.style.display = "none";
@@ -1741,12 +2263,29 @@ async function saveSlidesToServer(nextSlides = slides) {
   }
 }
 
-async function saveActiveTemplateToServer() {
-  const activeTemplate = getActiveTemplate();
-  if (!activeTemplate) {
+async function saveActiveTemplateToServer({ silent = false } = {}) {
+  // An in-flight save owns the baselines. Returning before the flag is set is
+  // what stops a second call from clearing the running save's busy state.
+  if (isSaveBusy(getSaveState())) {
+    console.warn("Save already in progress; ignoring duplicate template save");
     return false;
   }
 
+  const activeTemplate = getActiveTemplate();
+  if (!activeTemplate) {
+    reportSaveFailure("저장할 템플릿이 없습니다.");
+    return false;
+  }
+  if (!hasPendingTemplateChanges) {
+    return true;
+  }
+
+  templateSaving = true;
+  refreshSaveState();
+  const restoreTemplateLabel = showSaveButtonProgress(
+    templateSaveBtn,
+    "저장 중..."
+  );
   try {
     const resp = await fetch(`/api/templates/${encodeURIComponent(activeTemplate.id)}`, {
       method: "PUT",
@@ -1766,14 +2305,31 @@ async function saveActiveTemplateToServer() {
     templates = templates.map((template) =>
       template.id === nextTemplate.id ? nextTemplate : template
     );
-    hasPendingTemplateChanges = false;
-    updateTemplateManagementUi();
+    const recaptureSlideBaseline = shouldRecaptureSlideBaseline({
+      slideDirty,
+      currentSlideId,
+      storedSlideIds: nextTemplate.slides.map((slide) => slide.id),
+    });
+    slides = nextTemplate.slides.map((slide) => cloneSlide(slide));
+    captureTemplateBaseline(nextTemplate, nextTemplate.slides);
+    if (recaptureSlideBaseline) {
+      slideBaselineSnapshot = createSnapshot(collectCurrentSlideDraft());
+    }
+    refreshTemplateDirtyState();
+    renderSlideList();
     renderTemplateGallery();
+    if (!silent) {
+      showToast("템플릿이 저장되었습니다");
+    }
     return true;
   } catch (e) {
     console.error("Failed to save template", e);
-    alert(e.message || "템플릿 저장에 실패했습니다.");
+    reportSaveFailure(e.message || "템플릿 저장에 실패했습니다.");
     return false;
+  } finally {
+    restoreTemplateLabel();
+    templateSaving = false;
+    refreshSaveState();
   }
 }
 
@@ -1794,26 +2350,39 @@ async function loadSlidesFromServer() {
   }
 }
 
+// Reports whether the cache now mirrors the server. A failed fetch leaves the
+// existing cache alone so callers can abort instead of discarding onto an
+// empty gallery.
 async function loadTemplatesFromServer() {
   try {
     const resp = await fetch("/api/templates");
-    if (resp.ok) {
-      const payload = await resp.json();
-      templates = Array.isArray(payload) ? payload.map(cloneTemplate) : [];
+    if (!resp.ok) {
+      console.error("Failed to load templates", resp.status);
+      return false;
     }
+    const payload = await resp.json();
+    if (!Array.isArray(payload)) {
+      console.error("Unexpected templates payload", payload);
+      return false;
+    }
+    templates = payload.map(cloneTemplate);
+    return true;
   } catch (e) {
     console.error("Failed to load templates", e);
-    templates = [];
+    return false;
   }
 }
 
 async function loadPptDataFromServer() {
   await Promise.all([loadSlidesFromServer(), loadTemplatesFromServer()]);
   hasPendingTemplateChanges = false;
+  templateBaselineSnapshot = null;
 
   const activeTemplate = getActiveTemplate();
   if (activeTemplate) {
     loadWorkspaceSlides(activeTemplate.slides || []);
+    captureTemplateBaseline();
+    refreshTemplateDirtyState();
   } else {
     activeTemplateId = null;
     loadWorkspaceSlides(mainSlides);
@@ -1905,35 +2474,68 @@ function clearSlideSelection() {
   renderSlideList();
 }
 
-function moveSlideToIndex(slideId, targetIndex) {
-  const fromIndex = slides.findIndex((slide) => slide.id === slideId);
-  if (fromIndex === -1) {
+// Main slide order is persisted immediately, so the reorder owns the request
+// it starts: the new order is only authoritative once the server accepts it,
+// and a failure puts the previous order back on screen.
+async function moveSlideToIndex(slideId, targetIndex) {
+  if (blockedBySaveInProgress()) {
     return false;
   }
 
-  const boundedIndex = Math.max(0, Math.min(targetIndex, slides.length - 1));
-  if (fromIndex === boundedIndex) {
+  const plan = planReorder({
+    ids: slides.map((slide) => slide.id),
+    slideId,
+    targetIndex,
+  });
+  if (!plan.changed) {
     return false;
   }
 
-  const [movedSlide] = slides.splice(fromIndex, 1);
-  slides.splice(boundedIndex, 0, movedSlide);
+  const previousSlides = slides;
+  const previousMainSlides = mainSlides;
+  slides = applyReorder(slides, plan.fromIndex, plan.toIndex);
   renderSlideList();
+
   if (isTemplateMode()) {
     markTemplateDirty();
-  } else {
-    syncWorkingSlidesToState();
-    persistCurrentWorkspace();
+    return true;
   }
-  return true;
+
+  // mainSlides is only advanced by a successful POST, so nothing mirrors the
+  // new order until the server has it.
+  reorderSaving = true;
+  refreshSaveState();
+  let persisted = false;
+  try {
+    persisted = await persistCurrentWorkspace();
+  } finally {
+    // Both outcomes leave the busy flag and the buttons converged here, so a
+    // dirty draft gets its save button back either way.
+    reorderSaving = false;
+    refreshSaveState();
+  }
+
+  if (persisted) {
+    return true;
+  }
+
+  // The server never took the new order, so the authoritative one is the one
+  // it still holds. The editor draft is untouched by order, so restoring the
+  // list and its selection highlight is the whole rollback; the re-render
+  // refreshes the buttons again.
+  slides = previousSlides;
+  mainSlides = previousMainSlides;
+  renderSlideList();
+  alert(REORDER_FAILURE_MESSAGE);
+  return false;
 }
 
-function moveSlideByOffset(slideId, offset) {
+async function moveSlideByOffset(slideId, offset) {
   const fromIndex = slides.findIndex((slide) => slide.id === slideId);
   if (fromIndex === -1) {
     return;
   }
-  moveSlideToIndex(slideId, fromIndex + offset);
+  await moveSlideToIndex(slideId, fromIndex + offset);
 }
 
 function getSlideTypeLabel(slide) {
@@ -1962,9 +2564,17 @@ function getSlideTypeLabel(slide) {
 
 // --- Slide Management ---
 
+// Guarded before the draft exists so a cancelled popup cannot leave an
+// orphan slide behind.
 function createSlide() {
+  return guardTransition(async () => {
+    appendNewSlide();
+  });
+}
+
+function appendNewSlide() {
   const newSlide = {
-    id: Date.now().toString(),
+    id: generateClientId("slide"),
     name: "새 슬라이드",
     type: "simple",
     sourceType: "basic",
@@ -1997,8 +2607,8 @@ function createSlide() {
   };
   slides.push(newSlide);
   // Do NOT save to storage yet
-  selectSlide(newSlide.id);
-  hasUnsavedChanges = true;
+  applySlideSelection(newSlide.id);
+  refreshSaveState();
   renderSlideList();
 }
 
@@ -2089,7 +2699,7 @@ function renderPreview(slideOverride) {
     return;
   }
 
-  let data = slideOverride;
+  let data = collectCurrentSlidePreviewDraft(slideOverride);
 
   if (!data) {
     const type = slideTypeSelect.value;
@@ -2669,27 +3279,14 @@ function renderPreview(slideOverride) {
 }
 
 function selectSlide(id) {
-  if (currentSlideId === id) return;
+  if (currentSlideId === id) return Promise.resolve(true);
 
-  if (currentSlideId) {
-    const prevSlide = slides.find(s => s.id === currentSlideId);
-    // If previous slide was unsaved (never saved), we should discard/delete it if user navigates away
-    if (prevSlide && !prevSlide.saved) {
-      if (!confirm("이 슬라이드는 저장되지 않았습니다. 이동하면 삭제됩니다. 계속하시겠습니까?")) {
-        return;
-      }
-      // Remove the unsaved slide
-      slides = slides.filter(s => s.id !== currentSlideId);
-      hasUnsavedChanges = false;
-    } else if (hasUnsavedChanges) {
-      // Saved slide but has pending edits
-      if (!confirm("저장하지 않은 변경사항이 있습니다. 무시하고 이동하시겠습니까?")) {
-        return;
-      }
-      hasUnsavedChanges = false;
-    }
-  }
+  return guardTransition(async () => {
+    applySlideSelection(id);
+  });
+}
 
+function applySlideSelection(id) {
   currentSlideId = id;
   const slide = slides.find((s) => s.id === id);
 
@@ -2697,19 +3294,38 @@ function selectSlide(id) {
     emptyEditorState.style.display = "none";
     slideEditor.style.display = "flex";
     populateEditor(slide);
+    slideRuntimeDraft = {};
+    slideBaselineSnapshot = isSlideUnsaved(slide)
+      ? null
+      : createSnapshot(collectCurrentSlideDraft());
     renderPreview(slide);
     updateButtonsState(slide);
+    refreshSaveState();
     renderSlideList();
   } else {
     // If id not found (e.g. after delete), show empty
     currentSlideId = null;
     emptyEditorState.style.display = "flex";
     slideEditor.style.display = "none";
+    slideBaselineSnapshot = null;
+    slideRuntimeDraft = {};
+    slideDirty = false;
+    refreshSaveState();
     renderSlideList();
   }
 }
 
-function populateEditor(slide) {
+function clearTransientSlideFileInputs() {
+  if (userPptxFile) userPptxFile.value = "";
+  if (adBgImageFile) adBgImageFile.value = "";
+  if (scripturePptxImageInput) scripturePptxImageInput.value = "";
+}
+
+// `reloadCustomCanvas` is only turned off right after a successful custom save,
+// where the canvas already holds exactly what was committed and reloading it
+// would needlessly drop the user's selection.
+function populateEditor(slide, { reloadCustomCanvas = true } = {}) {
+  clearTransientSlideFileInputs();
   slideNameInput.value = slide.name;
   slideTypeSelect.value = slide.type;
 
@@ -2727,7 +3343,9 @@ function populateEditor(slide) {
   }
 
   if (slide.type === 'custom') {
-    showCustomSlideInEditor(slide);
+    if (reloadCustomCanvas) {
+      showCustomSlideInEditor(slide);
+    }
   } else if (slide.type === 'scripture') {
     populateScriptureEditor(slide);
   } else if (slide.type === 'title') {
@@ -2828,8 +3446,8 @@ function setBgValue(value, markDirty = true) {
   if (slideBgSelect) slideBgSelect.value = value;
   syncBgTabs(value);
   if (markDirty) {
-    hasUnsavedChanges = true;
     renderPreview();
+    refreshSaveState();
   }
 }
 
@@ -2837,8 +3455,8 @@ function setAlignValue(value, markDirty = true) {
   slideAlignSelect.value = value;
   syncAlignTabs(value);
   if (markDirty) {
-    hasUnsavedChanges = true;
     renderPreview();
+    refreshSaveState();
   }
 }
 
@@ -3578,26 +4196,6 @@ function resolveCustomDirtyState(state) {
   return !state.slideSaved || Boolean(state.editorDirty) || Boolean(state.formDirty);
 }
 
-// The name and type fields live outside the canvas, so a canvas undo back to
-// its clean baseline must not swallow a pending rename or type switch.
-function isCustomFormDirty(slide) {
-  if (!slideNameInput) return false;
-  const typeValue = slideTypeSelect ? slideTypeSelect.value : undefined;
-  if (customSlideBridge) {
-    return customSlideBridge.resolveCustomFormDirty(slideNameInput.value, slide, typeValue);
-  }
-  if (String(slideNameInput.value ?? "").trim() !== String(slide?.name ?? "").trim()) {
-    return true;
-  }
-  if (typeValue === null || typeValue === undefined) return false;
-  return String(typeValue).trim() !== String(slide?.type ?? "").trim();
-}
-
-function updateSaveButtonState() {
-  if (!editorSaveBtn) return;
-  editorSaveBtn.classList.toggle("is-dirty", Boolean(hasUnsavedChanges));
-}
-
 // One editor instance for the whole workspace, created at most once.
 function ensureCustomEditorSession() {
   if (!customEditorSessionPromise) {
@@ -3629,13 +4227,10 @@ function handleCustomEditorChange({ slideId, dirty }) {
   if (!slideId || slideId !== currentSlideId) {
     return;
   }
-  const slide = slides.find((s) => s.id === slideId);
-  hasUnsavedChanges = resolveCustomDirtyState({
-    slideSaved: Boolean(slide?.saved),
-    editorDirty: dirty,
-    formDirty: isCustomFormDirty(slide),
-  });
-  updateSaveButtonState();
+  customEditorDirty = Boolean(dirty);
+  // Same path as a keystroke in the form: the guard, the save buttons and the
+  // beforeunload warning all read the state this recomputes.
+  refreshSaveState();
 }
 
 // Loads a slide's canvas. Stale loads are dropped by the session, so switching
@@ -3652,13 +4247,8 @@ function showCustomSlideInEditor(slide, { markSaved = Boolean(slide?.saved) } = 
       if (!result?.applied || slideId !== currentSlideId) {
         return;
       }
-      const currentSlide = slides.find((s) => s.id === slideId);
-      hasUnsavedChanges = resolveCustomDirtyState({
-        slideSaved: markSaved && Boolean(currentSlide?.saved),
-        editorDirty: result.dirty,
-        formDirty: isCustomFormDirty(currentSlide),
-      });
-      updateSaveButtonState();
+      customEditorDirty = Boolean(result.dirty);
+      refreshSaveState();
     })
     .catch((error) => {
       console.error("커스텀 편집기 로드 실패:", error);
@@ -3667,59 +4257,49 @@ function showCustomSlideInEditor(slide, { markSaved = Boolean(slide?.saved) } = 
 }
 
 function releaseCustomEditorSlide() {
+  customEditorDirty = false;
   if (customEditorSession) {
     customEditorSession.release();
   }
 }
 
 /**
- * Saves a custom slide as a transaction: the staged values are persisted first
- * and only written to the slide record once the request succeeded, so a failed
- * save leaves the record, the canvas baseline and the name field as they were.
+ * The fields a custom save will commit, read off the live canvas. Nothing is
+ * written to the slide record here: the caller commits them only once
+ * persistence succeeded, so a failed save leaves the record, the canvas
+ * baseline and the name field exactly as they were. Returns null - with the
+ * reason already reported - when the editor is not ready to be read.
  */
-async function saveCustomSlide(slide, name) {
+function stageCustomSlideCandidate(slide, name) {
+  const bridge = customSlideBridge;
+  if (!bridge) {
+    reportSaveFailure("커스텀 편집기 모듈을 불러오는 중입니다. 잠시 후 다시 저장해주세요.");
+    return null;
+  }
+
   const serialized = customEditorSession
     ? customEditorSession.serialize(slide.id)
     : null;
   if (!serialized) {
-    alert("커스텀 편집기를 불러오는 중입니다. 잠시 후 다시 저장해주세요.");
-    return;
+    reportSaveFailure("커스텀 편집기를 불러오는 중입니다. 잠시 후 다시 저장해주세요.");
+    return null;
   }
 
-  const bridge = customSlideBridge;
-  if (!bridge) {
-    alert("커스텀 편집기 모듈을 불러오는 중입니다. 잠시 후 다시 저장해주세요.");
-    return;
+  return bridge.stageCustomSlideSave({ name, serialized });
+}
+
+/**
+ * Rebases the canvas onto the model that was just committed. Reports whether
+ * the canvas is the one that was saved, so the caller knows it does not have
+ * to reload it.
+ */
+function markCustomEditorSaved(slideId) {
+  if (!customEditorSession || !customEditorSession.isActive(slideId)) {
+    return false;
   }
-
-  const staged = bridge.stageCustomSlideSave({ name, serialized });
-
-  if (isTemplateMode()) {
-    // The template working model is the stage-1 target: committing here is what
-    // makes the change visible to the later template save.
-    Object.assign(slide, staged);
-    markTemplateDirty();
-  } else {
-    const saved = await persistCurrentWorkspace(
-      bridge.withStagedSlide(slides, slide.id, staged)
-    );
-    if (!saved) {
-      alert("저장 중 오류 발생: 슬라이드를 서버에 저장하지 못했습니다.");
-      return;
-    }
-    Object.assign(slide, staged);
-    syncWorkingSlidesToState();
-  }
-
-  if (customEditorSession) {
-    customEditorSession.markSaved(slide.id);
-  }
-
-  hasUnsavedChanges = false;
-  updateSaveButtonState();
-  updateButtonsState(slide);
-  renderSlideList();
-  alert("저장되었습니다.");
+  customEditorSession.markSaved(slideId);
+  customEditorDirty = false;
+  return true;
 }
 
 function toggleSettingsMode(mode) {
@@ -3793,12 +4373,16 @@ function toggleBgMode(source) {
 
 function resetCurrentSlide() {
   if (!currentSlideId) return;
+  if (blockedBySaveInProgress()) return;
   const slide = slides.find((s) => s.id === currentSlideId);
   // Reset fields to last saved state
   populateEditor(slide);
+  slideRuntimeDraft = {};
   renderPreview(slide);
-  hasUnsavedChanges = false;
-  updateSaveButtonState();
+  slideBaselineSnapshot = isSlideUnsaved(slide)
+    ? null
+    : createSnapshot(collectCurrentSlideDraft());
+  refreshSaveState();
   updateButtonsState(slide);
 }
 
@@ -3857,7 +4441,7 @@ function renderSlideList() {
     card.addEventListener("dragleave", () => {
       card.classList.remove("drag-over-top", "drag-over-bottom");
     });
-    card.addEventListener("drop", (event) => {
+    card.addEventListener("drop", async (event) => {
       event.preventDefault();
       card.classList.remove("drag-over-top", "drag-over-bottom");
       if (!draggedSlideId || draggedSlideId === slide.id) {
@@ -3875,7 +4459,7 @@ function renderSlideList() {
         nextIndex = targetIndex - 1;
       }
 
-      moveSlideToIndex(draggedSlideId, nextIndex);
+      await moveSlideToIndex(draggedSlideId, nextIndex);
     });
 
     const header = document.createElement("div");
@@ -3919,9 +4503,9 @@ function renderSlideList() {
     moveUpBtn.disabled = index === 0;
     moveUpBtn.innerHTML =
       '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6l-6 6h12z"></path></svg>';
-    moveUpBtn.addEventListener("click", (event) => {
+    moveUpBtn.addEventListener("click", async (event) => {
       event.stopPropagation();
-      moveSlideByOffset(slide.id, -1);
+      await moveSlideByOffset(slide.id, -1);
     });
 
     const moveDownBtn = document.createElement("button");
@@ -3931,9 +4515,9 @@ function renderSlideList() {
     moveDownBtn.disabled = index === slides.length - 1;
     moveDownBtn.innerHTML =
       '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 18l6-6H6z"></path></svg>';
-    moveDownBtn.addEventListener("click", (event) => {
+    moveDownBtn.addEventListener("click", async (event) => {
       event.stopPropagation();
-      moveSlideByOffset(slide.id, 1);
+      await moveSlideByOffset(slide.id, 1);
     });
 
     actions.appendChild(handle);
@@ -3980,48 +4564,122 @@ async function uploadFile(file) {
   return await resp.json();
 }
 
-async function saveCurrentSlide() {
-  if (!currentSlideId) {
-    console.error("No currentSlideId!");
-    return;
+// Save buttons are disabled while a save runs, so the progress label is the
+// only thing that tells the user which step is in flight. Returns the restore
+// callback, and tolerates a missing button.
+function showSaveButtonProgress(button, label) {
+  if (!button) {
+    return () => {};
+  }
+  const original = button.textContent;
+  button.textContent = label;
+  return () => {
+    button.textContent = original;
+  };
+}
+
+function rememberSlideRuntimeAssets(candidate, keys) {
+  const assets = {};
+  keys.forEach((key) => {
+    assets[key] = candidate[key];
+  });
+  slideRuntimeDraft = { ...slideRuntimeDraft, ...assets };
+}
+
+function canReuseRuntimeUpload(candidate, markerKey, file, pathKey) {
+  return Boolean(
+    candidate[pathKey] &&
+      candidate[markerKey] &&
+      createSnapshot(candidate[markerKey]) ===
+        createSnapshot(toFileMetadata(file))
+  );
+}
+
+async function commitSlideCandidate(candidate) {
+  const index = slides.findIndex((slide) => slide.id === candidate.id);
+  if (index === -1) return false;
+
+  candidate.saved = true;
+  const nextSlides = slides.map((slide, i) =>
+    i === index ? cloneSlide(candidate) : cloneSlide(slide)
+  );
+
+  if (!isTemplateMode()) {
+    const resp = await fetch("/api/slides", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(nextSlides.map(buildSerializableSlide)),
+    });
+    if (!resp.ok) {
+      const payload = await resp.json().catch(() => ({}));
+      throw new Error(payload.error || "슬라이드 저장에 실패했습니다.");
+    }
+  }
+
+  slides = nextSlides;
+  if (isTemplateMode()) {
+    markTemplateDirty();
+  } else {
+    mainSlides = nextSlides.map(cloneSlide);
+  }
+  return true;
+}
+
+async function saveCurrentSlide({ silent = false } = {}) {
+  // An in-flight save owns the draft and the baselines. Returning before the
+  // flag is set is what stops a second call from clearing the running save's
+  // busy state.
+  if (isSaveBusy(getSaveState())) {
+    console.warn("Save already in progress; ignoring duplicate slide save");
+    return false;
+  }
+
+  // Pinned so the tail can refuse to repopulate or recapture the editor if the
+  // selection moved on while the save was in flight.
+  const savingSlideId = currentSlideId;
+  if (!savingSlideId) {
+    reportSaveFailure("저장할 슬라이드가 없습니다.");
+    return false;
   }
 
   const name = slideNameInput.value.trim();
 
   if (!name) {
-    alert("슬라이드 이름을 입력하세요.");
-    return;
+    reportSaveFailure("슬라이드 이름을 입력하세요.");
+    return false;
   }
 
   // Check duplicate name
-  const existing = slides.find((s) => s.name === name && s.id !== currentSlideId);
+  const existing = slides.find((s) => s.name === name && s.id !== savingSlideId);
   if (existing) {
-    alert("이미 존재하는 슬라이드 이름입니다.");
-    return;
+    reportSaveFailure("이미 존재하는 슬라이드 이름입니다.");
+    return false;
   }
 
-  const slide = slides.find((s) => s.id === currentSlideId);
+  const slide = collectCurrentSlideDraft();
   if (!slide) {
-    console.error("Slide object not found for id:", currentSlideId);
-    return;
+    reportSaveFailure("슬라이드 정보를 찾을 수 없습니다.");
+    return false;
   }
 
+  slideSaving = true;
+  refreshSaveState();
   try {
-    // Custom slides commit nothing until their save succeeds, so they run
-    // before the shared name/type assignment below.
-    if (slideTypeSelect.value === 'custom') {
-      await saveCustomSlide(slide, name);
-      return;
-    }
+    if (slide.type === 'custom') {
+      // The canvas is the record for a custom slide, so the staged values come
+      // from the editor. Nothing is written to the stored slide here:
+      // commitSlideCandidate() below is what makes the save a transaction.
+      const staged = stageCustomSlideCandidate(slide, name);
+      if (!staged) {
+        return false;
+      }
+      Object.assign(slide, staged);
 
-    slide.name = name;
-    slide.type = slideTypeSelect.value;
-
-    if (slide.type === 'hymn') {
+    } else if (slide.type === 'hymn') {
       const number = hymnNumberInput.value;
       if (!number) {
-        alert("찬송가 장수를 입력하세요.");
-        return;
+        reportSaveFailure("찬송가 장수를 입력하세요.");
+        return false;
       }
 
       // Explicitly check if we need to download (if number changed or no file)
@@ -4045,10 +4703,17 @@ async function saveCurrentSlide() {
           slide.originalUrl = data.originalUrl;
           slide.hymnNumber = number;
           slide.thumbnail = null;
+          rememberSlideRuntimeAssets(slide, [
+            "serverFilePath",
+            "fileName",
+            "originalUrl",
+            "hymnNumber",
+            "thumbnail",
+          ]);
         } catch (e) {
-          alert("자동 다운로드 실패: " + e.message);
+          reportSaveFailure("자동 다운로드 실패: " + e.message);
           if (saveBtnMsg) saveBtnMsg.textContent = originalText;
-          return; // Stop save if download fails
+          return false; // Stop save if download fails
         } finally {
           if (saveBtnMsg) saveBtnMsg.textContent = originalText;
         }
@@ -4064,7 +4729,7 @@ async function saveCurrentSlide() {
 
     } else if (slide.type === 'scripture') {
       if (!(await applyScriptureSlideSettings(slide))) {
-        return;
+        return false;
       }
 
       const generated = await ensureScriptureSlideFile(
@@ -4074,8 +4739,15 @@ async function saveCurrentSlide() {
         "생성 중..."
       );
       if (!generated) {
-        return;
+        return false;
       }
+      rememberSlideRuntimeAssets(slide, [
+        "serverFilePath",
+        "fileName",
+        "thumbnail",
+        "scriptureSignature",
+        "customImageData",
+      ]);
       slide.saved = true;
 
     } else if (slide.type === 'ad') {
@@ -4096,21 +4768,38 @@ async function saveCurrentSlide() {
       slide.adBgSource = bgSource;
 
       // Handle background image file upload
-      if (bgSource === 'file' && adBgImageFile.files[0]) {
-        const saveBtnMsg = document.getElementById('editorSaveBtn');
-        const originalText = saveBtnMsg ? saveBtnMsg.textContent : "저장";
-        if (saveBtnMsg) saveBtnMsg.textContent = "업로드 중...";
-        
-        try {
-          const uploadResult = await uploadFile(adBgImageFile.files[0]);
-          slide.adBgImagePath = uploadResult.path;
-          slide.adBgImageUrl = null; // Clear URL if file is uploaded
-        } catch (e) {
-          alert("배경 이미지 업로드 실패: " + e.message);
-          if (saveBtnMsg) saveBtnMsg.textContent = originalText;
-          return;
-        } finally {
-          if (saveBtnMsg) saveBtnMsg.textContent = originalText;
+      const backgroundFile = adBgImageFile.files[0];
+      if (bgSource === 'file') {
+        if (
+          backgroundFile &&
+          !canReuseRuntimeUpload(
+            slide,
+            "uploadedBackgroundFile",
+            backgroundFile,
+            "adBgImagePath"
+          )
+        ) {
+          const saveBtnMsg = document.getElementById('editorSaveBtn');
+          const originalText = saveBtnMsg ? saveBtnMsg.textContent : "저장";
+          if (saveBtnMsg) saveBtnMsg.textContent = "업로드 중...";
+
+          try {
+            const uploadResult = await uploadFile(backgroundFile);
+            slide.adBgImagePath = uploadResult.path;
+            slide.adBgImageUrl = null; // Clear URL if file is uploaded
+            slide.uploadedBackgroundFile = toFileMetadata(backgroundFile);
+            rememberSlideRuntimeAssets(slide, [
+              "adBgImagePath",
+              "adBgImageUrl",
+              "uploadedBackgroundFile",
+            ]);
+          } catch (e) {
+            reportSaveFailure("배경 이미지 업로드 실패: " + e.message);
+            if (saveBtnMsg) saveBtnMsg.textContent = originalText;
+            return false;
+          } finally {
+            if (saveBtnMsg) saveBtnMsg.textContent = originalText;
+          }
         }
       } else if (bgSource === 'url') {
         slide.adBgImageUrl = adBgImageUrl.value;
@@ -4128,25 +4817,41 @@ async function saveCurrentSlide() {
         // Handle PPTX file upload (same as simple slide)
         const file = userPptxFile.files[0];
         if (file.size > 50 * 1024 * 1024) {
-          alert("파일 크기가 50MB를 초과합니다.");
-          return;
+          reportSaveFailure("파일 크기가 50MB를 초과합니다.");
+          return false;
         }
         
-        const saveBtnMsg = document.getElementById('editorSaveBtn');
-        const originalText = saveBtnMsg ? saveBtnMsg.textContent : "저장";
-        if (saveBtnMsg) saveBtnMsg.textContent = "업로드 중...";
-        
-        try {
-          const uploadResult = await uploadFile(file);
-          slide.fileName = file.name;
-          slide.serverFilePath = uploadResult.path;
-          slide.fileSaved = true;
-        } catch (e) {
-          alert("파일 업로드 실패: " + e.message);
-          if (saveBtnMsg) saveBtnMsg.textContent = originalText;
-          return;
-        } finally {
-          if (saveBtnMsg) saveBtnMsg.textContent = originalText;
+        if (
+          !canReuseRuntimeUpload(
+            slide,
+            "uploadedFile",
+            file,
+            "serverFilePath"
+          )
+        ) {
+          const saveBtnMsg = document.getElementById('editorSaveBtn');
+          const originalText = saveBtnMsg ? saveBtnMsg.textContent : "저장";
+          if (saveBtnMsg) saveBtnMsg.textContent = "업로드 중...";
+
+          try {
+            const uploadResult = await uploadFile(file);
+            slide.fileName = file.name;
+            slide.serverFilePath = uploadResult.path;
+            slide.fileSaved = true;
+            slide.uploadedFile = toFileMetadata(file);
+            rememberSlideRuntimeAssets(slide, [
+              "fileName",
+              "serverFilePath",
+              "fileSaved",
+              "uploadedFile",
+            ]);
+          } catch (e) {
+            reportSaveFailure("파일 업로드 실패: " + e.message);
+            if (saveBtnMsg) saveBtnMsg.textContent = originalText;
+            return false;
+          } finally {
+            if (saveBtnMsg) saveBtnMsg.textContent = originalText;
+          }
         }
       }
       
@@ -4155,24 +4860,23 @@ async function saveCurrentSlide() {
     } else if (slide.type === 'title') {
       const titleData = collectTitleSlideData();
       if (!titleData.churchName) {
-        alert("교회 이름을 입력하세요.");
-        return;
+        reportSaveFailure("교회 이름을 입력하세요.");
+        return false;
       }
       if (!titleData.serviceDate) {
-        alert("주일 날짜를 선택하세요.");
-        return;
+        reportSaveFailure("주일 날짜를 선택하세요.");
+        return false;
       }
 
       Object.assign(slide, titleData);
-      rememberChurchName(titleData.churchName);
       slide.sourceType = 'basic';
       slide.saved = true;
 
     } else if (slide.type === 'custom-title') {
       const customTitleData = collectCustomTitleSlideData();
       if (!customTitleData.customTitleKo) {
-        alert("타이틀 이름(한글)을 입력하세요.");
-        return;
+        reportSaveFailure("타이틀 이름(한글)을 입력하세요.");
+        return false;
       }
 
       Object.assign(slide, customTitleData);
@@ -4183,8 +4887,8 @@ async function saveCurrentSlide() {
       // Simple Slide Logic
       const sourceRadio = document.querySelector('input[name="sourceType"]:checked');
       if (!sourceRadio) {
-        console.error("No source radio checked");
-        return;
+        reportSaveFailure("슬라이드 소스 종류를 선택하세요.");
+        return false;
       }
       slide.sourceType = sourceRadio.value;
       slide.content = slideContentInput.value;
@@ -4196,20 +4900,37 @@ async function saveCurrentSlide() {
 
       const bgSrc = document.querySelector('input[name="adBgSource"]:checked').value;
       slide.adBgSource = bgSrc;
-      if (bgSrc === 'file' && adBgImageFile.files[0]) {
-        const saveBtnMsg = document.getElementById('editorSaveBtn');
-        const originalText = saveBtnMsg ? saveBtnMsg.textContent : "저장";
-        if (saveBtnMsg) saveBtnMsg.textContent = "업로드 중...";
-        try {
-          const uploadResult = await uploadFile(adBgImageFile.files[0]);
-          slide.adBgImagePath = uploadResult.path;
-          slide.adBgImageUrl = null;
-        } catch (e) {
-          alert("배경 이미지 업로드 실패: " + e.message);
-          if (saveBtnMsg) saveBtnMsg.textContent = originalText;
-          return;
-        } finally {
-          if (saveBtnMsg) saveBtnMsg.textContent = originalText;
+      const backgroundFile = adBgImageFile.files[0];
+      if (bgSrc === 'file') {
+        if (
+          backgroundFile &&
+          !canReuseRuntimeUpload(
+            slide,
+            "uploadedBackgroundFile",
+            backgroundFile,
+            "adBgImagePath"
+          )
+        ) {
+          const saveBtnMsg = document.getElementById('editorSaveBtn');
+          const originalText = saveBtnMsg ? saveBtnMsg.textContent : "저장";
+          if (saveBtnMsg) saveBtnMsg.textContent = "업로드 중...";
+          try {
+            const uploadResult = await uploadFile(backgroundFile);
+            slide.adBgImagePath = uploadResult.path;
+            slide.adBgImageUrl = null;
+            slide.uploadedBackgroundFile = toFileMetadata(backgroundFile);
+            rememberSlideRuntimeAssets(slide, [
+              "adBgImagePath",
+              "adBgImageUrl",
+              "uploadedBackgroundFile",
+            ]);
+          } catch (e) {
+            reportSaveFailure("배경 이미지 업로드 실패: " + e.message);
+            if (saveBtnMsg) saveBtnMsg.textContent = originalText;
+            return false;
+          } finally {
+            if (saveBtnMsg) saveBtnMsg.textContent = originalText;
+          }
         }
       } else if (bgSrc === 'url') {
         slide.adBgImageUrl = adBgImageUrl.value;
@@ -4224,48 +4945,93 @@ async function saveCurrentSlide() {
       if (slide.sourceType === 'upload') {
         if (userPptxFile.files.length > 0) {
           const file = userPptxFile.files[0];
-          // Upload to server
-          try {
-            const result = await uploadFile(file);
-            // Update slide with server file info
-            slide.serverFilePath = result.path; // e.g. /uploads/xxx-name.pptx
-            slide.fileName = result.originalName;
-            slide.thumbnail = result.thumbnail; // Save thumbnail path
-            slide.fileSaved = true;
+          if (
+            !canReuseRuntimeUpload(
+              slide,
+              "uploadedFile",
+              file,
+              "serverFilePath"
+            )
+          ) {
+            // Upload to server
+            try {
+              const result = await uploadFile(file);
+              // Update slide with server file info
+              slide.serverFilePath = result.path; // e.g. /uploads/xxx-name.pptx
+              slide.fileName = result.originalName;
+              slide.thumbnail = result.thumbnail; // Save thumbnail path
+              slide.fileSaved = true;
+              slide.uploadedFile = toFileMetadata(file);
+              rememberSlideRuntimeAssets(slide, [
+                "serverFilePath",
+                "fileName",
+                "thumbnail",
+                "fileSaved",
+                "uploadedFile",
+              ]);
 
-            // Clear transient file obj
-            slide.file = null;
-            slide.fileData = null;
-          } catch (err) {
-            console.error("Upload Error:", err);
-            alert("파일 업로드 실패");
-            return;
+              // Clear transient file obj
+              slide.file = null;
+              slide.fileData = null;
+            } catch (err) {
+              console.error("Upload Error:", err);
+              reportSaveFailure("파일 업로드 실패: " + (err?.message || err));
+              return false;
+            }
           }
         } else if (!slide.fileName && !slide.serverFilePath) {
-          alert("PPTX 파일을 업로드해주세요.");
-          return;
+          reportSaveFailure("PPTX 파일을 업로드해주세요.");
+          return false;
         }
       }
     }
 
-    if (isTemplateMode()) {
-      markTemplateDirty();
-    } else {
-      const saved = await persistCurrentWorkspace();
-      if (!saved) {
-        return;
-      }
-      syncWorkingSlidesToState();
+    const restoreSaveLabel = showSaveButtonProgress(editorSaveBtn, "저장 중...");
+    let committed = false;
+    try {
+      committed = await commitSlideCandidate(slide);
+    } finally {
+      restoreSaveLabel();
+    }
+    if (!committed) {
+      reportSaveFailure(
+        "슬라이드 목록에서 대상을 찾을 수 없어 저장하지 못했습니다."
+      );
+      return false;
     }
 
-    hasUnsavedChanges = false;
-    updateSaveButtonState();
-    updateButtonsState(slide);
+    if (slide.type === "title") {
+      rememberChurchName(slide.churchName);
+    }
+    // Never write the saved model into an editor that has moved on to another
+    // slide, which a programmatic save could otherwise do.
+    if (currentSlideId === savingSlideId) {
+      // The canvas already holds exactly what was committed, so it is rebased
+      // onto the new baseline in place instead of being reloaded: a reload
+      // would drop the user's selection right after a successful save.
+      const canvasInPlace = markCustomEditorSaved(slide.id);
+      populateEditor(slide, { reloadCustomCanvas: !canvasInPlace });
+      slideRuntimeDraft = {};
+      slideBaselineSnapshot = createSnapshot(collectCurrentSlideDraft());
+      updateButtonsState(slide);
+    }
+    refreshSaveState();
     renderSlideList();
-    alert("저장되었습니다.");
+    if (!silent) {
+      showToast(
+        isTemplateMode()
+          ? "슬라이드 변경사항이 반영되었습니다 · 템플릿 저장 필요"
+          : "슬라이드가 저장되었습니다"
+      );
+    }
+    return true;
   } catch (e) {
     console.error("Error in saveCurrentSlide:", e);
-    alert("저장 중 오류 발생: " + e.message);
+    reportSaveFailure("저장 중 오류 발생: " + e.message);
+    return false;
+  } finally {
+    slideSaving = false;
+    refreshSaveState();
   }
 }
 
@@ -4618,6 +5384,8 @@ function getBulkActionSlides() {
 }
 
 async function deleteSelectedSlides() {
+  if (blockedBySaveInProgress()) return;
+
   const selectedSlides = getSelectedSlides();
   if (selectedSlides.length === 0) {
     alert("삭제할 슬라이드를 선택하세요.");
@@ -4627,6 +5395,9 @@ async function deleteSelectedSlides() {
   if (!confirm(`선택한 ${selectedSlides.length}개 슬라이드를 삭제하시겠습니까?`)) {
     return;
   }
+
+  // The confirm is a yield point, so a save may have started behind it.
+  if (blockedBySaveInProgress()) return;
 
   const selectedIds = selectedSlides.map((slide) => slide.id);
 
@@ -4705,8 +5476,8 @@ async function createTemplateFromSelection() {
 
     templates.push(cloneTemplate(payload.template));
     renderTemplateGallery();
+    showToast(`템플릿이 저장되었습니다: ${payload.template.name}`);
     await openTemplateWorkspace(payload.template.id);
-    alert(`템플릿이 저장되었습니다: ${payload.template.name}`);
   } catch (err) {
     alert(err.message || "템플릿 저장 중 오류가 발생했습니다.");
   }
@@ -4718,7 +5489,17 @@ async function deleteTemplateById(templateId) {
     return;
   }
 
+  // A delete accepted here would race a template the server is still writing.
+  if (blockedBySaveInProgress()) {
+    return;
+  }
+
   if (!confirm(`'${template.name}' 템플릿을 삭제하시겠습니까?`)) {
+    return;
+  }
+
+  // The confirm is a yield point, so a save may have started behind it.
+  if (blockedBySaveInProgress()) {
     return;
   }
 
@@ -4735,6 +5516,7 @@ async function deleteTemplateById(templateId) {
     const wasOpen = activeTemplateId === template.id;
     activeTemplateId = null;
     hasPendingTemplateChanges = false;
+    templateBaselineSnapshot = null;
 
     if (wasOpen) {
       loadWorkspaceSlides([]);
@@ -4771,6 +5553,12 @@ function renameActiveTemplate() {
     return;
   }
 
+  // A rename accepted here would be overwritten by the in-flight save, which
+  // is sending the name it captured before the prompt.
+  if (blockedBySaveInProgress()) {
+    return;
+  }
+
   const trimmedName = promptTemplateName(activeTemplate.name);
   if (!trimmedName) {
     return;
@@ -4781,8 +5569,7 @@ function renameActiveTemplate() {
       ? { ...template, name: trimmedName }
       : template
   );
-  hasPendingTemplateChanges = true;
-  updateTemplateManagementUi();
+  refreshTemplateDirtyState();
 }
 
 // Renaming from the gallery has no "저장" button to fall back on, so persist
@@ -4793,8 +5580,17 @@ async function renameTemplateById(templateId) {
     return;
   }
 
+  if (blockedBySaveInProgress()) {
+    return;
+  }
+
   const trimmedName = promptTemplateName(template.name);
   if (!trimmedName) {
+    return;
+  }
+
+  // The prompt is a yield point, so a save may have started behind it.
+  if (blockedBySaveInProgress()) {
     return;
   }
 
@@ -4876,16 +5672,20 @@ async function downloadSelectedSlidesBundle() {
 
 addSlideBtn.addEventListener("click", createSlide);
 
-editorSaveBtn.addEventListener("click", saveCurrentSlide);
+editorSaveBtn.addEventListener("click", () => saveCurrentSlide());
 editorResetBtn.addEventListener("click", resetCurrentSlide);
 editorCancelBtn.addEventListener("click", cancelEdit);
 
 async function deleteCurrentSlide() {
   if (!currentSlideId) return;
+  if (blockedBySaveInProgress()) return;
 
   if (!confirm("정말 이 슬라이드를 삭제하시겠습니까?")) {
     return;
   }
+
+  // The confirm is a yield point, so a save may have started behind it.
+  if (blockedBySaveInProgress()) return;
 
   // Call API
   try {
@@ -4907,33 +5707,25 @@ async function deleteCurrentSlide() {
   }
 }
 
-// ... cancelEdit (no server logic needed here usually, just discard local) ...
+// Closing the editor is the same decision as leaving it, so it goes through
+// the one guard instead of its own confirm.
 function cancelEdit() {
-  if (!currentSlideId) return;
-  const slide = slides.find(s => s.id === currentSlideId);
+  if (!currentSlideId) return Promise.resolve(true);
 
-  if (slide && !slide.saved) {
-    if (!confirm("작성 중인 슬라이드가 삭제됩니다. 취소하시겠습니까?")) {
-      return;
+  return guardTransition(async () => {
+    const slide = slides.find((s) => s.id === currentSlideId);
+    if (isSlideUnsaved(slide)) {
+      slides = slides.filter((s) => s.id !== currentSlideId);
+      syncWorkingSlidesToState();
+      if (isTemplateMode()) {
+        refreshTemplateDirtyState();
+      }
     }
-    slides = slides.filter(s => s.id !== currentSlideId);
-    currentSlideId = null;
-    hasUnsavedChanges = false;
-    releaseCustomEditorSlide();
-    updateSaveButtonState();
-
-    emptyEditorState.style.display = "flex";
-    slideEditor.style.display = "none";
+    // resetEditorSelection() detaches the custom canvas and refreshes the
+    // buttons, so closing the editor needs nothing else here.
+    resetEditorSelection();
     renderSlideList();
-  } else {
-    currentSlideId = null;
-    hasUnsavedChanges = false;
-    releaseCustomEditorSlide();
-    updateSaveButtonState();
-    emptyEditorState.style.display = "flex";
-    slideEditor.style.display = "none";
-    renderSlideList();
-  }
+  });
 }
 
 editorDeleteBtn.addEventListener("click", deleteCurrentSlide);
@@ -4969,7 +5761,7 @@ document.addEventListener("click", (e) => {
 bulkDeleteBtn.addEventListener("click", () => { closeBulkDropdown(); deleteSelectedSlides(); });
 bulkTemplateBtn.addEventListener("click", () => { closeBulkDropdown(); createTemplateFromSelection(); });
 bulkDownloadBtn.addEventListener("click", () => { closeBulkDropdown(); downloadSelectedSlidesBundle(); });
-templateSaveBtn.addEventListener("click", saveActiveTemplateToServer);
+templateSaveBtn.addEventListener("click", () => saveActiveTemplateToServer());
 templateDeleteBtn.addEventListener("click", deleteActiveTemplate);
 
 [
@@ -4980,18 +5772,18 @@ templateDeleteBtn.addEventListener("click", deleteActiveTemplate);
   slideFontSizeSelect,
   slideAlignSelect,
 ].forEach((el) => {
+  if (!el) return;
   el.addEventListener("input", () => {
-    hasUnsavedChanges = true;
-    updateSaveButtonState();
     renderPreview();
+    refreshSaveState();
   });
 });
 
 sourceRadios.forEach(radio => {
   radio.addEventListener('change', (e) => {
-    hasUnsavedChanges = true;
     toggleSettingsMode(e.target.value);
     renderPreview();
+    refreshSaveState();
   })
 });
 
@@ -5009,9 +5801,9 @@ alignTabs.forEach((tab) => {
 
 adBgSourceRadios.forEach(radio => {
   radio.addEventListener('change', (e) => {
-    hasUnsavedChanges = true;
     toggleBgMode(e.target.value);
     renderPreview();
+    refreshSaveState();
   });
 });
 
@@ -5021,8 +5813,8 @@ document.querySelectorAll('.rte-size-btn').forEach(btn => {
     const targetId = btn.dataset.target;
     document.getElementById(targetId).value = btn.dataset.value;
     syncRteSizeBtns(targetId, btn.dataset.value);
-    hasUnsavedChanges = true;
     renderPreview();
+    refreshSaveState();
   });
 });
 
@@ -5034,8 +5826,8 @@ document.querySelectorAll('.rte-align-btn').forEach(btn => {
     if (!targetId) return;
     document.getElementById(targetId).value = btn.dataset.value;
     syncRteAlignBtns(targetId, btn.dataset.value);
-    hasUnsavedChanges = true;
     renderPreview();
+    refreshSaveState();
   });
 });
 
@@ -5085,28 +5877,28 @@ adTextColorTabs.forEach(tab => {
   tab.addEventListener('click', () => {
     adTextColor.value = tab.dataset.value;
     syncAdTextColorTabs(tab.dataset.value);
-    hasUnsavedChanges = true;
     renderPreview();
+    refreshSaveState();
   });
 });
 
 // ad body inputs: live preview
 [adBodyContent, adBodyFont, adBodyFontSize, adTitleInput].forEach(el => {
   el.addEventListener('input', () => {
-    hasUnsavedChanges = true;
     renderPreview();
+    refreshSaveState();
   });
 });
 
 adBgImageUrl.addEventListener('input', () => {
-  hasUnsavedChanges = true;
   renderPreview();
+  refreshSaveState();
 });
 
 adBgOpacity.addEventListener('input', () => {
   adBgOpacityValue.textContent = `${adBgOpacity.value}%`;
-  hasUnsavedChanges = true;
   renderPreview();
+  refreshSaveState();
 });
 
 // --- Title slide listeners ---
@@ -5138,34 +5930,34 @@ if (titleDesignGrid) {
     if (!card) return;
     titleDesignSelect.value = normalizeTitleDesign(card.dataset.titleDesign);
     syncTitleDesignCards(titleDesignSelect.value);
-    hasUnsavedChanges = true;
     renderPreview();
+    refreshSaveState();
   });
 }
 
 titleChurchNameInput.addEventListener('input', () => {
-  hasUnsavedChanges = true;
   renderPreview();
+  refreshSaveState();
 });
 
 titleServiceDateSelect.addEventListener('change', () => {
   updateTitleSeasonSuggestion();
   maybeAutoNameTitleSlide();
-  hasUnsavedChanges = true;
   renderPreview();
+  refreshSaveState();
 });
 
 titleSubtitleInput.addEventListener('input', () => {
   updateTitleSeasonSuggestion();
-  hasUnsavedChanges = true;
   renderPreview();
+  refreshSaveState();
 });
 
 titleSeasonSuggestBtn.addEventListener('click', () => {
   titleSubtitleInput.value = titleSeasonSuggestBtn.dataset.suggestion || '';
   updateTitleSeasonSuggestion();
-  hasUnsavedChanges = true;
   renderPreview();
+  refreshSaveState();
 });
 
 // --- Title (Custom) slide listeners ---
@@ -5187,24 +5979,44 @@ if (customTitleDesignGrid) {
       card.dataset.customTitleDesign
     );
     syncCustomTitleDesignCards(customTitleDesignSelect.value);
-    hasUnsavedChanges = true;
     renderPreview();
+    refreshSaveState();
   });
 }
 
 customTitleKoInput.addEventListener('input', () => {
   maybeAutoNameCustomTitleSlide();
-  hasUnsavedChanges = true;
   renderPreview();
+  refreshSaveState();
 });
 
 customTitleEnInput.addEventListener('input', () => {
-  hasUnsavedChanges = true;
   renderPreview();
+  refreshSaveState();
 });
 
+[
+  hymnNumberInput,
+  hymnKorTitleInput,
+  hymnEngTitleInput,
+  adTitleSizeSelect,
+  adTitleAlignSelect,
+  adBodyAlign,
+].forEach((el) => {
+  if (!el) return;
+  el.addEventListener("input", refreshSaveState);
+  el.addEventListener("change", refreshSaveState);
+});
+
+if (adBgImageFile) {
+  adBgImageFile.addEventListener("change", () => {
+    renderPreview();
+    refreshSaveState();
+  });
+}
+
 userPptxFile.addEventListener('change', async () => {
-  hasUnsavedChanges = true;
+  refreshSaveState();
 
   if (userPptxFile.files.length > 0) {
     const file = userPptxFile.files[0];
@@ -5218,12 +6030,15 @@ userPptxFile.addEventListener('change', async () => {
 
       try {
         const result = await uploadFile(file);
-        const current = slides.find(s => s.id === currentSlideId);
-        if (current) {
-          current.serverFilePath = result.path;
-          current.fileName = result.originalName || file.name;
-        }
-        renderPreview(); // Render using converted server file
+        slideRuntimeDraft = {
+          ...slideRuntimeDraft,
+          serverFilePath: result.path,
+          fileName: result.originalName || file.name,
+          fileSaved: true,
+          uploadedFile: toFileMetadata(file),
+        };
+        renderPreview(collectCurrentSlideDraft());
+        refreshSaveState();
         return;
       } catch (e) {
         alert("PPT 변환 업로드 실패: " + e.message);
@@ -5232,10 +6047,42 @@ userPptxFile.addEventListener('change', async () => {
   }
 
   renderPreview();
+  refreshSaveState();
 });
 
-// Load slides on init
-loadPptDataFromServer();
+// Closing the tab is the one navigation the in-app popup cannot own, so the
+// browser prompt stands in for it — and only when something is really dirty.
+window.addEventListener("beforeunload", (event) => {
+  if (!shouldWarnBeforeUnload(getSaveState())) {
+    return;
+  }
+  event.preventDefault();
+  event.returnValue = "";
+});
+
+// Load slides on init. The book list has to be in place first: the scripture
+// editor fills its selects from it, and a slide selected before it arrives
+// would be baselined with an empty testament and book.
+// The readiness marker is written for both outcomes, so nothing waits forever
+// on a render that threw, and a failed init never reads as ready.
+async function initPptWorkspace() {
+  try {
+    await booksSettled;
+    if (!booksReady) {
+      showToast(getBooksUnavailableMessage({ booksReady }));
+    }
+    await loadPptDataFromServer();
+    document.body.dataset.pptReady = "true";
+  } catch (error) {
+    console.error("Failed to initialize the PPT workspace", error);
+    document.body.dataset.pptReady = "failed";
+    document.body.dataset.pptReadyError = error?.message || String(error);
+    showToast(WORKSPACE_INIT_FAILED_MESSAGE);
+  }
+}
+
+// Caught inside, so the call itself can never raise an unhandled rejection.
+initPptWorkspace();
 
 // Helpers
 function readFileAsDataUrl(file) {
