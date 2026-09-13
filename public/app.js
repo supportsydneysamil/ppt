@@ -3,6 +3,7 @@ import {
   deriveSaveButtonState,
   isSnapshotDirty,
   isTemplateDirty,
+  shouldRecaptureSlideBaseline,
   toFileMetadata,
   withTransientFiles,
 } from "/lib/save-state.js";
@@ -1925,8 +1926,16 @@ async function saveActiveTemplateToServer({ silent = false } = {}) {
     templates = templates.map((template) =>
       template.id === nextTemplate.id ? nextTemplate : template
     );
+    const recaptureSlideBaseline = shouldRecaptureSlideBaseline({
+      slideDirty,
+      currentSlideId,
+      storedSlideIds: nextTemplate.slides.map((slide) => slide.id),
+    });
     slides = nextTemplate.slides.map((slide) => cloneSlide(slide));
     captureTemplateBaseline(nextTemplate, nextTemplate.slides);
+    if (recaptureSlideBaseline) {
+      slideBaselineSnapshot = createSnapshot(collectCurrentSlideDraft());
+    }
     refreshTemplateDirtyState();
     renderSlideList();
     renderTemplateGallery();

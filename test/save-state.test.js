@@ -7,6 +7,7 @@ import {
   deriveSaveButtonState,
   getPendingChangeScopes,
   getSaveSequence,
+  shouldRecaptureSlideBaseline,
   toFileMetadata,
   withTransientFiles,
 } from "../lib/save-state.js";
@@ -125,5 +126,40 @@ describe("save state decisions", () => {
     const input = { slideDirty: true, templateDirty: true };
     assert.deepEqual(getPendingChangeScopes(input), ["slide", "template"]);
     assert.deepEqual(getSaveSequence(input), ["slide", "template"]);
+  });
+
+  it("recaptures a slide baseline only for a clean selection that survives resync", () => {
+    assert.equal(
+      shouldRecaptureSlideBaseline({
+        slideDirty: false,
+        currentSlideId: "slide-1",
+        storedSlideIds: ["slide-1"],
+      }),
+      true
+    );
+    assert.equal(
+      shouldRecaptureSlideBaseline({
+        slideDirty: true,
+        currentSlideId: "slide-1",
+        storedSlideIds: ["slide-1"],
+      }),
+      false
+    );
+    assert.equal(
+      shouldRecaptureSlideBaseline({
+        slideDirty: false,
+        currentSlideId: null,
+        storedSlideIds: ["slide-1"],
+      }),
+      false
+    );
+    assert.equal(
+      shouldRecaptureSlideBaseline({
+        slideDirty: false,
+        currentSlideId: "slide-1",
+        storedSlideIds: [],
+      }),
+      false
+    );
   });
 });
