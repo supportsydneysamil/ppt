@@ -1586,6 +1586,12 @@ body {
   flex: 0 0 auto;
 }
 
+.template-save-hint {
+  margin: 0;
+  max-width: 260px;
+  text-align: right;
+}
+
 /* PPT Interface Grid */
 .ppt-interface {
   display: grid;

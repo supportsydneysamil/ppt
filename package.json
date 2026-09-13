@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "test:browser": "node test/browser/save-flow.playwright.mjs"
   },
   "dependencies": {
     "@xmldom/xmldom": "^0.9.12",
@@ -16,5 +17,8 @@
     "multer": "^2.0.2",
     "pptx-automizer": "^0.9.3",
     "pptxgenjs": "^4.0.1"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0"
   }
 }

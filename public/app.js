@@ -1,16 +1,22 @@
 import {
+  applyReorder,
   createSnapshot,
   deriveSaveButtonState,
+  getBooksUnavailableMessage,
+  getBusyBlockMessage,
   getUnsavedChangesMessage,
   isDiscardComplete,
   isSlideUnsaved,
   isSnapshotDirty,
   isTemplateDirty,
   planDiscard,
+  planReorder,
+  REORDER_FAILURE_MESSAGE,
   runGuardedTransition,
   selectTransientPreviewFiles,
   shouldRecaptureSlideBaseline,
   shouldWarnBeforeUnload,
+  TEMPLATE_SAVE_BLOCKED_HINT,
   toFileMetadata,
   withTransientFiles,
 } from "/lib/save-state.js";
@@ -61,6 +67,9 @@ const titleSlideTypeGroup = document.getElementById("titleSlideTypeGroup");
 let dataCache = null;
 let lastVersePayload = null;
 let lastVerseRequest = null;
+// The scripture editor reads its testament and book from this cache, so a
+// slide may not be selected or baselined before it is filled.
+let booksReady = false;
 
 async function loadBooks() {
   const resp = await fetch("/api/books");
@@ -68,6 +77,7 @@ async function loadBooks() {
     throw new Error("failed to load books");
   }
   dataCache = await resp.json();
+  booksReady = true;
   renderTestaments();
   fillScriptureBookSelects();
 }
@@ -341,13 +351,9 @@ function handleStepperButtonClick(event) {
     syncVerseRange(input);
   }
 
-  if (
-    targetId === "scriptureChapter" ||
-    targetId === "scriptureStartVerse" ||
-    targetId === "scriptureEndVerse"
-  ) {
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  }
+  // A programmatic value change fires nothing on its own, so every stepper
+  // announces itself the same way a keystroke would.
+  input.dispatchEvent(new Event("input", { bubbles: true }));
 
   input.focus();
   input.select();
@@ -384,7 +390,9 @@ stepperButtons.forEach((button) => {
   input.addEventListener("blur", () => normalizeNumberInput(input));
 });
 
-loadBooks().catch(() => {
+// Pinned so the PPT workspace can wait for it: a scripture slide selected
+// before the book list exists would be baselined with an empty book.
+const booksSettled = loadBooks().catch(() => {
   outputText.textContent = "도서 목록을 불러오지 못했습니다.";
 });
 setDownloadState(false);
@@ -869,6 +877,7 @@ const customTitleDesignGrid = document.getElementById("customTitleDesignGrid");
 const customTitleDesignSelect = document.getElementById("customTitleDesign");
 const customTitleKoInput = document.getElementById("customTitleKo");
 const customTitleEnInput = document.getElementById("customTitleEn");
+const templateSaveHint = document.getElementById("templateSaveHint");
 const unsavedChangesModal = document.getElementById("unsavedChangesModal");
 const unsavedChangesMessage = document.getElementById("unsavedChangesMessage");
 const unsavedSaveBtn = document.getElementById("unsavedSaveBtn");
@@ -892,6 +901,9 @@ let slideRuntimeDraft = {};
 let slideDirty = false;
 let slideSaving = false;
 let templateSaving = false;
+// Main slide reorder persists immediately, so its request counts as a save in
+// flight: nothing may delete, reset or reorder again until it settles.
+let reorderSaving = false;
 // Depth > 0 means a guarded transition is already running, so nested helpers
 // must not raise a second unsaved-changes popup.
 let guardedTransitionDepth = 0;
@@ -1074,9 +1086,30 @@ function refreshSaveState() {
     templateDirty: hasPendingTemplateChanges,
     slideSaving,
     templateSaving,
+    reorderSaving,
   });
-  editorSaveBtn.disabled = state.slideDisabled;
-  templateSaveBtn.disabled = state.templateDisabled;
+  if (editorSaveBtn) {
+    editorSaveBtn.disabled = state.slideDisabled;
+  }
+  if (templateSaveBtn) {
+    templateSaveBtn.disabled = state.templateDisabled;
+    // The two-stage flow is the one disabled reason a user cannot guess, so
+    // it is spelled out next to the button and as its description.
+    const explainStaging = state.templateDisabledReason === "slide-dirty";
+    if (templateSaveHint) {
+      templateSaveHint.hidden = !explainStaging;
+      templateSaveHint.textContent = explainStaging
+        ? TEMPLATE_SAVE_BLOCKED_HINT
+        : "";
+    }
+    if (explainStaging) {
+      templateSaveBtn.title = TEMPLATE_SAVE_BLOCKED_HINT;
+      templateSaveBtn.setAttribute("aria-describedby", "templateSaveHint");
+    } else {
+      templateSaveBtn.removeAttribute("title");
+      templateSaveBtn.removeAttribute("aria-describedby");
+    }
+  }
 }
 
 function resetEditorSelection() {
@@ -1109,7 +1142,20 @@ function getSaveState() {
     templateDirty: hasPendingTemplateChanges,
     slideSaving,
     templateSaving,
+    reorderSaving,
   };
+}
+
+// The one gate in front of every destructive or reordering action. A save in
+// flight owns the drafts, the baselines and the files on the server, so these
+// actions report why they were refused instead of racing it.
+function blockedBySaveInProgress() {
+  const message = getBusyBlockMessage(getSaveState());
+  if (!message) {
+    return false;
+  }
+  showToast(message);
+  return true;
 }
 
 // Set by the save functions whenever they surface a failure reason, so the
@@ -1126,11 +1172,24 @@ function reportSaveFailure(message) {
 // question.
 let unsavedDialogResolver = null;
 
-function setUnsavedDialogBusy(busy) {
+// Both busy phases talk to the server on the user's behalf and neither can be
+// abandoned without corrupting what it is doing - a half-applied save or a
+// discard whose refetch is still in flight - so the cancel button is disabled
+// rather than left focusable with nothing safe to do. The dialog itself
+// carries aria-busy so assistive tech hears the wait.
+function setUnsavedDialogBusy(busy, phase = "save") {
   unsavedSaveBtn.disabled = busy;
   unsavedDiscardBtn.disabled = busy;
   unsavedCancelBtn.disabled = busy;
-  unsavedSaveBtn.textContent = busy ? "저장 중..." : "저장 후 이동";
+  unsavedSaveBtn.textContent =
+    busy && phase === "save" ? "저장 중..." : "저장 후 이동";
+  unsavedDiscardBtn.textContent =
+    busy && phase === "discard" ? "되돌리는 중..." : "저장하지 않고 이동";
+  if (busy) {
+    unsavedChangesModal.setAttribute("aria-busy", "true");
+  } else {
+    unsavedChangesModal.removeAttribute("aria-busy");
+  }
 }
 
 function closeUnsavedChangesDialog() {
@@ -1237,6 +1296,12 @@ async function discardPendingChanges() {
     captureTemplateBaseline();
     refreshTemplateDirtyState();
     renderTemplateGallery();
+    if (!restoredTemplate) {
+      // The refetch says the template is gone, so the workspace it was
+      // rendering has to give way to the gallery.
+      alert("템플릿이 서버에서 삭제되어 목록으로 이동합니다.");
+      renderPptScreen();
+    }
   }
 
   refreshSaveState();
@@ -1282,25 +1347,43 @@ async function guardTransition(transition) {
 
   if (unsavedGuardActive) {
     console.warn("Ignoring navigation while an unsaved-changes guard is open");
+    showToast("저장 확인 창을 먼저 처리해 주세요.");
     return false;
   }
 
   unsavedGuardActive = true;
+  // Held until the popup is closed: a toast raised behind an open modal is
+  // never read out by the live region.
+  let pendingGuardToast = null;
   try {
     return await runGuardedTransition({
       getState: getSaveState,
       showDialog: showUnsavedChangesDialog,
       saveScope: saveScopeForGuard,
-      discard: discardPendingChanges,
+      discard: async () => {
+        // The refetch it may run cannot be abandoned midway, so the dialog is
+        // marked busy for the whole restore.
+        setUnsavedDialogBusy(true, "discard");
+        try {
+          return await discardPendingChanges();
+        } finally {
+          setUnsavedDialogBusy(false);
+        }
+      },
       transition: async () => {
         // Close first so the destination is never rendered behind the popup.
         closeUnsavedChangesDialog();
+        if (pendingGuardToast) {
+          showToast(pendingGuardToast);
+          pendingGuardToast = null;
+        }
         await runTransition(transition);
       },
       setBusy: setUnsavedDialogBusy,
-      onBlocked: () =>
-        showToast("저장이 진행 중입니다. 잠시 후 다시 시도해 주세요."),
-      onSaved: () => showToast("변경사항을 저장했습니다"),
+      onBlocked: () => showToast(getBusyBlockMessage(getSaveState())),
+      onSaved: () => {
+        pendingGuardToast = "변경사항을 저장했습니다";
+      },
     });
   } finally {
     closeUnsavedChangesDialog();
@@ -1885,6 +1968,14 @@ async function generateScriptureSlideFile(slideName, slide) {
 }
 
 async function applyScriptureSlideSettings(slide) {
+  // Without the book list the selects are empty, so saving here would write
+  // an empty or defaulted-wrong book into the stored slide.
+  const booksBlocked = getBooksUnavailableMessage({ booksReady });
+  if (booksBlocked) {
+    reportSaveFailure(booksBlocked);
+    return false;
+  }
+
   const fields = collectScriptureSlideFields();
   if (!fields.koVersion && !fields.enVersion) {
     reportSaveFailure("번역을 하나 이상 선택하세요.");
@@ -2141,6 +2232,10 @@ async function saveActiveTemplateToServer({ silent = false } = {}) {
 
   templateSaving = true;
   refreshSaveState();
+  const restoreTemplateLabel = showSaveButtonProgress(
+    templateSaveBtn,
+    "저장 중..."
+  );
   try {
     const resp = await fetch(`/api/templates/${encodeURIComponent(activeTemplate.id)}`, {
       method: "PUT",
@@ -2182,6 +2277,7 @@ async function saveActiveTemplateToServer({ silent = false } = {}) {
     reportSaveFailure(e.message || "템플릿 저장에 실패했습니다.");
     return false;
   } finally {
+    restoreTemplateLabel();
     templateSaving = false;
     refreshSaveState();
   }
@@ -2328,35 +2424,62 @@ function clearSlideSelection() {
   renderSlideList();
 }
 
-function moveSlideToIndex(slideId, targetIndex) {
-  const fromIndex = slides.findIndex((slide) => slide.id === slideId);
-  if (fromIndex === -1) {
+// Main slide order is persisted immediately, so the reorder owns the request
+// it starts: the new order is only authoritative once the server accepts it,
+// and a failure puts the previous order back on screen.
+async function moveSlideToIndex(slideId, targetIndex) {
+  if (blockedBySaveInProgress()) {
     return false;
   }
 
-  const boundedIndex = Math.max(0, Math.min(targetIndex, slides.length - 1));
-  if (fromIndex === boundedIndex) {
+  const plan = planReorder({
+    ids: slides.map((slide) => slide.id),
+    slideId,
+    targetIndex,
+  });
+  if (!plan.changed) {
     return false;
   }
 
-  const [movedSlide] = slides.splice(fromIndex, 1);
-  slides.splice(boundedIndex, 0, movedSlide);
+  const previousSlides = slides;
+  const previousMainSlides = mainSlides;
+  slides = applyReorder(slides, plan.fromIndex, plan.toIndex);
   renderSlideList();
+
   if (isTemplateMode()) {
     markTemplateDirty();
-  } else {
-    syncWorkingSlidesToState();
-    persistCurrentWorkspace();
+    return true;
   }
-  return true;
+
+  // mainSlides is only advanced by a successful POST, so nothing mirrors the
+  // new order until the server has it.
+  reorderSaving = true;
+  refreshSaveState();
+  try {
+    if (await persistCurrentWorkspace()) {
+      return true;
+    }
+  } finally {
+    reorderSaving = false;
+  }
+
+  // The server never took the new order, so the authoritative one is the one
+  // it still holds. The editor draft is untouched by order, so restoring the
+  // list and its selection highlight is the whole rollback.
+  slides = previousSlides;
+  mainSlides = previousMainSlides;
+  renderSlideList();
+  refreshSaveState();
+  alert(REORDER_FAILURE_MESSAGE);
+  return false;
 }
 
-function moveSlideByOffset(slideId, offset) {
+async function moveSlideByOffset(slideId, offset) {
   const fromIndex = slides.findIndex((slide) => slide.id === slideId);
   if (fromIndex === -1) {
     return;
   }
-  moveSlideToIndex(slideId, fromIndex + offset);
+  await moveSlideToIndex(slideId, fromIndex + offset);
 }
 
 function getSlideTypeLabel(slide) {
@@ -2392,7 +2515,7 @@ function createSlide() {
 
 function appendNewSlide() {
   const newSlide = {
-    id: Date.now().toString(),
+    id: generateClientId("slide"),
     name: "새 슬라이드",
     type: "simple",
     sourceType: "basic",
@@ -4000,6 +4123,7 @@ function toggleBgMode(source) {
 
 function resetCurrentSlide() {
   if (!currentSlideId) return;
+  if (blockedBySaveInProgress()) return;
   const slide = slides.find((s) => s.id === currentSlideId);
   // Reset fields to last saved state
   populateEditor(slide);
@@ -4067,7 +4191,7 @@ function renderSlideList() {
     card.addEventListener("dragleave", () => {
       card.classList.remove("drag-over-top", "drag-over-bottom");
     });
-    card.addEventListener("drop", (event) => {
+    card.addEventListener("drop", async (event) => {
       event.preventDefault();
       card.classList.remove("drag-over-top", "drag-over-bottom");
       if (!draggedSlideId || draggedSlideId === slide.id) {
@@ -4085,7 +4209,7 @@ function renderSlideList() {
         nextIndex = targetIndex - 1;
       }
 
-      moveSlideToIndex(draggedSlideId, nextIndex);
+      await moveSlideToIndex(draggedSlideId, nextIndex);
     });
 
     const header = document.createElement("div");
@@ -4129,9 +4253,9 @@ function renderSlideList() {
     moveUpBtn.disabled = index === 0;
     moveUpBtn.innerHTML =
       '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6l-6 6h12z"></path></svg>';
-    moveUpBtn.addEventListener("click", (event) => {
+    moveUpBtn.addEventListener("click", async (event) => {
       event.stopPropagation();
-      moveSlideByOffset(slide.id, -1);
+      await moveSlideByOffset(slide.id, -1);
     });
 
     const moveDownBtn = document.createElement("button");
@@ -4141,9 +4265,9 @@ function renderSlideList() {
     moveDownBtn.disabled = index === slides.length - 1;
     moveDownBtn.innerHTML =
       '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 18l6-6H6z"></path></svg>';
-    moveDownBtn.addEventListener("click", (event) => {
+    moveDownBtn.addEventListener("click", async (event) => {
       event.stopPropagation();
-      moveSlideByOffset(slide.id, 1);
+      await moveSlideByOffset(slide.id, 1);
     });
 
     actions.appendChild(handle);
@@ -4188,6 +4312,20 @@ async function uploadFile(file) {
     throw new Error("File upload failed");
   }
   return await resp.json();
+}
+
+// Save buttons are disabled while a save runs, so the progress label is the
+// only thing that tells the user which step is in flight. Returns the restore
+// callback, and tolerates a missing button.
+function showSaveButtonProgress(button, label) {
+  if (!button) {
+    return () => {};
+  }
+  const original = button.textContent;
+  button.textContent = label;
+  return () => {
+    button.textContent = original;
+  };
 }
 
 function rememberSlideRuntimeAssets(candidate, keys) {
@@ -4588,7 +4726,13 @@ async function saveCurrentSlide({ silent = false } = {}) {
       }
     }
 
-    const committed = await commitSlideCandidate(slide);
+    const restoreSaveLabel = showSaveButtonProgress(editorSaveBtn, "저장 중...");
+    let committed = false;
+    try {
+      committed = await commitSlideCandidate(slide);
+    } finally {
+      restoreSaveLabel();
+    }
     if (!committed) {
       reportSaveFailure(
         "슬라이드 목록에서 대상을 찾을 수 없어 저장하지 못했습니다."
@@ -4927,6 +5071,8 @@ function getBulkActionSlides() {
 }
 
 async function deleteSelectedSlides() {
+  if (blockedBySaveInProgress()) return;
+
   const selectedSlides = getSelectedSlides();
   if (selectedSlides.length === 0) {
     alert("삭제할 슬라이드를 선택하세요.");
@@ -4936,6 +5082,9 @@ async function deleteSelectedSlides() {
   if (!confirm(`선택한 ${selectedSlides.length}개 슬라이드를 삭제하시겠습니까?`)) {
     return;
   }
+
+  // The confirm is a yield point, so a save may have started behind it.
+  if (blockedBySaveInProgress()) return;
 
   const selectedIds = selectedSlides.map((slide) => slide.id);
 
@@ -5180,10 +5329,14 @@ editorCancelBtn.addEventListener("click", cancelEdit);
 
 async function deleteCurrentSlide() {
   if (!currentSlideId) return;
+  if (blockedBySaveInProgress()) return;
 
   if (!confirm("정말 이 슬라이드를 삭제하시겠습니까?")) {
     return;
   }
+
+  // The confirm is a yield point, so a save may have started behind it.
+  if (blockedBySaveInProgress()) return;
 
   // Call API
   try {
@@ -5556,8 +5709,19 @@ window.addEventListener("beforeunload", (event) => {
   event.returnValue = "";
 });
 
-// Load slides on init
-loadPptDataFromServer();
+// Load slides on init. The book list has to be in place first: the scripture
+// editor fills its selects from it, and a slide selected before it arrives
+// would be baselined with an empty testament and book.
+async function initPptWorkspace() {
+  await booksSettled;
+  if (!booksReady) {
+    showToast(getBooksUnavailableMessage({ booksReady }));
+  }
+  await loadPptDataFromServer();
+  document.body.dataset.pptReady = "true";
+}
+
+initPptWorkspace();
 
 // Helpers
 function readFileAsDataUrl(file) {

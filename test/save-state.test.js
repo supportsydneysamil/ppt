@@ -163,7 +163,11 @@ describe("save state decisions", () => {
         slideSaving: false,
         templateSaving: false,
       }),
-      { slideDisabled: false, templateDisabled: true }
+      {
+        slideDisabled: false,
+        templateDisabled: true,
+        templateDisabledReason: "slide-dirty",
+      }
     );
   });
 
@@ -177,7 +181,11 @@ describe("save state decisions", () => {
         slideSaving: true,
         templateSaving: false,
       }),
-      { slideDisabled: true, templateDisabled: true }
+      {
+        slideDisabled: true,
+        templateDisabled: true,
+        templateDisabledReason: "busy",
+      }
     );
   });
 
@@ -191,7 +199,11 @@ describe("save state decisions", () => {
         slideSaving: false,
         templateSaving: false,
       }),
-      { slideDisabled: false, templateDisabled: true }
+      {
+        slideDisabled: false,
+        templateDisabled: true,
+        templateDisabledReason: "slide-dirty",
+      }
     );
     assert.deepEqual(
       deriveSaveButtonState({
@@ -202,7 +214,11 @@ describe("save state decisions", () => {
         slideSaving: false,
         templateSaving: false,
       }),
-      { slideDisabled: true, templateDisabled: false }
+      {
+        slideDisabled: true,
+        templateDisabled: false,
+        templateDisabledReason: null,
+      }
     );
   });
 
