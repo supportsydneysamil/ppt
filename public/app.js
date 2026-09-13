@@ -4142,6 +4142,38 @@ async function downloadSlide() {
     }
   }
 
+  // Hymn slide with a title slide: let the server merge the title deck in front.
+  if (slide.type === 'hymn' && slide.includeTitle) {
+    try {
+      const resp = await fetch("/api/slides/export-pptx", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slides: [buildSerializableSlide(slide)] })
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        alert("다운로드 실패: " + (err.error || "Unknown Error"));
+        return;
+      }
+
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${slide.name || `찬송가_${slide.hymnNumber || ''}`}.pptx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      return;
+    } catch (e) {
+      alert("다운로드 중 오류가 발생했습니다.");
+      console.error(e);
+      return;
+    }
+  }
+
   if (slide.sourceType === 'basic') {
     try {
       const resp = await fetch("/api/create-slide-pptx", {
