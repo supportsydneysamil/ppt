@@ -1643,8 +1643,9 @@ function renderPreview(slideOverride) {
   }
 
   // Case 3: Server File Path Cache
-  // Only use this if not overridden by a new file upload
-  if (data.serverFilePath && !data.file) {
+  // Only use this if not overridden by a new file upload. Title slides are
+  // drawn from their own fields, so a leftover file path must not freeze them.
+  if (data.serverFilePath && !data.file && data.type !== 'title') {
     if (slidePreview.dataset.lastRenderedPath === data.serverFilePath) {
       skipRender = true;
     }
