@@ -6,6 +6,7 @@ import {
   getBusyBlockMessage,
   getUnsavedChangesMessage,
   isDiscardComplete,
+  isSaveBusy,
   isSlideUnsaved,
   isSnapshotDirty,
   isTemplateDirty,
@@ -19,6 +20,7 @@ import {
   TEMPLATE_SAVE_BLOCKED_HINT,
   toFileMetadata,
   withTransientFiles,
+  WORKSPACE_INIT_FAILED_MESSAGE,
 } from "/lib/save-state.js";
 
 const testamentSelect = document.getElementById("testament");
@@ -879,6 +881,7 @@ const customTitleKoInput = document.getElementById("customTitleKo");
 const customTitleEnInput = document.getElementById("customTitleEn");
 const templateSaveHint = document.getElementById("templateSaveHint");
 const unsavedChangesModal = document.getElementById("unsavedChangesModal");
+const unsavedChangesCard = document.getElementById("unsavedChangesCard");
 const unsavedChangesMessage = document.getElementById("unsavedChangesMessage");
 const unsavedSaveBtn = document.getElementById("unsavedSaveBtn");
 const unsavedDiscardBtn = document.getElementById("unsavedDiscardBtn");
@@ -1178,6 +1181,8 @@ let unsavedDialogResolver = null;
 // rather than left focusable with nothing safe to do. The dialog itself
 // carries aria-busy so assistive tech hears the wait.
 function setUnsavedDialogBusy(busy, phase = "save") {
+  const hadFocusInside =
+    busy && unsavedChangesModal.contains(document.activeElement);
   unsavedSaveBtn.disabled = busy;
   unsavedDiscardBtn.disabled = busy;
   unsavedCancelBtn.disabled = busy;
@@ -1187,6 +1192,11 @@ function setUnsavedDialogBusy(busy, phase = "save") {
     busy && phase === "discard" ? "되돌리는 중..." : "저장하지 않고 이동";
   if (busy) {
     unsavedChangesModal.setAttribute("aria-busy", "true");
+    // Disabling the buttons would drop focus out of the dialog, so the card
+    // itself takes it for the duration of the uninterruptible phase.
+    if (hadFocusInside && unsavedChangesCard) {
+      unsavedChangesCard.focus();
+    }
   } else {
     unsavedChangesModal.removeAttribute("aria-busy");
   }
@@ -2216,7 +2226,7 @@ async function saveSlidesToServer() {
 async function saveActiveTemplateToServer({ silent = false } = {}) {
   // An in-flight save owns the baselines. Returning before the flag is set is
   // what stops a second call from clearing the running save's busy state.
-  if (slideSaving || templateSaving) {
+  if (isSaveBusy(getSaveState())) {
     console.warn("Save already in progress; ignoring duplicate template save");
     return false;
   }
@@ -2455,21 +2465,27 @@ async function moveSlideToIndex(slideId, targetIndex) {
   // new order until the server has it.
   reorderSaving = true;
   refreshSaveState();
+  let persisted = false;
   try {
-    if (await persistCurrentWorkspace()) {
-      return true;
-    }
+    persisted = await persistCurrentWorkspace();
   } finally {
+    // Both outcomes leave the busy flag and the buttons converged here, so a
+    // dirty draft gets its save button back either way.
     reorderSaving = false;
+    refreshSaveState();
+  }
+
+  if (persisted) {
+    return true;
   }
 
   // The server never took the new order, so the authoritative one is the one
   // it still holds. The editor draft is untouched by order, so restoring the
-  // list and its selection highlight is the whole rollback.
+  // list and its selection highlight is the whole rollback; the re-render
+  // refreshes the buttons again.
   slides = previousSlides;
   mainSlides = previousMainSlides;
   renderSlideList();
-  refreshSaveState();
   alert(REORDER_FAILURE_MESSAGE);
   return false;
 }
@@ -4379,7 +4395,7 @@ async function saveCurrentSlide({ silent = false } = {}) {
   // An in-flight save owns the draft and the baselines. Returning before the
   // flag is set is what stops a second call from clearing the running save's
   // busy state.
-  if (slideSaving || templateSaving) {
+  if (isSaveBusy(getSaveState())) {
     console.warn("Save already in progress; ignoring duplicate slide save");
     return false;
   }
@@ -5176,7 +5192,17 @@ async function deleteTemplateById(templateId) {
     return;
   }
 
+  // A delete accepted here would race a template the server is still writing.
+  if (blockedBySaveInProgress()) {
+    return;
+  }
+
   if (!confirm(`'${template.name}' 템플릿을 삭제하시겠습니까?`)) {
+    return;
+  }
+
+  // The confirm is a yield point, so a save may have started behind it.
+  if (blockedBySaveInProgress()) {
     return;
   }
 
@@ -5230,6 +5256,12 @@ function renameActiveTemplate() {
     return;
   }
 
+  // A rename accepted here would be overwritten by the in-flight save, which
+  // is sending the name it captured before the prompt.
+  if (blockedBySaveInProgress()) {
+    return;
+  }
+
   const trimmedName = promptTemplateName(activeTemplate.name);
   if (!trimmedName) {
     return;
@@ -5251,8 +5283,17 @@ async function renameTemplateById(templateId) {
     return;
   }
 
+  if (blockedBySaveInProgress()) {
+    return;
+  }
+
   const trimmedName = promptTemplateName(template.name);
   if (!trimmedName) {
+    return;
+  }
+
+  // The prompt is a yield point, so a save may have started behind it.
+  if (blockedBySaveInProgress()) {
     return;
   }
 
@@ -5712,15 +5753,25 @@ window.addEventListener("beforeunload", (event) => {
 // Load slides on init. The book list has to be in place first: the scripture
 // editor fills its selects from it, and a slide selected before it arrives
 // would be baselined with an empty testament and book.
+// The readiness marker is written for both outcomes, so nothing waits forever
+// on a render that threw, and a failed init never reads as ready.
 async function initPptWorkspace() {
-  await booksSettled;
-  if (!booksReady) {
-    showToast(getBooksUnavailableMessage({ booksReady }));
+  try {
+    await booksSettled;
+    if (!booksReady) {
+      showToast(getBooksUnavailableMessage({ booksReady }));
+    }
+    await loadPptDataFromServer();
+    document.body.dataset.pptReady = "true";
+  } catch (error) {
+    console.error("Failed to initialize the PPT workspace", error);
+    document.body.dataset.pptReady = "failed";
+    document.body.dataset.pptReadyError = error?.message || String(error);
+    showToast(WORKSPACE_INIT_FAILED_MESSAGE);
   }
-  await loadPptDataFromServer();
-  document.body.dataset.pptReady = "true";
 }
 
+// Caught inside, so the call itself can never raise an unhandled rejection.
 initPptWorkspace();
 
 // Helpers

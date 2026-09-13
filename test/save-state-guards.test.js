@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   applyReorder,
+  BOOKS_UNAVAILABLE_MESSAGE,
   createSnapshot,
   deriveSaveButtonState,
   getBooksUnavailableMessage,
@@ -15,6 +16,7 @@ import {
   SAVE_BUSY_MESSAGE,
   TEMPLATE_SAVE_BLOCKED_HINT,
   toFileMetadata,
+  WORKSPACE_INIT_FAILED_MESSAGE,
 } from "../lib/save-state.js";
 
 describe("save busy guard for destructive actions", () => {
@@ -148,6 +150,11 @@ describe("scripture books readiness", () => {
       getBooksUnavailableMessage({ booksReady: false }),
       /성경 책 목록/
     );
+  });
+
+  it("names a workspace that failed to initialize", () => {
+    assert.match(WORKSPACE_INIT_FAILED_MESSAGE, /불러오지 못했습니다/);
+    assert.notEqual(WORKSPACE_INIT_FAILED_MESSAGE, BOOKS_UNAVAILABLE_MESSAGE);
   });
 });
 

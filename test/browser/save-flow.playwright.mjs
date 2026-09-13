@@ -294,6 +294,7 @@ async function setup(page, options = {}) {
       slideDelete: 0,
       bulkDelete: 0,
       templatePut: 0,
+      templateDelete: 0,
       uploadPost: 0,
       scriptureGenerate: 0,
     },
@@ -397,6 +398,12 @@ async function setup(page, options = {}) {
       }
       return route.fulfill(response);
     }
+    if (/^\/api\/templates\/[^/]+$/.test(url.pathname) && method === "DELETE") {
+      state.counts.templateDelete += 1;
+      const id = decodeURIComponent(url.pathname.split("/").pop());
+      state.templates = state.templates.filter((entry) => entry.id !== id);
+      return route.fulfill({ status: 200, json: { success: true } });
+    }
     if (url.pathname === "/api/upload" && method === "POST") {
       state.counts.uploadPost += 1;
       const response = options.onUpload
@@ -452,8 +459,15 @@ async function setup(page, options = {}) {
   return state;
 }
 
-function waitForPptReady(page) {
-  return page.locator("body[data-ppt-ready='true']").waitFor();
+// The marker is written for both outcomes, so a failed init fails the wait
+// with its reason instead of hanging until the locator times out.
+async function waitForPptReady(page) {
+  await page.locator("body[data-ppt-ready]").waitFor();
+  assert.equal(
+    await page.locator("body").getAttribute("data-ppt-ready"),
+    "true",
+    "the workspace must report a successful readiness state"
+  );
 }
 
 async function selectMainSlide(page, index) {
@@ -560,6 +574,11 @@ await runScenario("template two-stage save buttons, hint and toasts", async (pag
   assert.equal(
     await page.locator("#templateSaveBtn").getAttribute("aria-describedby"),
     "templateSaveHint"
+  );
+  assert.equal(
+    await page.locator("#templateSaveHint").getAttribute("aria-live"),
+    "polite",
+    "the hint has to be announced when it appears"
   );
 
   await page.locator("#editorSaveBtn").click();
@@ -693,11 +712,28 @@ await runScenario(
 );
 
 await runScenario("save then move main runs one POST", async (page) => {
-  const state = await setup(page);
+  const gate = createGate();
+  const state = await setup(page, {
+    onSlidePost: async () => {
+      await gate.promise;
+      return { status: 200, json: { success: true } };
+    },
+  });
   await selectMainSlide(page, 0);
   await fillName(page, "저장 후 이동");
   await page.locator("#slideListContainer .slide-card").nth(1).click();
   await page.locator("#unsavedSaveBtn").click();
+
+  // The busy phase cannot be interrupted, so focus has to stay inside the
+  // dialog even though every button is disabled.
+  await page.locator("#unsavedChangesModal[aria-busy='true']").waitFor();
+  assert.equal(
+    await page.evaluate(() => document.activeElement?.id),
+    "unsavedChangesCard",
+    "focus must rest on the modal card while the dialog is busy"
+  );
+  gate.release();
+
   await page.locator("#unsavedChangesModal").waitFor({ state: "hidden" });
   assert.equal(state.counts.slidePost, 1);
   assert.equal(
@@ -976,6 +1012,12 @@ await runScenario(
       },
     });
 
+    // A dirty editor draft must survive the reorder with its save button
+    // usable: the reorder only owns the order, not the draft.
+    await selectMainSlide(page, 0);
+    await fillName(page, "순서 변경 중 초안");
+    assert.equal(await page.locator("#editorSaveBtn").isEnabled(), true);
+
     const moveDown = page
       .locator("#slideListContainer .slide-card")
       .first()
@@ -996,14 +1038,63 @@ await runScenario(
     assert.equal(state.counts.slidePost, 1);
 
     gate.release();
-    await page.waitForFunction(() => true);
-    await page.waitForTimeout(200);
+    await page
+      .locator("#editorSaveBtn:not([disabled])")
+      .waitFor({ timeout: 5000 });
+    assert.equal(
+      await page.locator("#editorSaveBtn").isEnabled(),
+      true,
+      "a successful reorder must hand the dirty draft its save button back"
+    );
+    assert.equal(await page.locator("#slideName").inputValue(), "순서 변경 중 초안");
     assert.equal(state.counts.slidePost, 1, "one reorder means one POST");
     assert.deepEqual(state.slides.map((entry) => entry.name), [
       "둘째 슬라이드",
       "첫 슬라이드",
     ]);
     assert.deepEqual(await slideNames(page), ["둘째 슬라이드", "첫 슬라이드"]);
+  }
+);
+
+await runScenario(
+  "a running template save blocks rename and delete",
+  async (page, diagnostics) => {
+    const gate = createGate();
+    const state = await setup(page, {
+      onTemplatePut: async ({ nextTemplate }) => {
+        await gate.promise;
+        return { status: 200, json: { success: true, template: nextTemplate } };
+      },
+    });
+
+    await openTemplate(page);
+    await fillName(page, "템플릿 저장 중 초안");
+    await page.locator("#editorSaveBtn").click();
+    await page.locator("#templateSaveBtn:not([disabled])").waitFor();
+    await page.locator("#templateSaveBtn").click();
+    await page.locator("#templateSaveBtn[disabled]").waitFor();
+
+    // A rename accepted here would be overwritten by the in-flight PUT, and a
+    // delete would race a template the server is still writing.
+    await page.locator("#templateNameDisplay").click();
+    await expectToast(page, "저장이 진행 중입니다");
+    await page.locator("#templateDeleteBtn").click();
+
+    assert.deepEqual(
+      diagnostics.alerts.filter((entry) => entry.type !== "alert"),
+      [],
+      "neither the rename prompt nor the delete confirm may open"
+    );
+    assert.equal(state.counts.templateDelete, 0, "no DELETE during a save");
+    assert.equal(state.counts.templatePut, 1, "no extra PUT during a save");
+
+    gate.release();
+    await expectToastOnce(page, "템플릿이 저장되었습니다");
+    assert.equal(state.counts.templatePut, 1);
+    assert.equal(state.counts.templateDelete, 0);
+    assert.equal(state.templates.length, 1);
+    assert.equal(state.templates[0].name, "주일 템플릿");
+    assert.equal(state.templates[0].slides[0].name, "템플릿 저장 중 초안");
   }
 );
 
