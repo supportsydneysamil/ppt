@@ -944,8 +944,14 @@ function collectActiveTemplateDraft() {
     : null;
 }
 
-function captureTemplateBaseline() {
-  const draft = collectActiveTemplateDraft();
+function captureTemplateBaseline(template = getActiveTemplate(), templateSlides = slides) {
+  const draft = template
+    ? {
+        id: template.id,
+        name: template.name,
+        slides: templateSlides.map(buildSerializableSlide),
+      }
+    : null;
   templateBaselineSnapshot = draft ? createSnapshot(draft) : null;
 }
 
@@ -1888,8 +1894,14 @@ async function saveSlidesToServer() {
 
 async function saveActiveTemplateToServer({ silent = false } = {}) {
   const activeTemplate = getActiveTemplate();
-  if (!activeTemplate || !hasPendingTemplateChanges || templateSaving) {
-    return !hasPendingTemplateChanges;
+  if (!activeTemplate) {
+    return false;
+  }
+  if (!hasPendingTemplateChanges) {
+    return true;
+  }
+  if (templateSaving) {
+    return false;
   }
 
   templateSaving = true;
@@ -1913,8 +1925,10 @@ async function saveActiveTemplateToServer({ silent = false } = {}) {
     templates = templates.map((template) =>
       template.id === nextTemplate.id ? nextTemplate : template
     );
-    captureTemplateBaseline();
+    slides = nextTemplate.slides.map((slide) => cloneSlide(slide));
+    captureTemplateBaseline(nextTemplate, nextTemplate.slides);
     refreshTemplateDirtyState();
+    renderSlideList();
     renderTemplateGallery();
     if (!silent) {
       alert("템플릿이 저장되었습니다");
@@ -4972,7 +4986,7 @@ document.addEventListener("click", (e) => {
 bulkDeleteBtn.addEventListener("click", () => { closeBulkDropdown(); deleteSelectedSlides(); });
 bulkTemplateBtn.addEventListener("click", () => { closeBulkDropdown(); createTemplateFromSelection(); });
 bulkDownloadBtn.addEventListener("click", () => { closeBulkDropdown(); downloadSelectedSlidesBundle(); });
-templateSaveBtn.addEventListener("click", saveActiveTemplateToServer);
+templateSaveBtn.addEventListener("click", () => saveActiveTemplateToServer());
 templateDeleteBtn.addEventListener("click", deleteActiveTemplate);
 
 [

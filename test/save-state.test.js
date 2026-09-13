@@ -82,6 +82,13 @@ describe("save state snapshots", () => {
       ),
       true
     );
+    assert.equal(
+      isTemplateDirty(
+        { name: "주일", slides: [{ id: "1" }, { id: "2" }] },
+        baseline
+      ),
+      false
+    );
   });
 });
 
