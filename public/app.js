@@ -1,3 +1,10 @@
+import {
+  createSnapshot,
+  deriveSaveButtonState,
+  isSnapshotDirty,
+  toFileMetadata,
+} from "/lib/save-state.js";
+
 const testamentSelect = document.getElementById("testament");
 const bookSelect = document.getElementById("book");
 const chapterInput = document.getElementById("chapter");
@@ -845,7 +852,11 @@ let pptTab = "slides";
 let activeTemplateId = null;
 let hasPendingTemplateChanges = false;
 let currentSlideId = null;
-let hasUnsavedChanges = false;
+let slideBaselineSnapshot = null;
+let slideRuntimeDraft = {};
+let slideDirty = false;
+let slideSaving = false;
+let templateSaving = false;
 let selectedSlideIds = new Set();
 let draggedSlideId = null;
 
@@ -911,11 +922,90 @@ function markTemplateDirty() {
   updateTemplateManagementUi();
 }
 
+function collectCurrentSlideDraft() {
+  const savedSlide = slides.find((slide) => slide.id === currentSlideId);
+  if (!savedSlide) return null;
+
+  const draft = { ...cloneSlide(savedSlide), ...slideRuntimeDraft };
+  draft.name = slideNameInput.value.trim();
+  draft.type = slideTypeSelect.value;
+
+  if (draft.type === "scripture") {
+    Object.assign(draft, collectScriptureSlideFields());
+    draft.sourceType = "upload";
+  } else if (draft.type === "title") {
+    Object.assign(draft, collectTitleSlideData());
+    draft.sourceType = "basic";
+  } else if (draft.type === "custom-title") {
+    Object.assign(draft, collectCustomTitleSlideData());
+    draft.sourceType = "basic";
+  } else if (draft.type === "hymn") {
+    draft.hymnNumber = hymnNumberInput.value;
+    draft.includeTitle = hymnIncludeTitle.checked;
+    draft.hymnKorTitle = hymnKorTitleInput.value.trim();
+    draft.hymnEngTitle = hymnEngTitleInput.value.trim();
+    draft.sourceType = "upload";
+  } else {
+    draft.sourceType =
+      document.querySelector('input[name="sourceType"]:checked')?.value ||
+      "basic";
+    draft.content =
+      draft.type === "ad" ? adBodyContent.value : slideContentInput.value;
+    draft.font = draft.type === "ad" ? adBodyFont.value : slideFontSelect.value;
+    draft.fontSize =
+      draft.type === "ad" ? adBodyFontSize.value : slideFontSizeSelect.value;
+    draft.align =
+      draft.type === "ad" ? adBodyAlign.value : slideAlignSelect.value;
+    draft.bg = adTextColor.value;
+    draft.adBgSource =
+      document.querySelector('input[name="adBgSource"]:checked')?.value ||
+      "none";
+    draft.adBgImageUrl = adBgImageUrl.value;
+    draft.adBgOpacity = parseInt(adBgOpacity.value);
+
+    if (draft.type === "ad") {
+      draft.adTitle = adTitleInput.value;
+      draft.adTitleSize = adTitleSizeSelect.value;
+      draft.adTitleAlign = adTitleAlignSelect.value;
+    }
+  }
+
+  draft.pendingFile = toFileMetadata(userPptxFile?.files?.[0]);
+  draft.pendingBackgroundFile = toFileMetadata(adBgImageFile?.files?.[0]);
+  draft.pendingScriptureImage = toFileMetadata(
+    scripturePptxImageInput?.files?.[0]
+  );
+  return draft;
+}
+
+function refreshSaveState() {
+  const draft = collectCurrentSlideDraft();
+  slideDirty = Boolean(
+    draft &&
+      (slideBaselineSnapshot === null ||
+        isSnapshotDirty(draft, slideBaselineSnapshot))
+  );
+
+  const state = deriveSaveButtonState({
+    hasSlide: Boolean(draft),
+    hasTemplate: Boolean(getActiveTemplate()),
+    slideDirty,
+    templateDirty: hasPendingTemplateChanges,
+    slideSaving,
+    templateSaving,
+  });
+  editorSaveBtn.disabled = state.slideDisabled;
+  templateSaveBtn.disabled = state.templateDisabled;
+}
+
 function resetEditorSelection() {
   currentSlideId = null;
-  hasUnsavedChanges = false;
+  slideBaselineSnapshot = null;
+  slideRuntimeDraft = {};
+  slideDirty = false;
   emptyEditorState.style.display = "flex";
   slideEditor.style.display = "none";
+  refreshSaveState();
 }
 
 function confirmLeavingDirtyWorkspace() {
@@ -934,7 +1024,7 @@ function confirmLeavingDirtyWorkspace() {
     if (!confirm("이 슬라이드는 저장되지 않았습니다. 이동하면 삭제됩니다. 계속하시겠습니까?")) {
       return false;
     }
-  } else if (hasUnsavedChanges) {
+  } else if (slideDirty) {
     if (!confirm("저장하지 않은 변경사항이 있습니다. 무시하고 이동하시겠습니까?")) {
       return false;
     }
@@ -957,9 +1047,7 @@ function updateTemplateManagementUi() {
     templateNameDisplay.textContent = activeTemplate.name;
   }
 
-  if (templateSaveBtn) {
-    templateSaveBtn.disabled = !activeTemplate || !hasPendingTemplateChanges;
-  }
+  refreshSaveState();
 
   if (templateCountBadge) {
     templateCountBadge.textContent = String(templates.length);
@@ -1283,8 +1371,8 @@ slideTypeSelect.addEventListener('change', () => {
     syncScriptureImageUI(slides.find((s) => s.id === currentSlideId));
   }
   updateSettingsVisibility();
-  hasUnsavedChanges = true;
   renderPreview();
+  refreshSaveState();
 });
 
 hymnLoadBtn.addEventListener('click', async () => {
@@ -1303,17 +1391,17 @@ hymnLoadBtn.addEventListener('click', async () => {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Download failed");
 
-    // Update current slide data (in memory)
-    const current = slides.find(s => s.id === currentSlideId);
-    if (current) {
-      current.hymnNumber = number;
-      current.serverFilePath = data.path;
-      current.fileName = data.originalName;
-      current.originalUrl = data.originalUrl;
-      current.thumbnail = null;
-      current.type = 'hymn';
-      current.sourceType = 'upload'; // Vital for renderPreview logic
-    }
+    const current = collectCurrentSlideDraft();
+    if (!current) return;
+    Object.assign(current, {
+      hymnNumber: number,
+      serverFilePath: data.path,
+      fileName: data.originalName,
+      originalUrl: data.originalUrl,
+      thumbnail: null,
+      type: "hymn",
+      sourceType: "upload",
+    });
 
     // Fetch title BEFORE rendering so title slide is included
     if (hymnIncludeTitle.checked) {
@@ -1332,8 +1420,15 @@ hymnLoadBtn.addEventListener('click', async () => {
         slidePreview.dataset.lastRenderedPath = '';
       }
 
+      slideRuntimeDraft = {
+        ...slideRuntimeDraft,
+        serverFilePath: current.serverFilePath,
+        fileName: current.fileName,
+        originalUrl: current.originalUrl,
+        thumbnail: current.thumbnail,
+      };
       renderPreview(current);
-      hasUnsavedChanges = true;
+      refreshSaveState();
       updateButtonsState(current);
     }
   } catch (e) {
@@ -1352,6 +1447,8 @@ async function fetchAndFillHymnTitle(number) {
     const data = await res.json();
     hymnKorTitleInput.value = data.kor || '';
     hymnEngTitleInput.value = data.eng || '';
+    renderPreview();
+    refreshSaveState();
   } catch (e) {
     // silently ignore
   }
@@ -1374,7 +1471,7 @@ hymnIncludeTitle.addEventListener('change', async () => {
     slidePreview.dataset.lastRenderedPath = '';
   }
   renderPreview();
-  hasUnsavedChanges = true;
+  refreshSaveState();
 });
 
 function getScriptureTitleSlideType() {
@@ -1569,7 +1666,7 @@ async function ensureScriptureSlideFile(slide, slideName, button, busyLabel) {
 
 if (scriptureGenerateBtn) {
   scriptureGenerateBtn.addEventListener("click", async () => {
-    const slide = slides.find((s) => s.id === currentSlideId);
+    const slide = collectCurrentSlideDraft();
     if (!slide) {
       return;
     }
@@ -1579,13 +1676,22 @@ if (scriptureGenerateBtn) {
     }
 
     const slideName = slideNameInput.value.trim() || slide.name || "성경말씀";
-    await ensureScriptureSlideFile(
+    const generated = await ensureScriptureSlideFile(
       slide,
       slideName,
       scriptureGenerateBtn,
       "생성 중..."
     );
-    hasUnsavedChanges = true;
+    if (!generated) return;
+    slideRuntimeDraft = {
+      ...slideRuntimeDraft,
+      serverFilePath: slide.serverFilePath,
+      fileName: slide.fileName,
+      thumbnail: slide.thumbnail,
+      scriptureSignature: slide.scriptureSignature,
+      customImageData: slide.customImageData,
+    };
+    refreshSaveState();
     updateButtonsState(slide);
   });
 }
@@ -1593,36 +1699,36 @@ if (scriptureGenerateBtn) {
 if (scriptureTestamentSelect) {
   scriptureTestamentSelect.addEventListener("change", () => {
     fillScriptureBooks();
-    hasUnsavedChanges = true;
+    refreshSaveState();
   });
 }
 
 if (scriptureIncludeTitle) {
   scriptureIncludeTitle.addEventListener("change", () => {
     syncScriptureTitleTypeUi();
-    hasUnsavedChanges = true;
     renderPreview();
+    refreshSaveState();
   });
 }
 
 if (scripturePptxImageInput) {
   scripturePptxImageInput.addEventListener("change", () => {
-    const current = slides.find((s) => s.id === currentSlideId);
-    if (current && scripturePptxImageInput.files?.[0]) {
-      current.customImageData = null;
+    const current = collectCurrentSlideDraft();
+    if (scripturePptxImageInput.files?.[0]) {
+      slideRuntimeDraft.customImageData = null;
     }
     syncScriptureImageUI(current);
-    hasUnsavedChanges = true;
+    refreshSaveState();
   });
 }
 
 if (scripturePptxImageClearBtn) {
   scripturePptxImageClearBtn.addEventListener("click", () => {
     if (scripturePptxImageInput) scripturePptxImageInput.value = "";
-    const current = slides.find((s) => s.id === currentSlideId);
-    if (current) current.customImageData = null;
+    slideRuntimeDraft.customImageData = null;
+    const current = collectCurrentSlideDraft();
     syncScriptureImageUI(current);
-    hasUnsavedChanges = true;
+    refreshSaveState();
   });
 }
 
@@ -1646,33 +1752,36 @@ if (scriptureSettingsAccordion) {
 ].forEach((el) => {
   if (!el) return;
   el.addEventListener("input", () => {
-    hasUnsavedChanges = true;
+    refreshSaveState();
   });
   el.addEventListener("change", () => {
-    hasUnsavedChanges = true;
+    refreshSaveState();
   });
 });
 
 document.querySelectorAll('input[name="scriptureTitleSlideType"]').forEach((radio) => {
   radio.addEventListener("change", () => {
-    hasUnsavedChanges = true;
     renderPreview();
+    refreshSaveState();
   });
 });
 
 [scriptureChapterInput, scriptureStartInput, scriptureEndInput].forEach((input) => {
   if (!input) return;
-  input.addEventListener("change", () => normalizeNumberInput(input));
-  input.addEventListener("blur", () => normalizeNumberInput(input));
+  const normalizeAndRefresh = () => {
+    normalizeNumberInput(input);
+    refreshSaveState();
+  };
+  input.addEventListener("change", normalizeAndRefresh);
+  input.addEventListener("blur", normalizeAndRefresh);
 });
 
 // --- Navigation ---
 function switchView(viewName) {
-  if (hasUnsavedChanges) {
+  if (viewName === "extractor" && slideDirty) {
     if (!confirm("저장하지 않은 변경사항이 있습니다. 정말 이동하시겠습니까?")) {
       return;
     }
-    hasUnsavedChanges = false;
   }
 
   if (viewName === "extractor") {
@@ -1733,6 +1842,8 @@ async function saveActiveTemplateToServer() {
     return false;
   }
 
+  templateSaving = true;
+  refreshSaveState();
   try {
     const resp = await fetch(`/api/templates/${encodeURIComponent(activeTemplate.id)}`, {
       method: "PUT",
@@ -1760,6 +1871,9 @@ async function saveActiveTemplateToServer() {
     console.error("Failed to save template", e);
     alert(e.message || "템플릿 저장에 실패했습니다.");
     return false;
+  } finally {
+    templateSaving = false;
+    refreshSaveState();
   }
 }
 
@@ -1980,7 +2094,7 @@ function createSlide() {
   slides.push(newSlide);
   // Do NOT save to storage yet
   selectSlide(newSlide.id);
-  hasUnsavedChanges = true;
+  refreshSaveState();
   renderSlideList();
 }
 
@@ -2066,7 +2180,7 @@ function buildHymnTitleSlidePreview(hymnNumber, korTitle, engTitle) {
 function renderPreview(slideOverride) {
   if (!slidePreview) return;
 
-  let data = slideOverride;
+  let data = slideOverride || collectCurrentSlideDraft();
 
   if (!data) {
     const type = slideTypeSelect.value;
@@ -2657,13 +2771,13 @@ function selectSlide(id) {
       }
       // Remove the unsaved slide
       slides = slides.filter(s => s.id !== currentSlideId);
-      hasUnsavedChanges = false;
-    } else if (hasUnsavedChanges) {
+      slideDirty = false;
+    } else if (slideDirty) {
       // Saved slide but has pending edits
       if (!confirm("저장하지 않은 변경사항이 있습니다. 무시하고 이동하시겠습니까?")) {
         return;
       }
-      hasUnsavedChanges = false;
+      slideDirty = false;
     }
   }
 
@@ -2674,14 +2788,23 @@ function selectSlide(id) {
     emptyEditorState.style.display = "none";
     slideEditor.style.display = "flex";
     populateEditor(slide);
+    slideRuntimeDraft = {};
+    slideBaselineSnapshot = slide.saved
+      ? createSnapshot(collectCurrentSlideDraft())
+      : null;
     renderPreview(slide);
     updateButtonsState(slide);
+    refreshSaveState();
     renderSlideList();
   } else {
     // If id not found (e.g. after delete), show empty
     currentSlideId = null;
     emptyEditorState.style.display = "flex";
     slideEditor.style.display = "none";
+    slideBaselineSnapshot = null;
+    slideRuntimeDraft = {};
+    slideDirty = false;
+    refreshSaveState();
     renderSlideList();
   }
 }
@@ -2798,8 +2921,8 @@ function setBgValue(value, markDirty = true) {
   if (slideBgSelect) slideBgSelect.value = value;
   syncBgTabs(value);
   if (markDirty) {
-    hasUnsavedChanges = true;
     renderPreview();
+    refreshSaveState();
   }
 }
 
@@ -2807,8 +2930,8 @@ function setAlignValue(value, markDirty = true) {
   slideAlignSelect.value = value;
   syncAlignTabs(value);
   if (markDirty) {
-    hasUnsavedChanges = true;
     renderPreview();
+    refreshSaveState();
   }
 }
 
@@ -3555,8 +3678,12 @@ function resetCurrentSlide() {
   const slide = slides.find((s) => s.id === currentSlideId);
   // Reset fields to last saved state
   populateEditor(slide);
+  slideRuntimeDraft = {};
   renderPreview(slide);
-  hasUnsavedChanges = false;
+  slideBaselineSnapshot = slide.saved
+    ? createSnapshot(collectCurrentSlideDraft())
+    : null;
+  refreshSaveState();
   updateButtonsState(slide);
 }
 
@@ -3738,6 +3865,33 @@ async function uploadFile(file) {
   return await resp.json();
 }
 
+async function commitSlideCandidate(candidate, options = {}) {
+  const index = slides.findIndex((slide) => slide.id === candidate.id);
+  if (index === -1) return false;
+
+  candidate.saved = true;
+  const nextSlides = slides.map((slide, i) =>
+    i === index ? cloneSlide(candidate) : cloneSlide(slide)
+  );
+
+  if (!isTemplateMode()) {
+    const resp = await fetch("/api/slides", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(nextSlides.map(buildSerializableSlide)),
+    });
+    if (!resp.ok) return false;
+  }
+
+  slides = nextSlides;
+  if (isTemplateMode()) {
+    markTemplateDirty();
+  } else {
+    mainSlides = nextSlides.map(cloneSlide);
+  }
+  return true;
+}
+
 async function saveCurrentSlide() {
   if (!currentSlideId) {
     console.error("No currentSlideId!");
@@ -3758,16 +3912,15 @@ async function saveCurrentSlide() {
     return;
   }
 
-  const slide = slides.find((s) => s.id === currentSlideId);
+  const slide = collectCurrentSlideDraft();
   if (!slide) {
     console.error("Slide object not found for id:", currentSlideId);
     return;
   }
 
+  slideSaving = true;
+  refreshSaveState();
   try {
-    slide.name = name;
-    slide.type = slideTypeSelect.value;
-
     if (slide.type === 'hymn') {
       const number = hymnNumberInput.value;
       if (!number) {
@@ -3915,7 +4068,6 @@ async function saveCurrentSlide() {
       }
 
       Object.assign(slide, titleData);
-      rememberChurchName(titleData.churchName);
       slide.sourceType = 'basic';
       slide.saved = true;
 
@@ -3999,23 +4151,27 @@ async function saveCurrentSlide() {
       }
     }
 
-    if (isTemplateMode()) {
-      markTemplateDirty();
-    } else {
-      const saved = await persistCurrentWorkspace();
-      if (!saved) {
-        return;
-      }
-      syncWorkingSlidesToState();
+    const committed = await commitSlideCandidate(slide);
+    if (!committed) {
+      return;
     }
 
-    hasUnsavedChanges = false;
+    if (slide.type === "title") {
+      rememberChurchName(slide.churchName);
+    }
+    populateEditor(slide);
+    slideRuntimeDraft = {};
+    slideBaselineSnapshot = createSnapshot(collectCurrentSlideDraft());
+    refreshSaveState();
     updateButtonsState(slide);
     renderSlideList();
     alert("저장되었습니다.");
   } catch (e) {
     console.error("Error in saveCurrentSlide:", e);
     alert("저장 중 오류 발생: " + e.message);
+  } finally {
+    slideSaving = false;
+    refreshSaveState();
   }
 }
 
@@ -4607,17 +4763,10 @@ function cancelEdit() {
       return;
     }
     slides = slides.filter(s => s.id !== currentSlideId);
-    currentSlideId = null;
-    hasUnsavedChanges = false;
-
-    emptyEditorState.style.display = "flex";
-    slideEditor.style.display = "none";
+    resetEditorSelection();
     renderSlideList();
   } else {
-    currentSlideId = null;
-    hasUnsavedChanges = false;
-    emptyEditorState.style.display = "flex";
-    slideEditor.style.display = "none";
+    resetEditorSelection();
     renderSlideList();
   }
 }
@@ -4666,17 +4815,18 @@ templateDeleteBtn.addEventListener("click", deleteActiveTemplate);
   slideFontSizeSelect,
   slideAlignSelect,
 ].forEach((el) => {
+  if (!el) return;
   el.addEventListener("input", () => {
-    hasUnsavedChanges = true;
     renderPreview();
+    refreshSaveState();
   });
 });
 
 sourceRadios.forEach(radio => {
   radio.addEventListener('change', (e) => {
-    hasUnsavedChanges = true;
     toggleSettingsMode(e.target.value);
     renderPreview();
+    refreshSaveState();
   })
 });
 
@@ -4694,9 +4844,9 @@ alignTabs.forEach((tab) => {
 
 adBgSourceRadios.forEach(radio => {
   radio.addEventListener('change', (e) => {
-    hasUnsavedChanges = true;
     toggleBgMode(e.target.value);
     renderPreview();
+    refreshSaveState();
   });
 });
 
@@ -4706,8 +4856,8 @@ document.querySelectorAll('.rte-size-btn').forEach(btn => {
     const targetId = btn.dataset.target;
     document.getElementById(targetId).value = btn.dataset.value;
     syncRteSizeBtns(targetId, btn.dataset.value);
-    hasUnsavedChanges = true;
     renderPreview();
+    refreshSaveState();
   });
 });
 
@@ -4719,8 +4869,8 @@ document.querySelectorAll('.rte-align-btn').forEach(btn => {
     if (!targetId) return;
     document.getElementById(targetId).value = btn.dataset.value;
     syncRteAlignBtns(targetId, btn.dataset.value);
-    hasUnsavedChanges = true;
     renderPreview();
+    refreshSaveState();
   });
 });
 
@@ -4770,28 +4920,28 @@ adTextColorTabs.forEach(tab => {
   tab.addEventListener('click', () => {
     adTextColor.value = tab.dataset.value;
     syncAdTextColorTabs(tab.dataset.value);
-    hasUnsavedChanges = true;
     renderPreview();
+    refreshSaveState();
   });
 });
 
 // ad body inputs: live preview
 [adBodyContent, adBodyFont, adBodyFontSize, adTitleInput].forEach(el => {
   el.addEventListener('input', () => {
-    hasUnsavedChanges = true;
     renderPreview();
+    refreshSaveState();
   });
 });
 
 adBgImageUrl.addEventListener('input', () => {
-  hasUnsavedChanges = true;
   renderPreview();
+  refreshSaveState();
 });
 
 adBgOpacity.addEventListener('input', () => {
   adBgOpacityValue.textContent = `${adBgOpacity.value}%`;
-  hasUnsavedChanges = true;
   renderPreview();
+  refreshSaveState();
 });
 
 // --- Title slide listeners ---
@@ -4823,34 +4973,34 @@ if (titleDesignGrid) {
     if (!card) return;
     titleDesignSelect.value = normalizeTitleDesign(card.dataset.titleDesign);
     syncTitleDesignCards(titleDesignSelect.value);
-    hasUnsavedChanges = true;
     renderPreview();
+    refreshSaveState();
   });
 }
 
 titleChurchNameInput.addEventListener('input', () => {
-  hasUnsavedChanges = true;
   renderPreview();
+  refreshSaveState();
 });
 
 titleServiceDateSelect.addEventListener('change', () => {
   updateTitleSeasonSuggestion();
   maybeAutoNameTitleSlide();
-  hasUnsavedChanges = true;
   renderPreview();
+  refreshSaveState();
 });
 
 titleSubtitleInput.addEventListener('input', () => {
   updateTitleSeasonSuggestion();
-  hasUnsavedChanges = true;
   renderPreview();
+  refreshSaveState();
 });
 
 titleSeasonSuggestBtn.addEventListener('click', () => {
   titleSubtitleInput.value = titleSeasonSuggestBtn.dataset.suggestion || '';
   updateTitleSeasonSuggestion();
-  hasUnsavedChanges = true;
   renderPreview();
+  refreshSaveState();
 });
 
 // --- Title (Custom) slide listeners ---
@@ -4872,24 +5022,44 @@ if (customTitleDesignGrid) {
       card.dataset.customTitleDesign
     );
     syncCustomTitleDesignCards(customTitleDesignSelect.value);
-    hasUnsavedChanges = true;
     renderPreview();
+    refreshSaveState();
   });
 }
 
 customTitleKoInput.addEventListener('input', () => {
   maybeAutoNameCustomTitleSlide();
-  hasUnsavedChanges = true;
   renderPreview();
+  refreshSaveState();
 });
 
 customTitleEnInput.addEventListener('input', () => {
-  hasUnsavedChanges = true;
   renderPreview();
+  refreshSaveState();
 });
 
+[
+  hymnNumberInput,
+  hymnKorTitleInput,
+  hymnEngTitleInput,
+  adTitleSizeSelect,
+  adTitleAlignSelect,
+  adBodyAlign,
+].forEach((el) => {
+  if (!el) return;
+  el.addEventListener("input", refreshSaveState);
+  el.addEventListener("change", refreshSaveState);
+});
+
+if (adBgImageFile) {
+  adBgImageFile.addEventListener("change", () => {
+    renderPreview();
+    refreshSaveState();
+  });
+}
+
 userPptxFile.addEventListener('change', async () => {
-  hasUnsavedChanges = true;
+  refreshSaveState();
 
   if (userPptxFile.files.length > 0) {
     const file = userPptxFile.files[0];
@@ -4903,12 +5073,14 @@ userPptxFile.addEventListener('change', async () => {
 
       try {
         const result = await uploadFile(file);
-        const current = slides.find(s => s.id === currentSlideId);
-        if (current) {
-          current.serverFilePath = result.path;
-          current.fileName = result.originalName || file.name;
-        }
-        renderPreview(); // Render using converted server file
+        slideRuntimeDraft = {
+          ...slideRuntimeDraft,
+          serverFilePath: result.path,
+          fileName: result.originalName || file.name,
+          fileSaved: true,
+        };
+        renderPreview(collectCurrentSlideDraft());
+        refreshSaveState();
         return;
       } catch (e) {
         alert("PPT 변환 업로드 실패: " + e.message);
@@ -4917,6 +5089,7 @@ userPptxFile.addEventListener('change', async () => {
   }
 
   renderPreview();
+  refreshSaveState();
 });
 
 // Load slides on init

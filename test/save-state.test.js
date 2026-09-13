@@ -6,9 +6,27 @@ import {
   deriveSaveButtonState,
   getPendingChangeScopes,
   getSaveSequence,
+  toFileMetadata,
 } from "../lib/save-state.js";
 
 describe("save state snapshots", () => {
+  it("keeps transient file metadata stable for dirty comparison", () => {
+    assert.deepEqual(
+      toFileMetadata({
+        name: "wide.pptx",
+        size: 10,
+        lastModified: 1,
+        path: "ignored browser detail",
+      }),
+      {
+        name: "wide.pptx",
+        size: 10,
+        lastModified: 1,
+      }
+    );
+    assert.equal(toFileMetadata(null), null);
+  });
+
   it("ignores object key insertion order", () => {
     assert.equal(
       createSnapshot({ name: "예배", settings: { size: 40, align: "center" } }),
