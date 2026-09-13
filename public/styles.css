@@ -17,7 +17,13 @@
   --ctrl-h-md: 44px;
   --ctrl-h-sm: 34px;
   --ctrl-h-xs: 28px;
-  --editor-label-width: 96px;
+  --ctrl-h-2xs: 24px;
+  --editor-label-width: 112px;
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
   /* Resolved against the active theme's --brand, so accents follow the theme
      instead of the one orange they were originally hardcoded to. */
   --brand-tint: color-mix(in srgb, var(--brand) 12%, transparent);
@@ -177,12 +183,13 @@ body {
 
 .field {
   display: grid;
-  gap: 8px;
+  gap: var(--sp-2);
   font-weight: 600;
   color: var(--muted);
 }
 
-.field-label {
+.field-label,
+.rte-row-label {
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.01em;
@@ -193,12 +200,16 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--sp-2);
 }
 
 .field input:not([type="radio"]):not([type="checkbox"]),
 .field select,
-.field textarea {
+.field textarea,
+.editor-row > input:not([type="radio"]):not([type="checkbox"]),
+.editor-row > select,
+.editor-row .field-inline-input,
+.editor-row .number-stepper input {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 12px 14px;
@@ -266,7 +277,11 @@ body {
 
 .field input:not([type="radio"]):not([type="checkbox"]):focus,
 .field select:focus,
-.field textarea:focus {
+.field textarea:focus,
+.editor-row > input:not([type="radio"]):not([type="checkbox"]):focus,
+.editor-row > select:focus,
+.editor-row .field-inline-input:focus,
+.editor-row .number-stepper input:focus {
   outline: none;
   border-color: var(--brand);
   box-shadow: var(--focus-ring);
@@ -405,10 +420,10 @@ body {
 
 .file-picker-row input[type="file"]::file-selector-button {
   border: none;
-  min-height: 32px;
+  min-height: var(--ctrl-h-xs);
   padding: 0 14px;
   margin-right: 12px;
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--brand-tint);
   color: var(--ink);
   font: inherit;
@@ -638,7 +653,7 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--ink);
 }
@@ -650,7 +665,7 @@ body {
 }
 
 .modal-hint {
-  margin: -4px 0 0;
+  margin: 0;
 }
 
 .theme-picker-panel {
@@ -813,9 +828,8 @@ body {
 
 .title-slide-type-group {
   display: flex;
-  gap: 20px;
+  gap: var(--sp-5);
   padding-left: 28px;
-  margin-top: -4px;
 }
 
 .title-slide-type-group.hidden {
@@ -973,12 +987,20 @@ body {
   background: rgba(217, 179, 118, 0.9);
 }
 
+.radio-choice-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-5);
+  min-width: 0;
+}
+
 .radio-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--ink);
   cursor: pointer;
 }
@@ -1828,11 +1850,11 @@ body {
 .slide-editor-panel {
   background: var(--panel);
   border-radius: 16px;
-  padding: 24px;
+  padding: var(--sp-5);
   border: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--sp-5);
   min-width: 0;
   /* CRITICAL: prevents grid/flex blowout */
   overflow: hidden;
@@ -1844,10 +1866,10 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 16px;
+  gap: var(--sp-4);
   flex-wrap: wrap;
   border-bottom: 1px solid var(--border);
-  padding-bottom: 16px;
+  padding-bottom: var(--sp-4);
 }
 
 .editor-header h3 {
@@ -1884,38 +1906,36 @@ body {
 
 .editor-form {
   display: grid;
-  gap: 20px;
+  gap: var(--sp-5);
 }
 
 .settings-group {
   display: grid;
-  gap: 20px;
+  gap: var(--sp-5);
 }
 
 .settings-section {
   display: grid;
-  gap: 14px;
+  gap: var(--sp-4);
 }
 
-.settings-section + .settings-section {
-  padding-top: 0;
-  margin-top: 0;
-}
-
-.settings-group > * + * {
-  margin-top: 0;
+.settings-group[hidden],
+.settings-section[hidden],
+.rte-panel[hidden],
+.rte-panel-row[hidden],
+.editor-row[hidden],
+.rte-row-stack[hidden],
+#uploadSettingsMode[hidden],
+#hymnTitleFields[hidden] {
+  display: none;
 }
 
 .radio-group {
   display: flex;
-  gap: 16px;
+  gap: var(--sp-4);
   background: var(--panel-soft);
   padding: 10px;
   border-radius: 8px;
-}
-
-.field .radio-group {
-  margin-top: 4px;
 }
 
 .radio-group label {
@@ -1924,34 +1944,6 @@ body {
   gap: 6px;
   font-size: 14px;
   cursor: pointer;
-}
-
-.radio-group.source-radio {
-  gap: 20px;
-  padding: 0;
-  background: transparent;
-  border: none;
-}
-
-.radio-group.source-radio label {
-  font-weight: 500;
-  color: var(--muted);
-  font-size: 13px;
-  letter-spacing: 0.01em;
-  transition: color 160ms ease;
-}
-
-.radio-group.source-radio input[type="radio"] {
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  flex: 0 0 auto;
-  accent-color: var(--brand);
-  cursor: pointer;
-}
-
-.radio-group.source-radio label:has(input:checked) {
-  color: var(--ink);
 }
 
 .field textarea {
@@ -2053,7 +2045,7 @@ body {
   border-radius: 0;
   padding: 10px 12px;
   color: var(--ink);
-  font-size: 15px;
+  font-size: 14px;
   font-family: inherit;
   outline: none;
   transition: background 140ms ease;
@@ -2094,8 +2086,8 @@ body {
 .rte-toolbar {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
+  gap: var(--sp-2);
+  padding: var(--sp-2) 10px;
   flex-wrap: wrap;
 }
 
@@ -2118,7 +2110,7 @@ body {
   padding: 3px 9px;
   cursor: pointer;
   transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
-  height: 26px;
+  height: var(--ctrl-h-xs);
   line-height: 1;
 }
 
@@ -2141,8 +2133,8 @@ body {
   padding: 3px 5px;
   cursor: pointer;
   transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
-  height: 26px;
-  width: 28px;
+  height: var(--ctrl-h-xs);
+  width: var(--ctrl-h-xs);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2174,7 +2166,7 @@ body {
   color: var(--ink);
   font-size: 12px;
   padding: 3px 6px;
-  height: 26px;
+  height: var(--ctrl-h-xs);
   cursor: pointer;
   outline: none;
 }
@@ -2185,19 +2177,24 @@ body {
 
 /* rte-panel inner body (padded rows) */
 .rte-panel-body {
-  padding: 12px;
+  padding: var(--sp-3);
   display: grid;
-  gap: 12px;
+  gap: var(--sp-3);
 }
 
-/* Horizontal row inside rte-panel-body */
+.editor-row,
 .rte-panel-row {
   display: grid;
   grid-template-columns: var(--editor-label-width) minmax(0, 1fr);
   align-items: center;
-  column-gap: 12px;
-  row-gap: 8px;
-  min-height: 32px;
+  column-gap: var(--sp-3);
+  row-gap: var(--sp-2);
+  min-height: calc(var(--ctrl-h-xs) + var(--sp-1));
+}
+
+.editor-row {
+  min-height: var(--ctrl-h);
+  min-width: 0;
 }
 
 .rte-panel-row--sub {
@@ -2206,13 +2203,10 @@ body {
 
 .rte-panel-row--content {
   grid-template-columns: minmax(0, 1fr);
-  padding-left: calc(var(--editor-label-width) + 12px);
+  padding-left: calc(var(--editor-label-width) + var(--sp-3));
 }
 
 .rte-row-label {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--muted);
   line-height: 1.4;
 }
 
@@ -2266,7 +2260,7 @@ body {
   font-size: 12px;
   font-weight: 500;
   padding: 0 10px;
-  height: 24px;
+  height: var(--ctrl-h-2xs);
   border-radius: 6px;
   color: var(--muted);
   cursor: pointer;
@@ -2313,7 +2307,7 @@ body {
   padding: 3px 12px;
   border-radius: 5px;
   min-width: 52px;
-  height: 22px;
+  height: var(--ctrl-h-2xs);
   letter-spacing: 0.02em;
 }
 
@@ -2368,17 +2362,17 @@ body {
 /* Hint inside rte-panel-body */
 .rte-hint {
   margin: 0;
-  padding: 0 0 0 calc(var(--editor-label-width) + 12px);
+  padding: 0 0 0 calc(var(--editor-label-width) + var(--sp-3));
   font-size: 11px;
 }
 
 .rte-inline-hint {
-  margin: 4px 0 0;
+  margin: var(--sp-1) 0 0;
 }
 
 .rte-row-stack {
   display: grid;
-  gap: 6px;
+  gap: var(--sp-2);
 }
 
 .rte-file-input {
@@ -2388,7 +2382,7 @@ body {
 .field-inline {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
 }
 
 .field-inline-input {
@@ -2403,10 +2397,6 @@ body {
 
 .checkbox-row-clickable {
   cursor: pointer;
-}
-
-.field-stack-gap-sm {
-  margin-top: 10px;
 }
 
 @media (max-width: 640px) {
@@ -2432,6 +2422,7 @@ body {
     width: 100%;
   }
 
+  .editor-row,
   .rte-panel-row,
   .rte-panel-row--content {
     grid-template-columns: minmax(0, 1fr);

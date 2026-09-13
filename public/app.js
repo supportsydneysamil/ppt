@@ -1364,7 +1364,7 @@ hymnNumberInput.addEventListener('change', () => {
 });
 
 hymnIncludeTitle.addEventListener('change', async () => {
-  hymnTitleFields.style.display = hymnIncludeTitle.checked ? 'block' : 'none';
+  hymnTitleFields.hidden = !hymnIncludeTitle.checked;
   if (hymnIncludeTitle.checked && hymnNumberInput.value) {
     await fetchAndFillHymnTitle(hymnNumberInput.value);
   }
@@ -2690,34 +2690,17 @@ function populateEditor(slide) {
   slideNameInput.value = slide.name;
   slideTypeSelect.value = slide.type;
 
-  if (titleSlideSettings) {
-    titleSlideSettings.style.display = slide.type === 'title' ? 'grid' : 'none';
-  }
-
-  if (customTitleSlideSettings) {
-    customTitleSlideSettings.style.display =
-      slide.type === 'custom-title' ? 'grid' : 'none';
-  }
-
   hymnNumberInput.value = slide.hymnNumber || '';
   hymnIncludeTitle.checked = !!slide.includeTitle;
-  hymnTitleFields.style.display = slide.includeTitle ? 'block' : 'none';
+  if (hymnTitleFields) hymnTitleFields.hidden = !slide.includeTitle;
   hymnKorTitleInput.value = slide.hymnKorTitle || '';
   hymnEngTitleInput.value = slide.hymnEngTitle || '';
 
+  updateSettingsVisibility(slide.sourceType);
+
   if (slide.type === 'scripture') {
-    simpleSlideSettings.style.display = 'none';
-    hymnSlideSettings.style.display = 'none';
-    if (scriptureSlideSettings) scriptureSlideSettings.style.display = 'block';
     populateScriptureEditor(slide);
-  } else if (slide.type === 'hymn') {
-    simpleSlideSettings.style.display = 'none';
-    hymnSlideSettings.style.display = 'block';
-    if (scriptureSlideSettings) scriptureSlideSettings.style.display = 'none';
   } else if (slide.type === 'title') {
-    simpleSlideSettings.style.display = 'none';
-    hymnSlideSettings.style.display = 'none';
-    if (scriptureSlideSettings) scriptureSlideSettings.style.display = 'none';
 
     titleDesignSelect.value = normalizeTitleDesign(slide.titleDesign);
     syncTitleDesignCards(titleDesignSelect.value);
@@ -2726,21 +2709,15 @@ function populateEditor(slide) {
     ensureTitleServiceDateOptions(slide.serviceDate || defaultServiceDate());
     updateTitleSeasonSuggestion();
   } else if (slide.type === 'custom-title') {
-    simpleSlideSettings.style.display = 'none';
-    hymnSlideSettings.style.display = 'none';
-    if (scriptureSlideSettings) scriptureSlideSettings.style.display = 'none';
-
     customTitleDesignSelect.value = normalizeCustomTitleDesign(
       slide.customTitleDesign
     );
     syncCustomTitleDesignCards(customTitleDesignSelect.value);
     customTitleKoInput.value = slide.customTitleKo || '';
     customTitleEnInput.value = slide.customTitleEn || '';
+  } else if (slide.type === 'hymn') {
+    // Hymn fields are filled above.
   } else if (slide.type === 'ad') {
-    simpleSlideSettings.style.display = 'block';
-    hymnSlideSettings.style.display = 'none';
-    if (scriptureSlideSettings) scriptureSlideSettings.style.display = 'none';
-
     sourceRadios.forEach(r => {
       r.checked = r.value === slide.sourceType;
     });
@@ -2774,10 +2751,6 @@ function populateEditor(slide) {
     adBgImageUrl.value = slide.adBgImageUrl || '';
     adBgImageFile.value = '';
   } else {
-    simpleSlideSettings.style.display = 'block';
-    hymnSlideSettings.style.display = 'none';
-    if (scriptureSlideSettings) scriptureSlideSettings.style.display = 'none';
-
     slideContentInput.value = slide.content;
     slideFontSelect.value = slide.font;
     slideFontSizeSelect.value = slide.fontSize || "40";
@@ -3523,6 +3496,10 @@ function toggleSettingsMode(mode) {
   updateSettingsVisibility(mode);
 }
 
+function setHidden(el, hidden) {
+  if (el) el.hidden = !!hidden;
+}
+
 function updateSettingsVisibility(overrideMode) {
   const type = slideTypeSelect.value;
   const sourceType =
@@ -3530,59 +3507,26 @@ function updateSettingsVisibility(overrideMode) {
     (document.querySelector('input[name="sourceType"]:checked') || {}).value ||
     "basic";
 
-  if (titleSlideSettings) {
-    titleSlideSettings.style.display = type === "title" ? "grid" : "none";
-  }
+  const isTitle = type === "title";
+  const isCustom = type === "custom-title";
+  const isHymn = type === "hymn";
+  const isScripture = type === "scripture";
+  const isAd = type === "ad";
+  const isSimpleFamily = type === "simple" || type === "ad";
 
-  if (customTitleSlideSettings) {
-    customTitleSlideSettings.style.display =
-      type === "custom-title" ? "grid" : "none";
-  }
+  setHidden(titleSlideSettings, !isTitle);
+  setHidden(customTitleSlideSettings, !isCustom);
+  setHidden(scriptureSlideSettings, !isScripture);
+  setHidden(hymnSlideSettings, !isHymn);
+  setHidden(simpleSlideSettings, !isSimpleFamily);
 
-  if (scriptureSlideSettings) {
-    scriptureSlideSettings.style.display = type === "scripture" ? "block" : "none";
-  }
+  if (!isSimpleFamily) return;
 
-  if (type === "title" || type === "custom-title") {
-    simpleSlideSettings.style.display = "none";
-    hymnSlideSettings.style.display = "none";
-    return;
-  }
-
-  if (type === "hymn") {
-    simpleSlideSettings.style.display = "none";
-    hymnSlideSettings.style.display = "block";
-    return;
-  }
-
-  if (type === "scripture") {
-    simpleSlideSettings.style.display = "none";
-    hymnSlideSettings.style.display = "none";
-    return;
-  }
-
-  simpleSlideSettings.style.display = "block";
-  hymnSlideSettings.style.display = "none";
-
-  if (sourceType === "upload") {
-    adContentSettings.style.display = "none";
-    basicSettingsMode.style.display = "none";
-    if (bgSettings) bgSettings.style.display = "none";
-    uploadSettingsMode.style.display = "block";
-    return;
-  }
-
-  uploadSettingsMode.style.display = "none";
-
-  if (type === "ad") {
-    adContentSettings.style.display = "grid";
-    basicSettingsMode.style.display = "none";
-  } else {
-    adContentSettings.style.display = "none";
-    basicSettingsMode.style.display = "block";
-  }
-
-  if (bgSettings) bgSettings.style.display = "block";
+  const isUpload = sourceType === "upload";
+  setHidden(uploadSettingsMode, !isUpload);
+  setHidden(adContentSettings, isUpload || !isAd);
+  setHidden(basicSettingsMode, isUpload || isAd);
+  setHidden(bgSettings, isUpload);
 }
 
 function toggleBgMode(source) {
@@ -3591,19 +3535,19 @@ function toggleBgMode(source) {
   const adBgImageUrlInput = document.getElementById("adBgImageUrl");
   const hasImage = source === "file" || source === "url";
   if (source === "file") {
-    adBgFileModeEl.style.display = "block";
-    adBgUrlModeEl.style.display = "none";
+    setHidden(adBgFileModeEl, false);
+    setHidden(adBgUrlModeEl, true);
     if (adBgImageUrlInput) adBgImageUrlInput.disabled = true;
   } else if (source === "url") {
-    adBgFileModeEl.style.display = "none";
-    adBgUrlModeEl.style.display = "block";
+    setHidden(adBgFileModeEl, true);
+    setHidden(adBgUrlModeEl, false);
     if (adBgImageUrlInput) adBgImageUrlInput.disabled = false;
   } else {
-    adBgFileModeEl.style.display = "none";
-    adBgUrlModeEl.style.display = "none";
+    setHidden(adBgFileModeEl, true);
+    setHidden(adBgUrlModeEl, true);
     if (adBgImageUrlInput) adBgImageUrlInput.disabled = true;
   }
-  if (dimOverlayRow) dimOverlayRow.style.display = hasImage ? "block" : "none";
+  setHidden(dimOverlayRow, !hasImage);
 }
 
 function resetCurrentSlide() {

@@ -289,7 +289,7 @@
             <div class="slide-list-title-wrap">
               <h3>슬라이드 목록</h3>
             </div>
-            <button id="addSlideBtn" class="ghost small">+ 추가</button>
+            <button id="addSlideBtn" class="ghost small">추가</button>
           </div>
           <div class="slide-list-toolbar">
             <label class="selection-toggle">
@@ -326,12 +326,12 @@
 
           <form id="slideForm" class="editor-form">
             <div class="settings-section">
-              <label class="field">
+              <label class="editor-row">
                 <span class="field-label">이름</span>
                 <input id="slideName" type="text" placeholder="슬라이드 이름 (영문/숫자 권장)" />
               </label>
 
-              <label class="field">
+              <label class="editor-row">
                 <span class="field-label">슬라이드 타입</span>
                 <select id="slideType">
                   <option value="simple">단순 슬라이드</option>
@@ -346,18 +346,22 @@
 
             <!-- Dynamic Settings Area -->
             <div id="simpleSlideSettings" class="settings-group">
-              <div class="settings-section">
-                <div class="field">
-                  <span class="field-label">소스 선택</span>
-                  <div class="radio-group source-radio">
-                    <label><input type="radio" name="sourceType" value="basic" checked><span>기본 설정</span></label>
-                    <label><input type="radio" name="sourceType" value="upload"><span>PPTX 업로드</span></label>
-                  </div>
+              <div class="editor-row">
+                <span class="field-label">소스 선택</span>
+                <div class="radio-choice-group">
+                  <label class="radio-row">
+                    <input type="radio" name="sourceType" value="basic" checked>
+                    <span>기본 설정</span>
+                  </label>
+                  <label class="radio-row">
+                    <input type="radio" name="sourceType" value="upload">
+                    <span>PPTX 업로드</span>
+                  </label>
                 </div>
               </div>
 
               <!-- Ad Content Settings: Title + Body panels (shown for ad type) -->
-              <div id="adContentSettings" class="settings-group" style="display:none;">
+              <div id="adContentSettings" class="settings-group" hidden>
 
                 <!-- Title panel -->
                 <div class="rte-panel">
@@ -499,7 +503,7 @@
               </div>
 
               <!-- Unified Background panel (simple + ad) -->
-              <div id="bgSettings" class="rte-panel" style="display:none;">
+              <div id="bgSettings" class="rte-panel" hidden>
                 <div class="rte-panel-label">배경</div>
                 <div class="rte-panel-body">
 
@@ -540,7 +544,7 @@
                   </div>
 
                   <!-- 파일 선택 (conditional) -->
-                  <div id="adBgFileMode" class="rte-panel-row rte-panel-row--sub rte-panel-row--content" style="display:none;">
+                  <div id="adBgFileMode" class="rte-panel-row rte-panel-row--sub rte-panel-row--content" hidden>
                     <div class="rte-row-content">
                       <input id="adBgImageFile" type="file" accept="image/jpeg,image/png" class="rte-file-input" />
                       <p class="hint rte-inline-hint">JPEG, PNG (최대 5MB)</p>
@@ -548,12 +552,12 @@
                   </div>
 
                   <!-- URL 입력 (conditional) -->
-                  <div id="adBgUrlMode" class="rte-panel-row rte-panel-row--content rte-panel-row--sub" style="display:none;">
+                  <div id="adBgUrlMode" class="rte-panel-row rte-panel-row--content rte-panel-row--sub" hidden>
                     <input id="adBgImageUrl" type="text" class="rte-url-input" placeholder="https://example.com/image.jpg" disabled />
                   </div>
 
                   <!-- 딤 오버레이: 파일/URL 선택 시에만 표시 -->
-                  <div id="dimOverlayRow" class="rte-row-stack" style="display:none;">
+                  <div id="dimOverlayRow" class="rte-row-stack" hidden>
                     <div class="rte-panel-row">
                       <span class="rte-row-label">딤 오버레이</span>
                       <div class="rte-row-main">
@@ -567,10 +571,10 @@
                 </div>
               </div>
 
-              <div id="uploadSettingsMode" style="display:none;">
+              <div id="uploadSettingsMode" hidden>
                 <div class="settings-section">
-                  <label class="field">
-                    <span class="field-label">PPTX 파일 업로드</span>
+                  <label class="editor-row">
+                    <span class="field-label">파일</span>
                     <input type="file" id="userPptxFile" accept=".ppt,.pptx" />
                   </label>
                   <p class="hint">사용자가 제작한 PPTX를 그대로 사용합니다.</p>
@@ -579,16 +583,16 @@
             </div>
 
             <!-- Hymn Settings -->
-            <div id="hymnSlideSettings" class="settings-group" style="display:none;">
+            <div id="hymnSlideSettings" class="settings-group" hidden>
               <div class="settings-section">
-                <div class="field">
+                <div class="editor-row">
                   <span class="field-label">찬송가 장수</span>
                   <div class="field-inline">
                     <input id="hymnNumber" type="number" placeholder="예: 1" class="field-inline-input">
                     <button id="hymnLoadBtn" type="button" class="ghost field-inline-action">로드</button>
                   </div>
-                  <p class="hint">RickC.online에서 한영 찬송가(PPT)를 다운로드합니다.</p>
                 </div>
+                <p class="hint">RickC.online에서 한영 찬송가(PPT)를 다운로드합니다.</p>
               </div>
 
               <div class="rte-panel">
@@ -598,28 +602,28 @@
                     <input type="checkbox" id="hymnIncludeTitle">
                     <span>맨 앞에 제목 슬라이드 추가</span>
                   </label>
-                  <div id="hymnTitleFields" style="display:none;">
-                    <div class="field">
+                  <div id="hymnTitleFields" class="settings-section" hidden>
+                    <label class="editor-row">
                       <span class="field-label">한국어 제목</span>
                       <input id="hymnKorTitle" type="text" placeholder="예: 찬양하라 복되신 구세주 예수">
-                    </div>
-                    <div class="field field-stack-gap-sm">
+                    </label>
+                    <label class="editor-row">
                       <span class="field-label">영어 제목</span>
                       <input id="hymnEngTitle" type="text" placeholder="예: Praise Him, Praise Him">
-                    </div>
+                    </label>
                   </div>
                 </div>
               </div>
             </div>
 
-            <div id="scriptureSlideSettings" class="settings-group" style="display:none;">
+            <div id="scriptureSlideSettings" class="settings-group" hidden>
               <div class="settings-section">
-                <label class="field">
+                <label class="editor-row">
                   <span class="field-label">구분</span>
                   <select id="scriptureTestament"></select>
                 </label>
 
-                <label class="field">
+                <label class="editor-row">
                   <span class="field-label">책</span>
                   <select id="scriptureBook"></select>
                 </label>
@@ -645,7 +649,7 @@
                   </label>
                 </div>
 
-                <label class="field">
+                <label class="editor-row">
                   <span class="field-label">장</span>
                   <div class="number-stepper">
                     <button
@@ -727,8 +731,8 @@
                     <span class="chevron">▾</span>
                   </summary>
                   <div class="settings-body">
-                    <label class="field">
-                      <span class="field-label">출력 슬라이드 테마</span>
+                    <label class="editor-row">
+                      <span class="field-label">테마</span>
                       <select id="scripturePptxTheme">
                         <option value="dark" selected>다크 (시그니처)</option>
                         <option value="light">라이트 (시그니처)</option>
@@ -743,7 +747,7 @@
 
                     <div class="field">
                       <div class="field-label-row">
-                        <span class="field-label">사용자 배경 이미지</span>
+                        <span class="field-label">배경 이미지</span>
                         <button
                           type="button"
                           class="info-badge"
@@ -789,7 +793,7 @@
 
               <div class="settings-section">
                 <div class="field">
-                  <button id="scriptureGenerateBtn" type="button" class="ghost">
+                  <button id="scriptureGenerateBtn" type="button" class="ghost small">
                     생성 (미리보기)
                   </button>
                   <p class="hint">저장하기 전에 슬라이드를 만들어 미리 확인할 수 있습니다. 설정을 바꾸면 다시 생성하세요.</p>
@@ -798,7 +802,7 @@
             </div>
 
             <!-- Title (Sunday worship cover) Settings -->
-            <div id="titleSlideSettings" class="settings-group" style="display:none;">
+            <div id="titleSlideSettings" class="settings-group" hidden>
               <div class="rte-panel">
                 <div class="rte-panel-label">디자인</div>
                 <div class="rte-panel-body">
@@ -848,7 +852,7 @@
                     <span class="rte-row-label">부제 <span class="rte-panel-hint">선택</span></span>
                     <div class="rte-row-main">
                       <input id="titleSubtitle" type="text" class="rte-url-input" placeholder="예: 성찬 예배" />
-                      <button type="button" id="titleSeasonSuggestBtn" class="ghost ghost-subtle" hidden></button>
+                      <button type="button" id="titleSeasonSuggestBtn" class="ghost" hidden></button>
                     </div>
                   </div>
                   <p class="hint rte-hint">
@@ -859,7 +863,7 @@
             </div>
 
             <!-- Title (Custom) Settings -->
-            <div id="customTitleSlideSettings" class="settings-group" style="display:none;">
+            <div id="customTitleSlideSettings" class="settings-group" hidden>
               <div class="rte-panel">
                 <div class="rte-panel-label">디자인</div>
                 <div class="rte-panel-body">
