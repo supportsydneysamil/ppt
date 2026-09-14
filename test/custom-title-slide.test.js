@@ -8,6 +8,11 @@ import {
   appendCustomTitleSlide,
   CUSTOM_TITLE_DESIGNS,
 } from "../lib/custom-title-slide.js";
+import {
+  CUSTOM_TITLE_DESIGN_CATALOG,
+  CUSTOM_TITLE_DESIGN_IDS,
+  findCustomTitleDesign,
+} from "../lib/custom-title-design-catalog.js";
 import * as customTitleText from "../lib/custom-title-text.js";
 import { decodePng, pixelAt } from "./helpers/png-decode.js";
 
@@ -46,6 +51,12 @@ function pictureByName(slideXml, name) {
   return Array.from(parse(slideXml).getElementsByTagName("p:pic")).find(
     (picture) =>
       picture.getElementsByTagName("p:cNvPr")[0]?.getAttribute("name") === name
+  );
+}
+
+function objectByName(slideXml, name) {
+  return Array.from(parse(slideXml).getElementsByTagName("p:cNvPr")).find(
+    (node) => node.getAttribute("name") === name
   );
 }
 
@@ -102,15 +113,79 @@ describe("subtitleFontSize", () => {
 });
 
 describe("appendCustomTitleSlide", () => {
-  it("renders one theme-tinted lower halo and shifts the title stack", async () => {
-    const themes = {
-      aurora: { color: "C4B2FF", opacity: 0.15 },
-      monolith: { color: "FFFFFF", opacity: 0.1 },
-      ivory: { color: "C2A87A", opacity: 0.16 },
-      marquee: { color: "D9B376", opacity: 0.12 },
-    };
+  it("exports all 31 catalog designs in catalog order", () => {
+    assert.deepEqual(CUSTOM_TITLE_DESIGNS, CUSTOM_TITLE_DESIGN_IDS);
+  });
 
+  it("renders every design as a valid one-slide deck with all supplied text", async () => {
     for (const customTitleDesign of CUSTOM_TITLE_DESIGNS) {
+      const { zip, slideXml } = await renderArchive({
+        customTitleDesign,
+        customTitleKo: "성찬 예배",
+        customTitleEn: "Holy Communion",
+        customTitleSubtitle: "한 몸을 이루는 교회",
+      });
+
+      assert.ok(zip.getEntry("ppt/slides/slide1.xml"));
+      assert.equal(zip.getEntry("ppt/slides/slide2.xml"), null);
+      assert.match(slideXml, /<a:t>성찬 예배<\/a:t>/);
+      assert.match(slideXml, /<a:t>HOLY COMMUNION<\/a:t>/);
+      assert.match(slideXml, /<a:t>한 몸을 이루는 교회<\/a:t>/);
+    }
+  });
+
+  it("dispatches every design through its declared layout family", async () => {
+    for (const design of CUSTOM_TITLE_DESIGN_CATALOG) {
+      const slideXml = await render({
+        customTitleDesign: design.id,
+        customTitleKo: "성찬 예배",
+      });
+      assert.ok(
+        objectByName(slideXml, `custom-title:family:${design.layoutFamily}`),
+        `${design.id} must use ${design.layoutFamily}`
+      );
+    }
+  });
+
+  it("embeds only declared local image backgrounds with resolvable media", async () => {
+    for (const design of CUSTOM_TITLE_DESIGN_CATALOG) {
+      const { zip, slideXml } = await renderArchive({
+        customTitleDesign: design.id,
+        customTitleKo: "성찬 예배",
+      });
+      const background = pictureByName(
+        slideXml,
+        "custom-title:background-asset"
+      );
+
+      if (!design.asset) {
+        assert.equal(
+          background,
+          undefined,
+          `${design.id} must not depend on a catalog image`
+        );
+        continue;
+      }
+
+      assert.ok(background, `${design.id} must embed its local image`);
+      const embed = background
+        .getElementsByTagName("a:blip")[0]
+        .getAttribute("r:embed");
+      const rels = zip.readAsText("ppt/slides/_rels/slide1.xml.rels");
+      const target = new RegExp(
+        `Id="${embed}"[^>]*Target="([^"]+)"`
+      ).exec(rels)?.[1];
+      assert.ok(target, `${design.id} image relationship must resolve`);
+      assert.ok(
+        zip.getEntry(`ppt/${target.replace(/^\.\.\//, "")}`),
+        `${design.id} image media must exist`
+      );
+    }
+  });
+
+  it("renders one theme-tinted lower halo and shifts the title stack", async () => {
+    for (const customTitleDesign of CUSTOM_TITLE_DESIGNS) {
+      const { theme } = findCustomTitleDesign(customTitleDesign);
       const baselineXml = await render({
         customTitleDesign,
         customTitleKo: "성찬 예배",
@@ -156,12 +231,12 @@ describe("appendCustomTitleSlide", () => {
       const centre = pixelAt(raster, raster.width >> 1, raster.height >> 1);
       assert.deepEqual(
         centre.slice(0, 3),
-        rgb(themes[customTitleDesign].color),
+        rgb(theme.haloColor),
         `${customTitleDesign} halo must be tinted with its theme colour`
       );
       assert.equal(
         centre[3],
-        Math.round(themes[customTitleDesign].opacity * 255),
+        Math.round(theme.haloOpacity * 255),
         `${customTitleDesign} halo must use its theme opacity`
       );
       assert.equal(pixelAt(raster, 0, 0)[3], 0);
