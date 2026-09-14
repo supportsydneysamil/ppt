@@ -8,6 +8,7 @@ import * as titleSlideApi from "../lib/title-slide.js";
 import {
   appendTitleSlide,
   TITLE_DESIGNS,
+  defaultTitleEn,
   normalizeTitleDesign,
   buildTitleContent,
   worshipEnFontSize,
@@ -86,23 +87,26 @@ async function render(slide) {
 }
 
 describe("buildTitleContent", () => {
-  it("knows all twelve designs and normalizes unknown ids to chapel", () => {
-    assert.deepEqual(TITLE_DESIGNS, [
-      "chapel",
-      "editorial",
-      "glow",
-      "easter-dawn",
-      "easter-stained",
-      "christmas-burgundy",
-      "christmas-evergreen",
-      "thanksgiving",
-      "advent",
-      "midnight-slab",
-      "slate-split",
-      "deep-fog",
-    ]);
+  it("knows all picker designs plus hidden thanksgiving", () => {
+    assert.equal(TITLE_DESIGNS.length, 28);
+    assert.equal(TITLE_DESIGNS.includes("thanksgiving"), true);
+    assert.equal(TITLE_DESIGNS.includes("lent-ashes"), true);
+    assert.equal(TITLE_DESIGNS.includes("chapel"), true);
     assert.equal(normalizeTitleDesign("unknown"), "chapel");
-    assert.equal(normalizeTitleDesign("advent"), "advent");
+    assert.equal(normalizeTitleDesign("christmas-ivory"), "christmas-ivory");
+  });
+
+  it("uses seasonal English defaults for new catalog ids", () => {
+    assert.equal(defaultTitleEn("advent-vesper"), "ADVENT SUNDAY");
+    assert.equal(defaultTitleEn("advent-watch"), "ADVENT SUNDAY");
+    assert.equal(defaultTitleEn("christmas-ivory"), "CHRISTMAS WORSHIP");
+    assert.equal(defaultTitleEn("easter-linen"), "EASTER SUNDAY");
+    assert.equal(defaultTitleEn("lent-violet"), "LENT");
+    assert.equal(defaultTitleEn("palm-court"), "PALM SUNDAY");
+    assert.equal(defaultTitleEn("year-end-watch"), "WATCHNIGHT");
+    assert.equal(defaultTitleEn("new-year-dawn"), "NEW YEAR");
+    assert.equal(defaultTitleEn("thanksgiving"), "THANKSGIVING");
+    assert.equal(defaultTitleEn("chapel"), "SUNDAY WORSHIP");
   });
 
   it("resolves legacy chapel defaults and custom copy", () => {
