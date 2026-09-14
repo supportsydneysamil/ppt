@@ -3435,11 +3435,13 @@ function populateEditor(slide, { reloadCustomCanvas = true } = {}) {
   } else if (slide.type === 'title') {
     titleDesignSelect.value = normalizeTitleDesign(slide.titleDesign);
     syncTitleDesignCards(titleDesignSelect.value);
+    const textApi = titleTextApi();
     titleChurchNameInput.value = slide.churchName || rememberedChurchName();
-    titleKoInput.value = slide.titleKo == null ? "주일예배" : slide.titleKo;
+    titleKoInput.value =
+      slide.titleKo == null ? textApi.defaultTitleKo() : slide.titleKo;
     titleEnInput.value =
       slide.titleEn == null
-        ? defaultTitleEn(titleDesignSelect.value)
+        ? textApi.defaultTitleEn(titleDesignSelect.value)
         : slide.titleEn;
     titleSubtitleInput.value = slide.titleSubtitle || '';
     const api = titleDateApi();
@@ -3577,66 +3579,39 @@ function syncAdTextColorTabs(value) {
 
 // --- Title slide (Sunday worship cover) helpers ---
 
-const TITLE_DESIGNS = [
-  "chapel",
-  "editorial",
-  "glow",
-  "easter-dawn",
-  "easter-stained",
-  "christmas-burgundy",
-  "christmas-evergreen",
-  "thanksgiving",
-  "advent",
-  "midnight-slab",
-  "slate-split",
-  "deep-fog",
-];
 const TITLE_CHURCH_STORAGE_KEY = "ppt.titleChurchName";
 
 function titleDateApi() {
   return window.TitleSlideDate || null;
 }
 
+// main.jsx exposes the shared module before editor interaction and async slide
+// hydration resume. Resolve it lazily inside helpers so calls happen after that
+// module initialization even though app.js is a static dependency of main.jsx.
 function titleTextApi() {
-  return window.TitleSlideText || null;
+  return window.TitleSlideText;
 }
 
 function normalizeTitleDesign(value) {
-  const api = titleTextApi();
-  return api
-    ? api.normalizeTitleDesign(value)
-    : TITLE_DESIGNS.includes(value) ? value : "chapel";
-}
-
-function defaultTitleEn(design) {
-  const api = titleTextApi();
-  return api ? api.defaultTitleEn(design) : "SUNDAY WORSHIP";
+  return titleTextApi().normalizeTitleDesign(value);
 }
 
 function resolveTitlePreviewKo(data) {
   const api = titleTextApi();
-  return api
-    ? api.resolveTitleLine(data.titleKo, api.defaultTitleKo())
-    : typeof data.titleKo === "string" ? data.titleKo.trim() : "주일예배";
+  return api.resolveTitleLine(data.titleKo, api.defaultTitleKo());
 }
 
 function resolveTitlePreviewEn(data, design) {
   const api = titleTextApi();
-  return api
-    ? api.resolveTitleLine(data.titleEn, api.defaultTitleEn(design))
-    : typeof data.titleEn === "string"
-      ? data.titleEn.trim()
-      : defaultTitleEn(design);
+  return api.resolveTitleLine(data.titleEn, api.defaultTitleEn(design));
 }
 
 function titleKoFontSize(text, base, maxWidthInches) {
-  const api = titleTextApi();
-  return api ? api.worshipKoFontSize(text, base, maxWidthInches) : base;
+  return titleTextApi().worshipKoFontSize(text, base, maxWidthInches);
 }
 
 function titleEnFontSize(text, base, maxWidthInches) {
-  const api = titleTextApi();
-  return api ? api.worshipEnFontSize(text, base, maxWidthInches) : base;
+  return titleTextApi().worshipEnFontSize(text, base, maxWidthInches);
 }
 
 function formatTitleDateKo(isoDate) {
@@ -3883,7 +3858,7 @@ function buildEditorialPreview(container, content, unit) {
   if (content.en) {
     middle.appendChild(
       titlePreviewNode(
-        `font-family:${TITLE_LATIN};font-weight:700;font-size:${pt(titleEnFontSize(content.en, 14))}px;` +
+        `font-family:${TITLE_LATIN};font-weight:700;font-size:${pt(14)}px;` +
           `letter-spacing:${pt(14) * 0.55}px;color:${muted};margin-top:${inch(0.2)}px;`,
         content.en
       )
@@ -4018,18 +3993,26 @@ function buildGlowPreview(container, content, unit) {
   container.appendChild(band);
 }
 
-function titlePreviewShape(cssText, kind = "motif") {
+function titlePreviewShape(cssText, kind) {
   const shape = titlePreviewNode(cssText);
   shape.className =
     kind === "rule" ? "title-preview-rule" : "title-preview-motif";
   return shape;
 }
 
+function titlePreviewMotif(cssText) {
+  return titlePreviewShape(cssText, "motif");
+}
+
+function titlePreviewRule(cssText) {
+  return titlePreviewShape(cssText, "rule");
+}
+
 function buildEasterDawnPreview(container, content, unit) {
   const { inch, pt } = unit;
   container.style.background = "linear-gradient(145deg,#FFFBF2,#F3DCBD)";
   container.appendChild(
-    titlePreviewShape(
+    titlePreviewMotif(
       `position:absolute;left:${inch(5.55)}px;top:${inch(-0.35)}px;width:${inch(2.2)}px;` +
         `height:${inch(2.2)}px;border-radius:50%;background:#FFF0CD;` +
         `box-shadow:0 0 ${inch(1.1)}px rgba(214,164,74,.28);`
@@ -4037,7 +4020,7 @@ function buildEasterDawnPreview(container, content, unit) {
   );
   [-52, -34, -17, 0, 17, 34, 52].forEach((angle, index) => {
     container.appendChild(
-      titlePreviewShape(
+      titlePreviewMotif(
         `position:absolute;left:${inch(6.62)}px;top:${inch(1.18)}px;width:${inch(0.05)}px;` +
           `height:${inch(0.92 - Math.abs(index - 3) * 0.07)}px;background:rgba(214,164,74,.28);` +
           `transform-origin:50% ${inch(-0.35)}px;transform:rotate(${angle}deg);`
@@ -4058,9 +4041,8 @@ function buildEasterDawnPreview(container, content, unit) {
       content.ko
     ));
   }
-  container.appendChild(titlePreviewShape(
-    `position:absolute;top:${inch(2.75)}px;left:${inch(4.66)}px;width:${inch(4)}px;height:1px;background:#B48C4A;`,
-    "rule"
+  container.appendChild(titlePreviewRule(
+    `position:absolute;top:${inch(2.75)}px;left:${inch(4.66)}px;width:${inch(4)}px;height:1px;background:#B48C4A;`
   ));
   if (content.en) {
     container.appendChild(titlePreviewNode(
@@ -4077,9 +4059,8 @@ function buildEasterDawnPreview(container, content, unit) {
       content.subtitle
     ));
   }
-  container.appendChild(titlePreviewShape(
-    `position:absolute;top:${inch(6.05)}px;left:${inch(1.1)}px;width:${inch(11.1)}px;height:1px;background:#B48C4A;`,
-    "rule"
+  container.appendChild(titlePreviewRule(
+    `position:absolute;top:${inch(6.05)}px;left:${inch(1.1)}px;width:${inch(11.1)}px;height:1px;background:#B48C4A;`
   ));
   if (content.koDate) {
     container.appendChild(titlePreviewNode(
@@ -4096,7 +4077,7 @@ function buildEasterStainedPreview(container, content, unit) {
     "radial-gradient(circle at 50% 44%,rgba(138,92,199,.35),transparent 58%),linear-gradient(145deg,#0B1A33,#322055)";
   [0, 0.42].forEach((inset) => {
     container.appendChild(
-      titlePreviewShape(
+      titlePreviewMotif(
         `position:absolute;left:${inch(3.55 + inset)}px;top:${inch(0.45 + inset)}px;` +
           `width:${inch(6.23 - inset * 2)}px;height:${inch(6.15 - inset * 2)}px;` +
           `border:${Math.max(1, inch(0.015))}px solid rgba(242,193,91,.5);border-radius:${inch(2.8)}px ${inch(2.8)}px ${inch(0.2)}px ${inch(0.2)}px;`
@@ -4121,11 +4102,10 @@ function buildEasterStainedPreview(container, content, unit) {
 function buildChristmasBurgundyPreview(container, content, unit) {
   const { inch, pt } = unit;
   container.style.background = "#2A0F16";
-  container.appendChild(titlePreviewShape(
-    `position:absolute;inset:0 auto 0 0;width:${inch(0.12)}px;background:#D9B376;`,
-    "rule"
+  container.appendChild(titlePreviewRule(
+    `position:absolute;inset:0 auto 0 0;width:${inch(0.12)}px;background:#D9B376;`
   ));
-  container.appendChild(titlePreviewShape(
+  container.appendChild(titlePreviewMotif(
     `position:absolute;left:${inch(8.7)}px;top:${inch(1.85)}px;width:${inch(3.4)}px;height:${inch(3.4)}px;` +
       `background:rgba(217,179,118,.22);clip-path:polygon(50% 0,61% 37%,100% 50%,61% 63%,50% 100%,39% 63%,0 50%,39% 37%);`
   ));
@@ -4139,9 +4119,8 @@ function buildChristmasBurgundyPreview(container, content, unit) {
   };
   left(content.church, 1.18, 18, "#D9B376");
   left(content.ko, 2, titleKoFontSize(content.ko, 68), "#F7EBDA", TITLE_SERIF);
-  container.appendChild(titlePreviewShape(
-    `position:absolute;left:${inch(1.15)}px;top:${inch(3.55)}px;width:${inch(3.2)}px;height:1px;background:#D9B376;`,
-    "rule"
+  container.appendChild(titlePreviewRule(
+    `position:absolute;left:${inch(1.15)}px;top:${inch(3.55)}px;width:${inch(3.2)}px;height:1px;background:#D9B376;`
   ));
   left(content.en, 3.74, titleEnFontSize(content.en, 17), "#D9B376", TITLE_LATIN);
   left(content.subtitle, 4.3, 18, "#E4D8C8");
@@ -4152,13 +4131,13 @@ function buildChristmasEvergreenPreview(container, content, unit) {
   const { inch, pt } = unit;
   container.style.background = "linear-gradient(145deg,#07140C,#12301C)";
   [[1, .65, .22], [10.75, .82, .3], [11.8, 1.48, .18]].forEach(([x, y, size]) => {
-    container.appendChild(titlePreviewShape(
+    container.appendChild(titlePreviewMotif(
       `position:absolute;left:${inch(x)}px;top:${inch(y)}px;width:${inch(size)}px;height:${inch(size)}px;` +
         `background:#D9B376;clip-path:polygon(50% 0,60% 40%,100% 50%,60% 60%,50% 100%,40% 60%,0 50%,40% 40%);`
     ));
   });
   [[-0.25, 5.75, 3.15, 2.15], [2.25, 6.05, 2.55, 1.7], [4.65, 5.65, 3.55, 2.25], [7.65, 5.95, 2.85, 1.9], [10.15, 5.6, 3.45, 2.3]].forEach(([x, y, w, h], index) => {
-    container.appendChild(titlePreviewShape(
+    container.appendChild(titlePreviewMotif(
       `position:absolute;left:${inch(x)}px;top:${inch(y)}px;width:${inch(w)}px;height:${inch(h)}px;` +
         `background:${index % 2 ? "#0A2012" : "#07180D"};clip-path:polygon(50% 0,100% 100%,0 100%);`
     ));
@@ -4182,11 +4161,11 @@ function buildThanksgivingPreview(container, content, unit) {
   const { inch, pt } = unit;
   container.style.background = "linear-gradient(145deg,#3A2410,#1B1108)";
   [2.08, 11.253].forEach((x, side) => {
-    container.appendChild(titlePreviewShape(
+    container.appendChild(titlePreviewMotif(
       `position:absolute;left:${inch(x)}px;top:${inch(1.35)}px;width:1px;height:${inch(4.8)}px;background:#C99B54;`
     ));
     for (let index = 0; index < 4; index += 1) {
-      container.appendChild(titlePreviewShape(
+      container.appendChild(titlePreviewMotif(
         `position:absolute;left:${inch(x + (side ? 0.06 : -0.4))}px;top:${inch(2 + index * .78)}px;` +
           `width:${inch(.34)}px;height:${inch(.58)}px;border-radius:70% 20% 70% 20%;` +
           `background:#C99B54;transform:rotate(${side ? -52 : 52}deg);`
@@ -4212,11 +4191,11 @@ function buildAdventPreview(container, content, unit) {
   const { inch, pt } = unit;
   container.style.background =
     "radial-gradient(circle at 50% 18%,rgba(228,188,115,.28),transparent 38%),linear-gradient(145deg,#1A2140,#0A0E1A)";
-  container.appendChild(titlePreviewShape(
+  container.appendChild(titlePreviewMotif(
     `position:absolute;left:${inch(6.24)}px;top:${inch(.34)}px;width:${inch(.85)}px;height:${inch(1.12)}px;` +
       `background:#F2C15B;border-radius:65% 35% 60% 40%;transform:rotate(45deg);`
   ));
-  container.appendChild(titlePreviewShape(
+  container.appendChild(titlePreviewMotif(
     `position:absolute;left:${inch(6.37)}px;top:${inch(1.34)}px;width:${inch(.59)}px;height:${inch(1.52)}px;` +
       `background:#E9E4D8;border-radius:${inch(.04)}px;`
   ));
@@ -4234,7 +4213,7 @@ function buildAdventPreview(container, content, unit) {
   centered(content.koDate, 5.48, 18, "#D7DCEE");
   centered(content.church, 6.35, 17, "#D7DCEE");
   for (let index = 0; index < 4; index += 1) {
-    container.appendChild(titlePreviewShape(
+    container.appendChild(titlePreviewMotif(
       `position:absolute;left:${inch(5.7 + .45 * index)}px;top:${inch(6.85)}px;width:${inch(.16)}px;` +
         `height:${inch(.16)}px;border-radius:50%;background:rgba(167,184,232,${index ? .4 : 1});`
     ));
@@ -4244,9 +4223,8 @@ function buildAdventPreview(container, content, unit) {
 function buildMidnightSlabPreview(container, content, unit) {
   const { inch, pt } = unit;
   container.style.background = "linear-gradient(145deg,#08090B,#181C23)";
-  container.appendChild(titlePreviewShape(
-    `position:absolute;left:${inch(1.45)}px;top:${inch(1.2)}px;width:1px;height:${inch(5.1)}px;background:#9AA3AE;`,
-    "rule"
+  container.appendChild(titlePreviewRule(
+    `position:absolute;left:${inch(1.45)}px;top:${inch(1.2)}px;width:1px;height:${inch(5.1)}px;background:#9AA3AE;`
   ));
   const right = (text, top, size, color, font = TITLE_SANS) => {
     if (!text) return;
@@ -4266,9 +4244,8 @@ function buildMidnightSlabPreview(container, content, unit) {
 function buildSlateSplitPreview(container, content, unit) {
   const { inch, pt } = unit;
   container.style.background = "linear-gradient(90deg,#1C2431 0 37%,#0D1117 37%)";
-  container.appendChild(titlePreviewShape(
-    `position:absolute;left:${inch(4.93)}px;top:0;width:1px;height:100%;background:#748094;`,
-    "rule"
+  container.appendChild(titlePreviewRule(
+    `position:absolute;left:${inch(4.93)}px;top:0;width:1px;height:100%;background:#748094;`
   ));
   const left = (text, top, size, color, font = TITLE_SANS) => {
     if (!text) return;
@@ -4306,9 +4283,8 @@ function buildDeepFogPreview(container, content, unit) {
   left(content.subtitle, 3.72, 17, "#AAB2BD");
   left(content.en, 4.18, titleEnFontSize(content.en, 17), "#B8C0CA", TITLE_LATIN);
   left(content.ko, 4.72, titleKoFontSize(content.ko, 46), "#F2F4F7");
-  container.appendChild(titlePreviewShape(
-    `position:absolute;left:${inch(1.15)}px;top:${inch(5.88)}px;width:${inch(3.4)}px;height:1px;background:#98A2AE;`,
-    "rule"
+  container.appendChild(titlePreviewRule(
+    `position:absolute;left:${inch(1.15)}px;top:${inch(5.88)}px;width:${inch(3.4)}px;height:1px;background:#98A2AE;`
   ));
   left(content.church, 6.22, 17, "#AAB2BD");
   if (content.koDate) {
@@ -6496,11 +6472,12 @@ function prepareTitleSlideFields() {
   if (slide?.type !== "title") {
     titleDesignSelect.value = normalizeTitleDesign(slide?.titleDesign);
     syncTitleDesignCards(titleDesignSelect.value);
+    const textApi = titleTextApi();
     titleKoInput.value =
-      slide?.titleKo == null ? "주일예배" : slide.titleKo;
+      slide?.titleKo == null ? textApi.defaultTitleKo() : slide.titleKo;
     titleEnInput.value =
       slide?.titleEn == null
-        ? "SUNDAY WORSHIP"
+        ? textApi.defaultTitleEn(titleDesignSelect.value)
         : slide.titleEn;
     titleSubtitleInput.value = slide?.titleSubtitle || "";
     setSelectedDateMode(slide?.dateMode || "custom");

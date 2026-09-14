@@ -25,13 +25,31 @@ const designIds = [
   "deep-fog",
 ];
 
+function functionSource(name) {
+  const start = app.indexOf(`function ${name}(`);
+  assert.notEqual(start, -1, `missing ${name}`);
+  const end = app.indexOf("\nfunction ", start + 1);
+  return app.slice(start, end === -1 ? app.length : end);
+}
+
 describe("Sunday worship title editor", () => {
-  it("shows all twelve design cards in the approved order", () => {
+  it("shows all twelve design cards and options in the approved order", () => {
     const cardIds = Array.from(
       html.matchAll(/data-title-design="([^"]+)"/g),
       (match) => match[1]
     );
     assert.deepEqual(cardIds, designIds);
+
+    const select = html.match(
+      /<select id="titleDesign"[\s\S]*?<\/select>/
+    )?.[0];
+    assert.ok(select, "missing title design select");
+    const optionIds = Array.from(
+      select.matchAll(/<option value="([^"]+)"/g),
+      (match) => match[1]
+    );
+    assert.deepEqual(optionIds, designIds);
+
     for (const design of designIds.slice(3)) {
       assert.match(css, new RegExp(`\\.title-preview-${design}`));
     }
@@ -62,6 +80,15 @@ describe("Sunday worship title editor", () => {
     assert.match(app, /content\.en/);
   });
 
+  it("keeps the editorial English preview at the PPTX fixed 14pt size", () => {
+    const editorial = functionSource("buildEditorialPreview");
+    assert.match(
+      editorial,
+      /font-size:\$\{pt\(14\)\}px;[\s\S]*?content\.en/
+    );
+    assert.doesNotMatch(editorial, /titleEnFontSize/);
+  });
+
   it("resolves date modes and switches typed dates to custom", () => {
     assert.match(app, /function selectedDateMode\(/);
     assert.match(app, /resolveServiceDate/);
@@ -73,37 +100,76 @@ describe("Sunday worship title editor", () => {
     assert.doesNotMatch(app, /function ensureTitleServiceDateOptions\(/);
   });
 
-  it("resets mounted title controls when a non-title slide becomes a title", () => {
+  it("hydrates null legacy titles from the current design and preserves empty strings", () => {
+    const prepare = functionSource("prepareTitleSlideFields");
     assert.match(
-      app,
-      /if \(slide\?\.type !== "title"\)[\s\S]*?titleDesignSelect\.value\s*=\s*normalizeTitleDesign\(slide\?\.titleDesign\)/
+      prepare,
+      /titleDesignSelect\.value\s*=\s*normalizeTitleDesign\(slide\?\.titleDesign\)/
     );
     assert.match(
-      app,
-      /if \(slide\?\.type !== "title"\)[\s\S]*?titleSubtitleInput\.value\s*=\s*slide\?\.titleSubtitle\s*\|\|\s*""/
+      prepare,
+      /slide\?\.titleKo\s*==\s*null\s*\?\s*textApi\.defaultTitleKo\(\)\s*:\s*slide\.titleKo/
     );
     assert.match(
-      app,
-      /if \(slide\?\.type !== "title"\)[\s\S]*?titleServiceDateInput\.value\s*=\s*api[\s\S]*?api\.resolveServiceDate/
+      prepare,
+      /slide\?\.titleEn\s*==\s*null\s*\?\s*textApi\.defaultTitleEn\(titleDesignSelect\.value\)\s*:\s*slide\.titleEn/
+    );
+    assert.match(
+      prepare,
+      /titleSubtitleInput\.value\s*=\s*slide\?\.titleSubtitle\s*\|\|\s*""/
+    );
+    assert.match(
+      prepare,
+      /titleServiceDateInput\.value\s*=\s*api[\s\S]*?api\.resolveServiceDate/
     );
   });
 
-  it("builds each added composition and keeps dark previews motif-free", () => {
-    for (const name of [
+  it("creates motifs only in seasonal preview builders", () => {
+    const seasonal = [
       "EasterDawn",
       "EasterStained",
       "ChristmasBurgundy",
       "ChristmasEvergreen",
       "Thanksgiving",
       "Advent",
+    ];
+    const dark = [
       "MidnightSlab",
       "SlateSplit",
       "DeepFog",
-    ]) {
-      assert.match(app, new RegExp(`function build${name}Preview\\(`));
+    ];
+
+    for (const name of seasonal) {
+      const builder = functionSource(`build${name}Preview`);
+      assert.match(builder, /titlePreviewMotif\(/, `${name} needs a motif`);
     }
-    assert.match(app, /title-preview-motif/);
-    assert.match(app, /title-preview-rule/);
+    for (const name of dark) {
+      const builder = functionSource(`build${name}Preview`);
+      assert.match(builder, /titlePreviewRule\(/, `${name} needs layout rules`);
+      assert.doesNotMatch(
+        builder,
+        /titlePreviewMotif\(/,
+        `${name} must remain symbol-free`
+      );
+    }
+  });
+
+  it("has visible keyboard focus for hidden date-mode radios", () => {
+    assert.match(
+      css,
+      /\.rte-seg-item input:focus-visible\s*\+\s*span\s*\{[\s\S]*?(?:outline|box-shadow):/
+    );
+  });
+
+  it("delegates title design and defaults without local copy fallbacks", () => {
+    const helpers = app.slice(
+      app.indexOf("// --- Title slide (Sunday worship cover) helpers ---"),
+      app.indexOf("function formatTitleDateKo")
+    );
+    assert.doesNotMatch(helpers, /const TITLE_DESIGNS/);
+    assert.doesNotMatch(helpers, /return "SUNDAY WORSHIP"/);
+    assert.doesNotMatch(helpers, /\? api\.[\s\S]*?\s:\s/);
+    assert.match(helpers, /return window\.TitleSlideText;/);
   });
 
   it("serializes the new fields and posts them for individual download", () => {

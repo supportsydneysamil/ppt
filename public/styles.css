@@ -2583,6 +2583,12 @@ body {
   color: var(--ink);
 }
 
+.rte-seg-item input:focus-visible + span {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  box-shadow: var(--focus-ring);
+}
+
 /* Color preview tabs (텍스트 색상) */
 .rte-color-tabs {
   display: flex;
