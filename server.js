@@ -39,6 +39,9 @@ import { appendTitleSlide } from "./lib/title-slide.js";
 const execAsync = promisify(exec);
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const isDirectRun =
+  Boolean(process.argv[1]) &&
+  import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
 const app = express();
 const PORT = process.env.PORT || 3000;
 const BASE_URLS = {
@@ -93,12 +96,14 @@ const hymnTitleBandImagePath = path.join(
 const scriptureSessions = new Map();
 
 // Ensure structure exists
-(async () => {
-  try { await fs.access(uploadsDir); } catch { await fs.mkdir(uploadsDir, { recursive: true }); }
-  try { await fs.access(path.dirname(slidesPath)); } catch { await fs.mkdir(path.dirname(slidesPath), { recursive: true }); }
-  try { await fs.access(slidesPath); } catch { await fs.writeFile(slidesPath, "[]", "utf-8"); }
-  try { await fs.access(templatesPath); } catch { await fs.writeFile(templatesPath, "[]", "utf-8"); }
-})();
+if (isDirectRun) {
+  (async () => {
+    try { await fs.access(uploadsDir); } catch { await fs.mkdir(uploadsDir, { recursive: true }); }
+    try { await fs.access(path.dirname(slidesPath)); } catch { await fs.mkdir(path.dirname(slidesPath), { recursive: true }); }
+    try { await fs.access(slidesPath); } catch { await fs.writeFile(slidesPath, "[]", "utf-8"); }
+    try { await fs.access(templatesPath); } catch { await fs.writeFile(templatesPath, "[]", "utf-8"); }
+  })();
+}
 
 const booksData = JSON.parse(await fs.readFile(booksPath, "utf-8"));
 const hymnsData = JSON.parse(await fs.readFile(hymnsPath, "utf-8"));
@@ -2750,7 +2755,7 @@ async function extractThumbnail(filePath, uploadsDir) {
 
 const publicDir = path.join(__dirname, "public");
 const distDir = path.join(__dirname, "dist");
-const httpServer = http.createServer(app);
+const httpServer = isDirectRun ? http.createServer(app) : null;
 
 async function mountFrontend() {
   if (process.env.ENABLE_VITE === "1") {
@@ -2769,12 +2774,8 @@ async function mountFrontend() {
   app.use(express.static(publicDir));
 }
 
-await mountFrontend();
-
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href
-) {
+if (isDirectRun) {
+  await mountFrontend();
   httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);
   });

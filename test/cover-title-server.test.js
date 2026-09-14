@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { describe, it } from "node:test";
+import { promisify } from "node:util";
 import AdmZip from "adm-zip";
 
 import {
   buildCombinedSlidesDeck,
   buildPptx,
 } from "../server.js";
+
+const execFileAsync = promisify(execFile);
 
 function slideXmlEntries(buffer) {
   return new AdmZip(buffer)
@@ -60,6 +64,25 @@ async function scriptureDeck(options) {
 }
 
 describe("server cover title routing", () => {
+  it("imports without startup side effects when Vite is enabled", async () => {
+    const serverUrl = new URL("../server.js", import.meta.url).href;
+    const { stdout, stderr } = await execFileAsync(
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        `await import(${JSON.stringify(serverUrl)}); console.log("imported");`,
+      ],
+      {
+        env: { ...process.env, ENABLE_VITE: "1" },
+        timeout: 3000,
+      }
+    );
+
+    assert.equal(stdout, "imported\n");
+    assert.equal(stderr, "");
+  });
+
   it("keeps the original image-based hymn title slide", async () => {
     const slides = slideXmlEntries(await hymnBundle());
 
