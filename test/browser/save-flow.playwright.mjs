@@ -396,18 +396,29 @@ async function setup(page, options = {}) {
 
   if (options.customResetGate) {
     await page.addInitScript(() => {
-      globalThis.__customResetGate = new Promise((resolve) => {
-        globalThis.__releaseCustomReset = resolve;
+      const descriptor = Object.getOwnPropertyDescriptor(
+        HTMLImageElement.prototype,
+        "src"
+      );
+      let matchingAssignments = 0;
+      let release;
+      const gate = new Promise((resolve) => {
+        release = resolve;
       });
-      const requestFrame = globalThis.requestAnimationFrame.bind(globalThis);
-      globalThis.requestAnimationFrame = (callback) => {
-        if (document.querySelector("#slideResetModal[aria-busy='true']")) {
-          return globalThis.__customResetGate.then(() =>
-            requestFrame(callback)
-          );
-        }
-        return requestFrame(callback);
-      };
+      globalThis.__releaseCustomResetImage = release;
+      Object.defineProperty(HTMLImageElement.prototype, "src", {
+        ...descriptor,
+        set(value) {
+          const isResetFixture = String(value).includes("/uploads/slow-reset.png");
+          matchingAssignments += isResetFixture ? 1 : 0;
+          if (isResetFixture && matchingAssignments > 1) {
+            globalThis.__customResetImageBlocked = true;
+            gate.then(() => descriptor.set.call(this, value));
+            return;
+          }
+          descriptor.set.call(this, value);
+        },
+      });
     });
   }
 
@@ -426,12 +437,15 @@ async function setup(page, options = {}) {
     }
   });
 
-  if (options.customImageGate) {
+  if (options.customImageGate || options.customResetGate) {
     await page.route(`${baseURL}/uploads/slow-reset.png`, async (route) => {
-      await options.customImageGate.promise;
+      if (options.customImageGate) {
+        await options.customImageGate.promise;
+      }
       await route.fulfill({
         status: 200,
         contentType: "image/png",
+        headers: { "cache-control": "no-store" },
         body: Buffer.from(
           "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
           "base64"
@@ -1659,22 +1673,42 @@ await runScenario(
 );
 
 await runScenario(
-  "async custom reset keeps focus in its busy dialog",
+  "async custom reset exposes a polite busy status and keeps focus",
   async (page) => {
     await setup(page, {
-      slides: customCanvasSlides,
+      slides: loadingCustomCanvasSlides,
       customResetGate: true,
     });
     await selectMainSlide(page, 0);
-    await page
+    const editorStatus = page
       .locator("#customSlideEditor [data-custom-editor='status']")
+      .first();
+    await editorStatus.filter({ hasText: "슬라이드를 불러왔습니다" }).waitFor();
+
+    await page
+      .locator("#customSlideEditor [data-custom-editor='background']")
       .first()
-      .filter({ hasText: "슬라이드를 불러왔습니다" })
-      .waitFor();
+      .fill("#000000");
+    const undoButton = page.locator(
+      "#customSlideEditor [data-editor-action='undo']"
+    ).first();
+    await undoButton.waitFor({ state: "visible" });
+    await page.locator(
+      "#customSlideEditor [data-editor-action='undo']:not([disabled])"
+    ).first().waitFor();
+    await undoButton.click();
+    await page.waitForFunction(() => globalThis.__customResetImageBlocked);
 
     await page.locator("#editorResetBtn").click();
     await page.locator("#slideResetConfirmBtn").click();
     await page.locator("#slideResetModal[aria-busy='true']").waitFor();
+    const resetStatus = page.locator("#slideResetStatus");
+    assert.equal(await resetStatus.isVisible(), true);
+    assert.equal(await resetStatus.textContent(), "초기화하는 중입니다…");
+    assert.equal(await resetStatus.getAttribute("role"), "status");
+    assert.equal(await resetStatus.getAttribute("aria-live"), "polite");
+    assert.equal(await page.locator("#slideResetBackBtn").isDisabled(), true);
+    assert.equal(await page.locator("#slideResetConfirmBtn").isDisabled(), true);
     assert.equal(
       await page.evaluate(() => document.activeElement?.id),
       "slideResetCard"
@@ -1684,8 +1718,10 @@ await runScenario(
       "-1"
     );
 
-    await page.evaluate(() => globalThis.__releaseCustomReset());
+    await page.evaluate(() => globalThis.__releaseCustomResetImage());
     await page.locator("#slideResetModal").waitFor({ state: "hidden" });
+    assert.equal(await resetStatus.isHidden(), true);
+    assert.equal(await resetStatus.textContent(), "");
     assert.equal(await page.locator("#editorSaveBtn").isEnabled(), true);
   }
 );
@@ -1706,8 +1742,12 @@ await runScenario(
     await selectMainSlide(page, 0);
     await page.locator("#editorResetBtn").click();
     await page.locator("#slideResetConfirmBtn").click();
+    assert.equal(await page.locator("#scriptureTestament").inputValue(), "");
+    assert.equal(await page.locator("#scriptureBook").inputValue(), "");
     await page.locator("#slideType").selectOption("simple");
     await page.locator("#slideType").selectOption("scripture");
+    assert.equal(await page.locator("#scriptureTestament").inputValue(), "");
+    assert.equal(await page.locator("#scriptureBook").inputValue(), "");
     assert.equal(
       await page.locator("#scripturePptxImageStatus").textContent(),
       "선택한 이미지 없음"
@@ -1736,6 +1776,46 @@ await runScenario(
     );
   }
 );
+
+await runScenario(
+  "closing reset returns focus to an enabled fallback",
+  async (page) => {
+    await setup(page);
+    await selectMainSlide(page, 0);
+    await page.locator("#editorResetBtn").click();
+    await page.locator("#slideResetModal").waitFor({ state: "visible" });
+    await page.evaluate(() => {
+      const content = document.querySelector("#slideContent");
+      content.value = "";
+      content.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await page.locator("#editorResetBtn[disabled]").waitFor();
+
+    await page.keyboard.press("Escape");
+    await page.locator("#slideResetModal").waitFor({ state: "hidden" });
+
+    assert.equal(
+      await page.evaluate(() => document.activeElement?.id),
+      "slideName"
+    );
+  }
+);
+
+await runScenario("hymn reset applies its distinct defaults", async (page) => {
+  await setup(page, { slides: [allTypeSlides[4]] });
+  await selectMainSlide(page, 0);
+  await page.locator("#editorResetBtn").click();
+  await page.locator("#slideResetConfirmBtn").click();
+
+  assert.equal(await page.locator("#slideType").inputValue(), "hymn");
+  assert.equal(await page.locator("#slideName").inputValue(), "찬송");
+  assert.equal(await page.locator("#hymnNumber").inputValue(), "");
+  assert.equal(await page.locator("#hymnKorTitle").inputValue(), "");
+  assert.equal(await page.locator("#hymnEngTitle").inputValue(), "");
+  assert.equal(await page.locator("#hymnIncludeTitle").isChecked(), false);
+  assert.equal(await page.locator("#editorSaveBtn").isEnabled(), true);
+  assert.equal(await page.locator("#editorResetBtn").isDisabled(), true);
+});
 
 await runScenario("reset works inside a template workspace", async (page) => {
   const template = templateFixture();

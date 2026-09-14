@@ -8,6 +8,7 @@ import {
   isSnapshotDirty,
   isTemplateDirty,
   deriveSaveButtonState,
+  getResetDraftBlockMessage,
   getPendingChangeScopes,
   getSaveSequence,
   getUnsavedChangesMessage,
@@ -244,6 +245,33 @@ describe("save state decisions", () => {
         saveState: {},
       }),
       true
+    );
+  });
+
+  it("explains whether an awaited reset was blocked by saving or selection", () => {
+    assert.equal(
+      getResetDraftBlockMessage({
+        expectedSlideId: "slide-a",
+        currentSlideId: "slide-a",
+        saveState: { slideSaving: true },
+      }),
+      "저장이 진행 중입니다. 잠시 후 다시 시도해 주세요."
+    );
+    assert.equal(
+      getResetDraftBlockMessage({
+        expectedSlideId: "slide-a",
+        currentSlideId: "slide-b",
+        saveState: {},
+      }),
+      "선택한 슬라이드가 변경되어 초기화를 적용하지 않았습니다."
+    );
+    assert.equal(
+      getResetDraftBlockMessage({
+        expectedSlideId: "slide-a",
+        currentSlideId: "slide-a",
+        saveState: {},
+      }),
+      null
     );
   });
 
@@ -808,6 +836,34 @@ describe("buildResetSlideDraft", () => {
         sourceType: "upload",
         fileName: "saved.pptx",
       }),
+      false
+    );
+  });
+
+  it("checks custom reset defaults with an optional live canvas model", () => {
+    const slide = {
+      id: "custom",
+      name: "커스텀",
+      type: "custom",
+      saved: true,
+      sourceType: "basic",
+      fileSaved: false,
+      customSlide: {
+        ...emptyCustomSlide,
+        background: { color: "#112233" },
+      },
+    };
+
+    assert.equal(isSlideAtResetDefaults(slide), false);
+    assert.equal(
+      isSlideAtResetDefaults(slide, { customSlide: emptyCustomSlide }),
+      true
+    );
+    assert.equal(
+      isSlideAtResetDefaults(
+        { ...slide, pendingFile: { name: "pending.pptx" } },
+        { customSlide: emptyCustomSlide }
+      ),
       false
     );
   });

@@ -9,6 +9,7 @@ import {
   deriveSaveButtonState,
   getBooksUnavailableMessage,
   getBusyBlockMessage,
+  getResetDraftBlockMessage,
   getUnsavedChangesMessage,
   isDiscardComplete,
   isSaveBusy,
@@ -19,7 +20,6 @@ import {
   planDiscard,
   planReorder,
   REORDER_FAILURE_MESSAGE,
-  resetValuesMatch,
   resolveAdjacentSlideId,
   resolveCurrentSlideSource,
   runGuardedTransition,
@@ -135,8 +135,12 @@ function fillScriptureBookSelects(preferred = {}) {
     return;
   }
 
-  const previousTestament = preferred.testament || testamentEl.value;
-  const previousBook = preferred.book || bookEl.value;
+  const hasPreferredTestament = Object.hasOwn(preferred, "testament");
+  const hasPreferredBook = Object.hasOwn(preferred, "book");
+  const previousTestament = hasPreferredTestament
+    ? preferred.testament
+    : testamentEl.value;
+  const previousBook = hasPreferredBook ? preferred.book : bookEl.value;
 
   testamentEl.innerHTML = "";
   dataCache.testaments.forEach((testament) => {
@@ -146,13 +150,19 @@ function fillScriptureBookSelects(preferred = {}) {
     testamentEl.appendChild(option);
   });
 
-  testamentEl.value =
-    previousTestament || dataCache.testaments[0]?.id || "";
+  if (hasPreferredTestament && !previousTestament) {
+    ensureEmptySelectValue(testamentEl, "구분 선택");
+  } else {
+    testamentEl.value =
+      previousTestament || dataCache.testaments[0]?.id || "";
+  }
 
-  fillScriptureBooks(previousBook);
+  fillScriptureBooks(previousBook, {
+    allowEmpty: hasPreferredBook && !previousBook,
+  });
 }
 
-function fillScriptureBooks(preferredBook) {
+function fillScriptureBooks(preferredBook, { allowEmpty = false } = {}) {
   const testamentEl = document.getElementById("scriptureTestament");
   const bookEl = document.getElementById("scriptureBook");
   if (!testamentEl || !bookEl || !dataCache) {
@@ -164,6 +174,9 @@ function fillScriptureBooks(preferredBook) {
   );
   bookEl.innerHTML = "";
   if (!selected) {
+    if (allowEmpty) {
+      ensureEmptySelectValue(bookEl, "책 선택");
+    }
     return;
   }
 
@@ -174,7 +187,9 @@ function fillScriptureBooks(preferredBook) {
     bookEl.appendChild(option);
   });
 
-  if (preferredBook) {
+  if (allowEmpty) {
+    ensureEmptySelectValue(bookEl, "책 선택");
+  } else if (preferredBook) {
     bookEl.value = preferredBook;
   }
 }
@@ -830,6 +845,7 @@ const slideResetModal = document.getElementById("slideResetModal");
 const slideResetCard = document.getElementById("slideResetCard");
 const slideResetBackBtn = document.getElementById("slideResetBackBtn");
 const slideResetConfirmBtn = document.getElementById("slideResetConfirmBtn");
+const slideResetStatus = document.getElementById("slideResetStatus");
 
 const editorDeleteBtn = document.getElementById("editorDeleteBtn");
 
@@ -1126,21 +1142,13 @@ function collectCurrentSlidePreviewDraft(slideOverride) {
 function isCurrentSlideAtResetDefaults(draft) {
   if (!draft) return true;
 
-  const defaults = buildResetSlideDraft(draft);
-  const current = { ...draft };
   if (draft.type === "custom") {
     if (!customEditorModel) return false;
-    current.customSlide = customEditorModel;
+    return isSlideAtResetDefaults(draft, {
+      customSlide: customEditorModel,
+    });
   }
-
-  return (
-    !draft.pendingFile &&
-    !draft.pendingBackgroundFile &&
-    !draft.pendingScriptureImage &&
-    Object.keys(defaults).every(
-      (key) => resetValuesMatch(current[key], defaults[key])
-    )
-  );
+  return isSlideAtResetDefaults(draft);
 }
 
 function refreshSaveState() {
@@ -1843,7 +1851,7 @@ slideTypeSelect.addEventListener('change', () => {
     maybeAutoNameCustomTitleSlide();
   }
   if (slideTypeSelect.value === 'scripture') {
-    fillScriptureBookSelects();
+    fillScriptureBookSelects(getCurrentTypeChangeSource() || {});
     if (scriptureIncludeTitle) scriptureIncludeTitle.checked = true;
     setScriptureTitleSlideType("말씀");
     syncScriptureTitleTypeUi();
@@ -4681,8 +4689,13 @@ function closeSlideResetDialog({ restoreFocus = true } = {}) {
   if (slideResetModal.open) {
     slideResetModal.close();
   }
-  if (restoreFocus && !editorResetBtn.disabled) {
-    editorResetBtn.focus();
+  if (restoreFocus) {
+    const focusTarget = editorResetBtn.disabled
+      ? slideNameInput
+      : editorResetBtn;
+    if (focusTarget && !focusTarget.disabled) {
+      focusTarget.focus();
+    }
   }
 }
 
@@ -4693,11 +4706,19 @@ function setSlideResetDialogBusy(busy) {
   slideResetConfirmBtn.disabled = busy;
   if (busy) {
     slideResetModal.setAttribute("aria-busy", "true");
+    if (slideResetStatus) {
+      slideResetStatus.hidden = false;
+      slideResetStatus.textContent = "초기화하는 중입니다…";
+    }
     if (hadFocusInside && slideResetCard) {
       slideResetCard.focus();
     }
   } else {
     slideResetModal.removeAttribute("aria-busy");
+    if (slideResetStatus) {
+      slideResetStatus.textContent = "";
+      slideResetStatus.hidden = true;
+    }
   }
 }
 
@@ -4759,14 +4780,13 @@ async function confirmCurrentSlideReset() {
         return;
       }
     }
-    if (
-      !canApplyResetDraft({
-        expectedSlideId: slideId,
-        currentSlideId,
-        saveState: getSaveState(),
-      })
-    ) {
-      blockedBySaveInProgress();
+    const resetBlockInput = {
+      expectedSlideId: slideId,
+      currentSlideId,
+      saveState: getSaveState(),
+    };
+    if (!canApplyResetDraft(resetBlockInput)) {
+      showToast(getResetDraftBlockMessage(resetBlockInput));
       closeSlideResetDialog();
       return;
     }

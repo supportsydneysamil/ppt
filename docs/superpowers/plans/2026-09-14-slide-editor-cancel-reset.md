@@ -12,7 +12,7 @@
 
 - Cancel affects only the current slide draft, not template-level changes.
 - Reset preserves slide ID, list position, type and name.
-- Reset remains a dirty draft until explicitly saved.
+- Reset remains a dirty draft until explicitly saved, except when it exactly restores an already-default saved slide.
 - Existing save-in-progress protection remains authoritative.
 
 ---
@@ -27,20 +27,20 @@
 - Produces: `buildResetSlideDraft(slide)` returning a slide with preserved identity metadata and type-specific initial values.
 - Produces: `resolveAdjacentSlideId(slides, removedId)` returning the next slide ID, previous slide ID, or `null`.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Add tests that verify preserved `id`, `name`, `type` and reset content for every supported type, plus next/previous/empty adjacent selection.
 
-- [ ] **Step 2: Verify the tests fail**
+- [x] **Step 2: Verify the tests fail**
 
 Run: `node --test test/save-state.test.js`
 Expected: FAIL because the new exports do not exist.
 
-- [ ] **Step 3: Implement the pure helpers**
+- [x] **Step 3: Implement the pure helpers**
 
 Construct reset defaults without mutating the source slide. Clear uploaded media references and initialize custom slides with a normalized empty model shape.
 
-- [ ] **Step 4: Verify the tests pass**
+- [x] **Step 4: Verify the tests pass**
 
 Run: `node --test test/save-state.test.js`
 Expected: PASS.
@@ -55,20 +55,20 @@ Expected: PASS.
 - Consumes: `resolveAdjacentSlideId(slides, removedId)`.
 - Produces: cancel behavior that restores an existing slide in place or removes a new slide and selects its neighbor.
 
-- [ ] **Step 1: Write failing browser scenarios**
+- [x] **Step 1: Write failing browser scenarios**
 
 Cover existing dirty slide cancellation, template-level dirty state isolation, and new-slide neighbor selection.
 
-- [ ] **Step 2: Verify the scenarios fail**
+- [x] **Step 2: Verify the scenarios fail**
 
 Run: `npm run test:browser`
 Expected: FAIL because cancel currently calls `resetEditorSelection()`.
 
-- [ ] **Step 3: Implement cancel in place**
+- [x] **Step 3: Implement cancel in place**
 
 For an existing slide, repopulate its saved model and preserve `currentSlideId`. For a new slide, remove it, sync the workspace, and select the resolved neighbor. Do not route this action through the global navigation guard.
 
-- [ ] **Step 4: Verify the browser scenarios pass**
+- [x] **Step 4: Verify the browser scenarios pass**
 
 Run: `npm run test:browser`
 Expected: PASS.
@@ -87,20 +87,20 @@ Expected: PASS.
 - Consumes: `buildResetSlideDraft(slide)`.
 - Produces: bridge session `reset(slideId)` that delegates to the active custom editor.
 
-- [ ] **Step 1: Write failing bridge and browser tests**
+- [x] **Step 1: Write failing bridge and browser tests**
 
 Verify dialog cancellation is inert, confirmation preserves type/name/selection, reset marks the slide dirty, and a custom slide becomes a blank canvas.
 
-- [ ] **Step 2: Verify the tests fail**
+- [x] **Step 2: Verify the tests fail**
 
 Run: `node --test test/custom-slide-bridge.test.js && npm run test:browser`
 Expected: FAIL because reset is not exposed by the session and no confirmation dialog exists.
 
-- [ ] **Step 3: Add the initialization dialog and action**
+- [x] **Step 3: Add the initialization dialog and action**
 
 Rename the button to `슬라이드 초기화`, add the dedicated dialog, apply pure defaults to the form, call the custom reset API when appropriate, clear transient files, refresh preview/save state, and preserve selection.
 
-- [ ] **Step 4: Verify focused tests pass**
+- [x] **Step 4: Verify focused tests pass**
 
 Run: `node --test test/custom-slide-bridge.test.js && npm run test:browser`
 Expected: PASS.
@@ -115,17 +115,19 @@ Expected: PASS.
 Run: `npm test`
 Expected: PASS with zero failures.
 
-- [ ] **Step 2: Run browser tests**
+Current status: the focused affected suites pass, but the full command still has an unrelated macOS failure in the pre-existing Windows-path `resolveUploadsChildPath` assertion.
+
+- [x] **Step 2: Run browser tests**
 
 Run: `npm run test:browser`
 Expected: PASS with zero failed scenarios.
 
-- [ ] **Step 3: Run the production build**
+- [x] **Step 3: Run the production build**
 
 Run: `npm run build`
 Expected: exit code 0.
 
-- [ ] **Step 4: Inspect the final diff**
+- [x] **Step 4: Inspect the final diff**
 
 Run: `git diff --check && git status --short`
 Expected: no whitespace errors and only intended files changed.
