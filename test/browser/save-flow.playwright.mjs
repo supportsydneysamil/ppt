@@ -1310,6 +1310,108 @@ await runScenario("new slides land at the chosen position", async (page) => {
   assert.deepEqual((await slideNames(page)).at(-1), "막차");
 });
 
+// --- Cancel keeps the current slide context ---
+
+await runScenario("cancel restores an existing dirty slide in place", async (page) => {
+  await setup(page);
+  await selectMainSlide(page, 0);
+  await fillName(page, "취소할 기존 수정");
+  assert.equal(await page.locator("#editorSaveBtn").isEnabled(), true);
+  assert.equal(await page.locator("#editorCancelBtn").isEnabled(), true);
+
+  await page.locator("#editorCancelBtn").click();
+
+  assert.equal(
+    await page.locator("#unsavedChangesModal").isVisible(),
+    false,
+    "cancel must not go through the navigation guard"
+  );
+  assert.equal(await page.locator("#slideEditor").isVisible(), true);
+  assert.equal(
+    await page.locator(".slide-card.active").getAttribute("data-slide-id"),
+    "main-1"
+  );
+  assert.equal(await page.locator("#slideName").inputValue(), "첫 슬라이드");
+  assert.equal(await page.locator("#editorSaveBtn").isDisabled(), true);
+  assert.equal(await page.locator("#editorCancelBtn").isDisabled(), true);
+  assert.deepEqual(await slideNames(page), ["첫 슬라이드", "둘째 슬라이드"]);
+});
+
+await runScenario("cancel leaves template-level dirty state alone", async (page) => {
+  await setup(page);
+  await openTemplate(page);
+  await fillName(page, "템플릿 저장 대기");
+  await page.locator("#editorSaveBtn").click();
+  await page.locator("#templateSaveBtn:not([disabled])").waitFor();
+  assert.equal(await page.locator("#templateSaveBtn").isEnabled(), true);
+
+  await fillName(page, "슬라이드만 취소");
+  assert.equal(await page.locator("#editorSaveBtn").isEnabled(), true);
+  await page.locator("#editorCancelBtn").click();
+
+  assert.equal(await page.locator("#slideEditor").isVisible(), true);
+  assert.equal(
+    await page.locator(".slide-card.active").getAttribute("data-slide-id"),
+    "tpl-slide-1"
+  );
+  assert.equal(await page.locator("#slideName").inputValue(), "템플릿 저장 대기");
+  assert.equal(await page.locator("#editorSaveBtn").isDisabled(), true);
+  assert.equal(await page.locator("#templateSaveBtn").isEnabled(), true);
+  assert.equal(await page.locator("#templateWorkspaceBar").isVisible(), true);
+});
+
+await runScenario("cancel of a new slide selects the adjacent neighbor", async (page) => {
+  await setup(page);
+  await selectMainSlide(page, 0);
+  await page.locator("#addSlideBtn").click();
+  assert.equal(await page.locator("#slideListContainer .slide-card").count(), 3);
+  await fillName(page, "중간 신규");
+
+  await page.locator("#editorCancelBtn").click();
+
+  assert.equal(
+    await page.locator("#unsavedChangesModal").isVisible(),
+    false,
+    "cancel must not go through the navigation guard"
+  );
+  assert.equal(await page.locator("#slideListContainer .slide-card").count(), 2);
+  assert.equal(
+    await page.locator(".slide-card.active").getAttribute("data-slide-id"),
+    "main-2",
+    "a cancelled insert prefers the next neighbor"
+  );
+  assert.equal(await page.locator("#slideEditor").isVisible(), true);
+  assert.equal(await page.locator("#slideName").inputValue(), "둘째 슬라이드");
+
+  await selectMainSlide(page, 1);
+  await page.locator("#addSlideBtn").click();
+  assert.equal(await page.locator("#slideListContainer .slide-card").count(), 3);
+  await page.locator("#editorCancelBtn").click();
+  assert.equal(await page.locator("#slideListContainer .slide-card").count(), 2);
+  assert.equal(
+    await page.locator(".slide-card.active").getAttribute("data-slide-id"),
+    "main-2",
+    "a trailing new slide falls back to the previous neighbor"
+  );
+});
+
+await runScenario("cancel of the only new slide shows the empty editor", async (page) => {
+  await setup(page, { slides: [slide("solo", "혼자")] });
+  await selectMainSlide(page, 0);
+  await page.locator("#editorDeleteBtn").click();
+  await page.locator("#slideListContainer .slide-card").waitFor({ state: "detached" });
+
+  await page.locator("#addSlideBtn").click();
+  await page.locator("#slideEditor").waitFor({ state: "visible" });
+  assert.equal(await page.locator("#slideListContainer .slide-card").count(), 1);
+
+  await page.locator("#editorCancelBtn").click();
+
+  assert.equal(await page.locator("#slideListContainer .slide-card").count(), 0);
+  assert.equal(await page.locator("#slideEditor").isVisible(), false);
+  assert.equal(await page.locator("#emptyEditorState").isVisible(), true);
+});
+
 await browser.close();
 if (server) {
   server.kill();

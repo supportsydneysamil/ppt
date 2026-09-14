@@ -15,6 +15,7 @@ import {
   planDiscard,
   planReorder,
   REORDER_FAILURE_MESSAGE,
+  resolveAdjacentSlideId,
   runGuardedTransition,
   selectTransientPreviewFiles,
   shouldRecaptureSlideBaseline,
@@ -1162,6 +1163,9 @@ function refreshSaveState() {
   if (duplicateSlideBtn) {
     duplicateSlideBtn.disabled =
       !draft || duplicateInProgress || isSaveBusy(getSaveState());
+  }
+  if (editorCancelBtn) {
+    editorCancelBtn.disabled = !slideDirty;
   }
 }
 
@@ -5945,25 +5949,37 @@ async function deleteCurrentSlide() {
   }
 }
 
-// Closing the editor is the same decision as leaving it, so it goes through
-// the one guard instead of its own confirm.
+// Cancel restores the current slide in place. It is not navigation, so it
+// must not go through the unsaved-changes guard.
 function cancelEdit() {
-  if (!currentSlideId) return Promise.resolve(true);
+  if (!currentSlideId) return;
+  if (blockedBySaveInProgress()) return;
 
-  return guardTransition(async () => {
-    const slide = slides.find((s) => s.id === currentSlideId);
-    if (isSlideUnsaved(slide)) {
-      slides = slides.filter((s) => s.id !== currentSlideId);
-      syncWorkingSlidesToState();
-      if (isTemplateMode()) {
-        refreshTemplateDirtyState();
-      }
+  const slide = slides.find((s) => s.id === currentSlideId);
+  if (!slide) return;
+
+  if (isSlideUnsaved(slide)) {
+    const neighborId = resolveAdjacentSlideId(slides, currentSlideId);
+    slides = slides.filter((entry) => entry.id !== currentSlideId);
+    syncWorkingSlidesToState();
+    if (isTemplateMode()) {
+      refreshTemplateDirtyState();
     }
-    // resetEditorSelection() detaches the custom canvas and refreshes the
-    // buttons, so closing the editor needs nothing else here.
-    resetEditorSelection();
-    renderSlideList();
-  });
+    if (neighborId) {
+      applySlideSelection(neighborId);
+    } else {
+      resetEditorSelection();
+      renderSlideList();
+    }
+    return;
+  }
+
+  slideRuntimeDraft = {};
+  populateEditor(slide);
+  slideBaselineSnapshot = createSnapshot(collectCurrentSlideDraft());
+  renderPreview(slide);
+  updateButtonsState(slide);
+  refreshSaveState();
 }
 
 editorDeleteBtn.addEventListener("click", deleteCurrentSlide);
