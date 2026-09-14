@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   buildResetSlideDraft,
+  canApplyResetDraft,
   createSnapshot,
   isSnapshotDirty,
   isTemplateDirty,
@@ -13,6 +14,7 @@ import {
   isSaveBusy,
   isSlideUnsaved,
   planDiscard,
+  resetValuesMatch,
   resolveAdjacentSlideId,
   runGuardedTransition,
   saveAllPendingScopes,
@@ -25,6 +27,26 @@ import {
 import { createDefaultCustomSlide } from "../public/custom-slide-model.js";
 
 describe("save state snapshots", () => {
+  it("compares primitive reset values directly and snapshots object values", () => {
+    const largeDataUrl = `data:image/png;base64,${"a".repeat(200_000)}`;
+
+    assert.equal(resetValuesMatch(largeDataUrl, largeDataUrl), true);
+    assert.equal(
+      resetValuesMatch(largeDataUrl, `${largeDataUrl.slice(0, -1)}b`),
+      false
+    );
+    assert.equal(resetValuesMatch(null, ""), true);
+    assert.equal(resetValuesMatch(undefined, null), true);
+    assert.equal(resetValuesMatch("40", 40), false);
+    assert.equal(
+      resetValuesMatch(
+        { background: { color: "#ffffff" }, elements: [] },
+        { elements: [], background: { color: "#ffffff" } }
+      ),
+      true
+    );
+  });
+
   it("keeps transient file metadata stable for dirty comparison", () => {
     assert.deepEqual(
       toFileMetadata({
@@ -156,6 +178,33 @@ describe("save state snapshots", () => {
 });
 
 describe("save state decisions", () => {
+  it("refuses to apply a reset when a save starts during an await", () => {
+    assert.equal(
+      canApplyResetDraft({
+        expectedSlideId: "slide-a",
+        currentSlideId: "slide-a",
+        saveState: { slideSaving: true },
+      }),
+      false
+    );
+    assert.equal(
+      canApplyResetDraft({
+        expectedSlideId: "slide-a",
+        currentSlideId: "slide-b",
+        saveState: {},
+      }),
+      false
+    );
+    assert.equal(
+      canApplyResetDraft({
+        expectedSlideId: "slide-a",
+        currentSlideId: "slide-a",
+        saveState: {},
+      }),
+      true
+    );
+  });
+
   it("enables only the button that has pending work", () => {
     assert.deepEqual(
       deriveSaveButtonState({

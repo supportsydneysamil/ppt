@@ -588,6 +588,10 @@ test("createCustomEditorSession", async (t) => {
     await flush();
 
     assert.equal(session.activeSlideId, null);
+    assert.equal(session.isLoading("a"), true);
+    assert.equal(session.isLoading("b"), false);
+    assert.equal(await session.reset("a"), false);
+    assert.equal(state.resetCalls, 0);
     assert.equal(session.serialize("a"), null);
     session.markSaved("a");
     assert.equal(state.markSavedCalls, 0);
@@ -596,6 +600,7 @@ test("createCustomEditorSession", async (t) => {
     await pending;
 
     assert.equal(session.activeSlideId, "a");
+    assert.equal(session.isLoading("a"), false);
     assert.ok(session.serialize("a"));
   });
 

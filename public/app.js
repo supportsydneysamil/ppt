@@ -3,6 +3,7 @@
 import {
   applyReorder,
   buildResetSlideDraft,
+  canApplyResetDraft,
   createSnapshot,
   deriveSaveButtonState,
   getBooksUnavailableMessage,
@@ -16,6 +17,7 @@ import {
   planDiscard,
   planReorder,
   REORDER_FAILURE_MESSAGE,
+  resetValuesMatch,
   resolveAdjacentSlideId,
   runGuardedTransition,
   selectTransientPreviewFiles,
@@ -1123,27 +1125,16 @@ function isCurrentSlideAtResetDefaults(draft) {
   const defaults = buildResetSlideDraft(draft);
   const current = { ...draft };
   if (draft.type === "custom") {
-    const liveModel = customEditorSession?.serialize(currentSlideId);
-    if (!liveModel) return false;
-    current.customSlide = liveModel;
+    if (!customEditorModel) return false;
+    current.customSlide = customEditorModel;
   }
-
-  const valuesMatch = (value, defaultValue) => {
-    const valueIsEmpty = value === null || value === undefined || value === "";
-    const defaultIsEmpty =
-      defaultValue === null || defaultValue === undefined || defaultValue === "";
-    return (
-      (valueIsEmpty && defaultIsEmpty) ||
-      createSnapshot(value) === createSnapshot(defaultValue)
-    );
-  };
 
   return (
     !draft.pendingFile &&
     !draft.pendingBackgroundFile &&
     !draft.pendingScriptureImage &&
     Object.keys(defaults).every(
-      (key) => valuesMatch(current[key], defaults[key])
+      (key) => resetValuesMatch(current[key], defaults[key])
     )
   );
 }
@@ -4447,6 +4438,7 @@ let customSlideBridge = null;
 let customSlideBridgePromise = null;
 let customEditorSession = null;
 let customEditorSessionPromise = null;
+let customEditorModel = null;
 
 function loadCustomSlideBridge() {
   if (!customSlideBridgePromise) {
@@ -4521,10 +4513,11 @@ function ensureCustomEditorSession() {
   return customEditorSessionPromise;
 }
 
-function handleCustomEditorChange({ slideId, dirty }) {
+function handleCustomEditorChange({ slideId, model, dirty }) {
   if (!slideId || slideId !== currentSlideId) {
     return;
   }
+  customEditorModel = copyCustomSlideModel(model);
   customEditorDirty = Boolean(dirty);
   // Same path as a keystroke in the form: the guard, the save buttons and the
   // beforeunload warning all read the state this recomputes.
@@ -4538,6 +4531,7 @@ function showCustomSlideInEditor(slide, { markSaved = Boolean(slide?.saved) } = 
 
   const slideId = slide.id;
   const model = copyCustomSlideModel(slide.customSlide) || emptyCustomSlideModel();
+  customEditorModel = null;
 
   return ensureCustomEditorSession()
     .then((session) => session.showSlide(slideId, model, { markSaved }))
@@ -4545,6 +4539,7 @@ function showCustomSlideInEditor(slide, { markSaved = Boolean(slide?.saved) } = 
       if (!result?.applied || slideId !== currentSlideId) {
         return;
       }
+      customEditorModel = copyCustomSlideModel(model);
       customEditorDirty = Boolean(result.dirty);
       refreshSaveState();
     })
@@ -4555,6 +4550,7 @@ function showCustomSlideInEditor(slide, { markSaved = Boolean(slide?.saved) } = 
 }
 
 function releaseCustomEditorSlide() {
+  customEditorModel = null;
   customEditorDirty = false;
   if (customEditorSession) {
     customEditorSession.release();
@@ -4688,21 +4684,50 @@ function resetCurrentSlide() {
 }
 
 async function confirmCurrentSlideReset() {
-  if (!currentSlideId || blockedBySaveInProgress()) return;
+  if (!currentSlideId || blockedBySaveInProgress()) {
+    closeSlideResetDialog();
+    return;
+  }
 
   const slideId = currentSlideId;
   const currentDraft = collectCurrentSlideDraft();
-  if (!currentDraft) return;
+  if (!currentDraft) {
+    closeSlideResetDialog();
+    return;
+  }
   const resetDraft = buildResetSlideDraft(currentDraft);
 
+  slideResetBackBtn.disabled = true;
+  slideResetConfirmBtn.disabled = true;
   try {
     if (resetDraft.type === "custom") {
       const session = await ensureCustomEditorSession();
+      if (session.isLoading(slideId)) {
+        showToast("커스텀 슬라이드를 불러오는 중입니다. 완료 후 다시 시도해 주세요.");
+        closeSlideResetDialog();
+        return;
+      }
+      if (!session.isActive(slideId)) {
+        showToast("커스텀 편집기가 준비되지 않았습니다. 잠시 후 다시 시도해 주세요.");
+        closeSlideResetDialog();
+        return;
+      }
       if (!(await session.reset(slideId))) {
+        closeSlideResetDialog();
         return;
       }
     }
-    if (currentSlideId !== slideId) return;
+    if (
+      !canApplyResetDraft({
+        expectedSlideId: slideId,
+        currentSlideId,
+        saveState: getSaveState(),
+      })
+    ) {
+      blockedBySaveInProgress();
+      closeSlideResetDialog();
+      return;
+    }
 
     slideRuntimeDraft = {};
     slideResetDraft = { id: slideId, draft: resetDraft };
@@ -4713,9 +4738,16 @@ async function confirmCurrentSlideReset() {
     renderPreview();
     updateButtonsState(resetDraft);
     refreshSaveState();
+    closeSlideResetDialog({ restoreFocus: false });
+    editorSaveBtn.focus();
+    showToast("슬라이드를 초기화했습니다. 저장하기 전에는 취소할 수 있습니다.");
   } catch (error) {
     console.error("슬라이드 초기화 실패:", error);
     alert("슬라이드를 초기화하지 못했습니다: " + error.message);
+    closeSlideResetDialog();
+  } finally {
+    slideResetBackBtn.disabled = false;
+    slideResetConfirmBtn.disabled = false;
   }
 }
 
@@ -6035,15 +6067,15 @@ editorResetBtn.addEventListener("click", resetCurrentSlide);
 editorCancelBtn.addEventListener("click", cancelEdit);
 slideResetBackBtn.addEventListener("click", () => closeSlideResetDialog());
 slideResetConfirmBtn.addEventListener("click", () => {
-  closeSlideResetDialog({ restoreFocus: false });
   confirmCurrentSlideReset();
 });
 slideResetModal.addEventListener("cancel", (event) => {
   event.preventDefault();
+  if (slideResetConfirmBtn.disabled) return;
   closeSlideResetDialog();
 });
 slideResetModal.addEventListener("click", (event) => {
-  if (event.target === slideResetModal) {
+  if (event.target === slideResetModal && !slideResetConfirmBtn.disabled) {
     closeSlideResetDialog();
   }
 });

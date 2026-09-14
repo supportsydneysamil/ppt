@@ -11,6 +11,7 @@
   --hero-orb: rgba(255, 255, 255, 0.08);
   --danger: #ff6b6b;
   --danger-strong: #ff8d8d;
+  --danger-fill: #b42318;
   /* Control heights: every clickable/typable control picks one of these so
      rows stay on a single baseline. */
   --ctrl-h: 48px;
@@ -505,11 +506,11 @@ body {
 }
 
 .cta.danger {
-  background: var(--danger);
+  background: var(--danger-fill);
 }
 
 .cta.danger:hover {
-  box-shadow: 0 10px 20px color-mix(in srgb, var(--danger) 30%, transparent);
+  box-shadow: 0 10px 20px color-mix(in srgb, var(--danger-fill) 30%, transparent);
 }
 
 .output {

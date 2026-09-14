@@ -211,6 +211,32 @@ const customCanvasSlides = [
   }),
 ];
 
+const loadingCustomCanvasSlides = [
+  slide("custom-loading", "로딩 중 캔버스", "custom", {
+    customSlide: {
+      version: 1,
+      width: 1280,
+      height: 720,
+      background: { color: "#ffffff" },
+      elements: [
+        {
+          id: "slow-image",
+          type: "image",
+          src: "/uploads/slow-reset.png",
+          fit: "contain",
+          x: 100,
+          y: 100,
+          width: 640,
+          height: 360,
+          rotation: 0,
+          opacity: 1,
+          zIndex: 0,
+        },
+      ],
+    },
+  }),
+];
+
 const scriptureSlides = [
   slide("main-scripture", "말씀 슬라이드", "scripture", {
     sourceType: "upload",
@@ -251,6 +277,23 @@ const books = {
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+function relativeLuminance(cssColor) {
+  const channels = cssColor.match(/[\d.]+/g).slice(0, 3).map(Number);
+  const linear = channels.map((channel) => {
+    const normalized = channel / 255;
+    return normalized <= 0.04045
+      ? normalized / 12.92
+      : ((normalized + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+}
+
+function contrastRatio(first, second) {
+  const lighter = Math.max(relativeLuminance(first), relativeLuminance(second));
+  const darker = Math.min(relativeLuminance(first), relativeLuminance(second));
+  return (lighter + 0.05) / (darker + 0.05);
 }
 
 function templateFixture() {
@@ -365,6 +408,20 @@ async function setup(page, options = {}) {
       await route.fulfill({ status: 204, body: "" });
     }
   });
+
+  if (options.customImageGate) {
+    await page.route(`${baseURL}/uploads/slow-reset.png`, async (route) => {
+      await options.customImageGate.promise;
+      await route.fulfill({
+        status: 200,
+        contentType: "image/png",
+        body: Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+          "base64"
+        ),
+      });
+    });
+  }
 
   await page.route(`${baseURL}/api/**`, async (route) => {
     const request = route.request();
@@ -1466,6 +1523,10 @@ await runScenario(
     await page.locator("#editorResetBtn").click();
     await page.locator("#slideResetModal").waitFor({ state: "visible" });
     assert.equal(
+      await page.locator("#slideResetModal").getAttribute("role"),
+      "alertdialog"
+    );
+    assert.equal(
       await page.locator("#slideResetModal").getAttribute("aria-labelledby"),
       "slideResetTitle"
     );
@@ -1477,6 +1538,22 @@ await runScenario(
       await page.evaluate(() => document.activeElement?.id),
       "slideResetBackBtn",
       "the safe action must receive initial focus"
+    );
+    const resetConfirmColors = await page
+      .locator("#slideResetConfirmBtn")
+      .evaluate((button) => {
+        const style = getComputedStyle(button);
+        return {
+          foreground: style.color,
+          background: style.backgroundColor,
+        };
+      });
+    assert.ok(
+      contrastRatio(
+        resetConfirmColors.foreground,
+        resetConfirmColors.background
+      ) >= 4.5,
+      "the filled danger button must meet WCAG AA text contrast"
     );
 
     await page.keyboard.press("Escape");
@@ -1496,6 +1573,7 @@ await runScenario(
     await page.locator("#editorResetBtn").click();
     await page.locator("#slideResetConfirmBtn").click();
     await page.locator("#slideResetModal").waitFor({ state: "hidden" });
+    await expectToast(page, "슬라이드를 초기화했습니다");
 
     assert.equal(await page.locator("#slideName").inputValue(), "둘째 슬라이드");
     assert.equal(await page.locator("#slideType").inputValue(), "ad");
@@ -1510,6 +1588,11 @@ await runScenario(
       "main-2"
     );
     assert.equal(await page.locator("#editorSaveBtn").isEnabled(), true);
+    assert.equal(
+      await page.evaluate(() => document.activeElement?.id),
+      "editorSaveBtn",
+      "focus moves to the enabled action after reset"
+    );
     assert.equal(await page.locator("#editorCancelBtn").isEnabled(), true);
     assert.equal(await page.locator("#editorResetBtn").isDisabled(), true);
     assert.equal(state.slides[1].content, "광고 본문", "stored data stays untouched");
@@ -1562,6 +1645,43 @@ await runScenario(
     assert.equal(state.counts.slidePost, 1);
     assert.deepEqual(state.slides[0].customSlide.elements, []);
     assert.equal(state.slides[0].customSlide.background.color, "#ffffff");
+  }
+);
+
+await runScenario(
+  "custom reset reports loading and leaves the slide intact",
+  async (page) => {
+    const imageGate = createGate();
+    const state = await setup(page, {
+      slides: loadingCustomCanvasSlides,
+      customImageGate: imageGate,
+    });
+    const imageRequest = page.waitForRequest(
+      (request) => request.url().endsWith("/uploads/slow-reset.png")
+    );
+
+    await selectMainSlide(page, 0);
+    await imageRequest;
+    await page.locator("#editorResetBtn").click();
+    await page.locator("#slideResetConfirmBtn").click();
+    await expectToast(page, "커스텀 슬라이드를 불러오는 중입니다");
+
+    assert.equal(state.counts.slidePost, 0);
+    assert.equal(state.slides[0].customSlide.elements.length, 1);
+    assert.equal(await page.locator("#editorSaveBtn").isDisabled(), true);
+    assert.equal(
+      await page.locator(".slide-card.active").getAttribute("data-slide-id"),
+      "custom-loading"
+    );
+
+    imageGate.release();
+    await page
+      .locator("#customSlideEditor [data-custom-editor='status']")
+      .first()
+      .filter({ hasText: "슬라이드를 불러왔습니다" })
+      .waitFor();
+    assert.equal(state.slides[0].customSlide.elements.length, 1);
+    assert.equal(await page.locator("#editorSaveBtn").isDisabled(), true);
   }
 );
 
