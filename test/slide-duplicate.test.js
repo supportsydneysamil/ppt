@@ -128,7 +128,7 @@ describe("slide list mutations while a duplicate is in flight", () => {
   });
 });
 
-// `duplicateSaving` cannot cover the preflight: it feeds isSaveBusy, so
+// `structureSaving` cannot cover the preflight: it feeds isSaveBusy, so
 // ensureNoPendingChanges would refuse the duplicate's own guard. Without a
 // separate lock claimed before that first await, two rapid clicks both clear
 // the entry checks, stage from the same list, and the later persistence drops
@@ -172,8 +172,22 @@ describe("duplicate re-entry during the preflight window", () => {
 
     assert.notEqual(insertionCheck, -1, "a vanished source has to be detected");
     assert.ok(
-      insertionCheck < body.indexOf("applySlideSelection("),
-      "a missing clone must not be selected or toasted as a success"
+      body.lastIndexOf("announceDuplicate(") > insertionCheck,
+      "the main list must clear the insertion check before announcing"
+    );
+    // The template path has no local list to check: it announces the slide the
+    // server reported as inserted, and a refused request throws instead.
+    assert.match(
+      body.slice(body.indexOf("isTemplateMode()"), insertionCheck),
+      /announceDuplicate\(cloneSlide\(payload\.slide\)\)/,
+      "the template path may only announce what the server inserted"
+    );
+    // Both paths reach the success announcement through the same helper, so
+    // neither can select a slide without also reporting it.
+    assert.match(
+      functionBody(app, "announceDuplicate"),
+      /applySlideSelection\([\s\S]*showToast\(/,
+      "selection and the toast belong to the shared success path"
     );
   });
 });

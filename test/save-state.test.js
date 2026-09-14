@@ -6,12 +6,8 @@ import {
   createSnapshot,
   CUSTOM_RESET_RETRY_MESSAGE,
   isSnapshotDirty,
-  isTemplateDirty,
   deriveSaveButtonState,
   getResetDraftBlockMessage,
-  getPendingChangeScopes,
-  getSaveSequence,
-  getUnsavedChangesMessage,
   isDiscardComplete,
   isSaveBusy,
   isSlideAtResetDefaults,
@@ -21,11 +17,10 @@ import {
   resolveAdjacentSlideId,
   resolveCurrentSlideSource,
   runGuardedTransition,
-  saveAllPendingScopes,
   selectTransientPreviewFiles,
-  shouldRecaptureSlideBaseline,
   shouldWarnBeforeUnload,
   toFileMetadata,
+  UNSAVED_CHANGES_MESSAGE,
   withTransientFiles,
 } from "../lib/save-state.js";
 import { createDefaultCustomSlide } from "../public/custom-slide-model.js";
@@ -152,27 +147,27 @@ describe("save state snapshots", () => {
     assert.equal(isSnapshotDirty({ name: "원본", size: 40 }, baseline), false);
   });
 
-  it("detects template name and slide order changes", () => {
+  it("stays sensitive to list order and nested values", () => {
     const baseline = createSnapshot({
       name: "주일",
       slides: [{ id: "1" }, { id: "2" }],
     });
     assert.equal(
-      isTemplateDirty(
+      isSnapshotDirty(
         { name: "주일 예배", slides: [{ id: "1" }, { id: "2" }] },
         baseline
       ),
       true
     );
     assert.equal(
-      isTemplateDirty(
+      isSnapshotDirty(
         { name: "주일", slides: [{ id: "2" }, { id: "1" }] },
         baseline
       ),
       true
     );
     assert.equal(
-      isTemplateDirty(
+      isSnapshotDirty(
         { name: "주일", slides: [{ id: "1" }, { id: "2" }] },
         baseline
       ),
@@ -275,150 +270,44 @@ describe("save state decisions", () => {
     );
   });
 
-  it("enables only the button that has pending work", () => {
+  // The editor draft is the only thing that can be pending. Template structure
+  // is written by its own commands, so it never reaches this decision.
+  it("enables the editor save only for a dirty draft", () => {
     assert.deepEqual(
-      deriveSaveButtonState({
-        hasSlide: true,
-        hasTemplate: true,
-        slideDirty: true,
-        templateDirty: false,
-        slideSaving: false,
-        templateSaving: false,
-      }),
-      {
-        slideDisabled: false,
-        templateDisabled: true,
-        templateDisabledReason: "slide-dirty",
-      }
+      deriveSaveButtonState({ hasSlide: true, slideDirty: true }),
+      { slideDisabled: false }
+    );
+    assert.deepEqual(
+      deriveSaveButtonState({ hasSlide: true, slideDirty: false }),
+      { slideDisabled: true }
+    );
+    assert.deepEqual(
+      deriveSaveButtonState({ hasSlide: false, slideDirty: true }),
+      { slideDisabled: true }
     );
   });
 
-  it("disables both buttons while either save is running", () => {
+  it("disables the editor save while any write is in flight", () => {
     assert.deepEqual(
       deriveSaveButtonState({
         hasSlide: true,
-        hasTemplate: true,
         slideDirty: true,
-        templateDirty: true,
         slideSaving: true,
-        templateSaving: false,
       }),
-      {
-        slideDisabled: true,
-        templateDisabled: true,
-        templateDisabledReason: "busy",
-      }
-    );
-  });
-
-  it("keeps template save inactive while the slide draft is still dirty", () => {
-    assert.deepEqual(
-      deriveSaveButtonState({
-        hasSlide: true,
-        hasTemplate: true,
-        slideDirty: true,
-        templateDirty: true,
-        slideSaving: false,
-        templateSaving: false,
-      }),
-      {
-        slideDisabled: false,
-        templateDisabled: true,
-        templateDisabledReason: "slide-dirty",
-      }
+      { slideDisabled: true }
     );
     assert.deepEqual(
       deriveSaveButtonState({
         hasSlide: true,
-        hasTemplate: true,
-        slideDirty: false,
-        templateDirty: true,
-        slideSaving: false,
-        templateSaving: false,
-      }),
-      {
-        slideDisabled: true,
-        templateDisabled: false,
-        templateDisabledReason: null,
-      }
-    );
-  });
-
-  it("reports both dirty scopes once and saves slide before template", () => {
-    const input = { slideDirty: true, templateDirty: true };
-    assert.deepEqual(getPendingChangeScopes(input), ["slide", "template"]);
-    assert.deepEqual(getSaveSequence(input), ["slide", "template"]);
-  });
-
-  it("does not request a popup or save when nothing is dirty", () => {
-    assert.deepEqual(
-      getPendingChangeScopes({ slideDirty: false, templateDirty: false }),
-      []
-    );
-    assert.deepEqual(
-      getSaveSequence({ slideDirty: false, templateDirty: false }),
-      []
-    );
-  });
-
-  it("requests only template save after the slide draft was committed", () => {
-    assert.deepEqual(
-      getSaveSequence({ slideDirty: false, templateDirty: true }),
-      ["template"]
-    );
-  });
-
-  it("summarizes both dirty scopes in one popup message", () => {
-    assert.equal(
-      getUnsavedChangesMessage(["slide", "template"]),
-      "슬라이드 편집과 템플릿 변경사항이 있습니다."
-    );
-  });
-
-  it("names the single dirty scope in the popup message", () => {
-    assert.equal(
-      getUnsavedChangesMessage(["template"]),
-      "템플릿에 저장하지 않은 변경사항이 있습니다."
-    );
-    assert.equal(
-      getUnsavedChangesMessage(["slide"]),
-      "슬라이드에 저장하지 않은 변경사항이 있습니다."
-    );
-  });
-
-  it("recaptures a slide baseline only for a clean selection that survives resync", () => {
-    assert.equal(
-      shouldRecaptureSlideBaseline({
-        slideDirty: false,
-        currentSlideId: "slide-1",
-        storedSlideIds: ["slide-1"],
-      }),
-      true
-    );
-    assert.equal(
-      shouldRecaptureSlideBaseline({
         slideDirty: true,
-        currentSlideId: "slide-1",
-        storedSlideIds: ["slide-1"],
+        structureSaving: true,
       }),
-      false
+      { slideDisabled: true }
     );
-    assert.equal(
-      shouldRecaptureSlideBaseline({
-        slideDirty: false,
-        currentSlideId: null,
-        storedSlideIds: ["slide-1"],
-      }),
-      false
-    );
-    assert.equal(
-      shouldRecaptureSlideBaseline({
-        slideDirty: false,
-        currentSlideId: "slide-1",
-        storedSlideIds: [],
-      }),
-      false
-    );
+  });
+
+  it("names the one thing the popup can be about", () => {
+    assert.match(UNSAVED_CHANGES_MESSAGE, /슬라이드/);
   });
 
   it("treats a slide without a saved flag as unsaved", () => {
@@ -430,45 +319,33 @@ describe("save state decisions", () => {
     assert.equal(isSlideUnsaved(undefined), false);
   });
 
-  it("warns before unload only for actual dirty state", () => {
-    assert.equal(
-      shouldWarnBeforeUnload({ slideDirty: false, templateDirty: false }),
-      false
-    );
-    assert.equal(
-      shouldWarnBeforeUnload({ slideDirty: true, templateDirty: false }),
-      true
-    );
-    assert.equal(
-      shouldWarnBeforeUnload({ slideDirty: false, templateDirty: true }),
-      true
-    );
-    assert.equal(
-      shouldWarnBeforeUnload({ slideDirty: true, templateDirty: true }),
-      true
-    );
+  it("warns before unload only for a dirty draft", () => {
+    assert.equal(shouldWarnBeforeUnload({ slideDirty: false }), false);
+    assert.equal(shouldWarnBeforeUnload({ slideDirty: true }), true);
   });
 
-  it("reports a save as busy while either scope is in flight", () => {
-    assert.equal(isSaveBusy({ slideSaving: false, templateSaving: false }), false);
-    assert.equal(isSaveBusy({ slideSaving: true, templateSaving: false }), true);
-    assert.equal(isSaveBusy({ slideSaving: false, templateSaving: true }), true);
+  it("reports a save as busy while either kind of write runs", () => {
+    assert.equal(
+      isSaveBusy({ slideSaving: false, structureSaving: false }),
+      false
+    );
+    assert.equal(isSaveBusy({ slideSaving: true }), true);
+    assert.equal(isSaveBusy({ structureSaving: true }), true);
   });
 });
 
-// Drives the save sequence and the popup choices without touching the DOM, so
-// the orchestration decisions are covered by real assertions.
+// Drives the popup choices without touching the DOM, so the orchestration
+// decisions are covered by real assertions.
 function createGuardHarness(overrides = {}) {
   const state = {
     slideDirty: false,
-    templateDirty: false,
     slideSaving: false,
-    templateSaving: false,
+    structureSaving: false,
     ...(overrides.state || {}),
   };
   const calls = {
-    dialog: [],
-    saved: [],
+    dialog: 0,
+    saved: 0,
     discard: 0,
     transition: 0,
     busy: [],
@@ -481,15 +358,13 @@ function createGuardHarness(overrides = {}) {
     calls,
     options: {
       getState: () => ({ ...state }),
-      showDialog: async (scopes) => {
-        calls.dialog.push(scopes);
+      showDialog: async () => {
+        calls.dialog += 1;
         return choices.length ? choices.shift() : "cancel";
       },
-      saveScope: async (scope) => {
-        calls.saved.push(scope);
-        return overrides.saveScope
-          ? overrides.saveScope(scope, state)
-          : true;
+      save: async () => {
+        calls.saved += 1;
+        return overrides.save ? overrides.save(state) : true;
       },
       discard: async () => {
         calls.discard += 1;
@@ -506,175 +381,31 @@ function createGuardHarness(overrides = {}) {
   };
 }
 
-describe("pending save sequence", () => {
-  it("asks for nothing when the workspace is already clean", async () => {
-    const attempted = [];
-    assert.equal(
-      await saveAllPendingScopes({
-        getState: () => ({ slideDirty: false, templateDirty: false }),
-        saveScope: async (scope) => {
-          attempted.push(scope);
-          return true;
-        },
-      }),
-      true
-    );
-    assert.deepEqual(attempted, []);
-  });
-
-  it("saves the template that the slide save just made dirty", async () => {
-    const state = { slideDirty: true, templateDirty: false };
-    const attempted = [];
-
-    assert.equal(
-      await saveAllPendingScopes({
-        getState: () => ({ ...state }),
-        saveScope: async (scope) => {
-          attempted.push(scope);
-          if (scope === "slide") {
-            state.slideDirty = false;
-            state.templateDirty = true;
-          } else {
-            state.templateDirty = false;
-          }
-          return true;
-        },
-      }),
-      true
-    );
-    assert.deepEqual(attempted, ["slide", "template"]);
-  });
-
-  it("stops at the first failing scope", async () => {
-    const attempted = [];
-    assert.equal(
-      await saveAllPendingScopes({
-        getState: () => ({ slideDirty: true, templateDirty: true }),
-        saveScope: async (scope) => {
-          attempted.push(scope);
-          return false;
-        },
-      }),
-      false
-    );
-    assert.deepEqual(attempted, ["slide"]);
-  });
-
-  it("gives up instead of spinning when a save never goes clean", async () => {
-    const attempted = [];
-    assert.equal(
-      await saveAllPendingScopes({
-        getState: () => ({ slideDirty: true, templateDirty: false }),
-        saveScope: async (scope) => {
-          attempted.push(scope);
-          return true;
-        },
-      }),
-      false
-    );
-    assert.deepEqual(attempted, ["slide", "slide", "slide"]);
-  });
-});
-
 describe("discard plan", () => {
-  it("never syncs the local slide list into a template being restored", () => {
-    assert.deepEqual(
-      planDiscard({
-        slideDirty: true,
-        slideUnsaved: true,
-        templateMode: true,
-        templateDirty: true,
-      }),
-      {
-        restoringTemplate: true,
-        dropSlide: true,
-        repopulateSlide: false,
-        syncLocalSlides: false,
-      }
-    );
+  it("drops a draft that never reached the server", () => {
+    assert.deepEqual(planDiscard({ slideDirty: true, slideUnsaved: true }), {
+      dropSlide: true,
+      repopulateSlide: false,
+    });
   });
 
-  it("syncs the dropped draft out of a clean template", () => {
-    assert.deepEqual(
-      planDiscard({
-        slideDirty: true,
-        slideUnsaved: true,
-        templateMode: true,
-        templateDirty: false,
-      }),
-      {
-        restoringTemplate: false,
-        dropSlide: true,
-        repopulateSlide: false,
-        syncLocalSlides: true,
-      }
-    );
+  it("repopulates an edited slide from its stored record", () => {
+    assert.deepEqual(planDiscard({ slideDirty: true, slideUnsaved: false }), {
+      dropSlide: false,
+      repopulateSlide: true,
+    });
   });
 
-  it("syncs the dropped draft out of the main slide list", () => {
-    assert.deepEqual(
-      planDiscard({
-        slideDirty: true,
-        slideUnsaved: true,
-        templateMode: false,
-        templateDirty: false,
-      }),
-      {
-        restoringTemplate: false,
-        dropSlide: true,
-        repopulateSlide: false,
-        syncLocalSlides: true,
-      }
-    );
+  it("touches nothing when the draft is clean", () => {
+    assert.deepEqual(planDiscard({ slideDirty: false, slideUnsaved: false }), {
+      dropSlide: false,
+      repopulateSlide: false,
+    });
   });
 
-  it("repopulates an edited slide instead of dropping or syncing it", () => {
-    assert.deepEqual(
-      planDiscard({
-        slideDirty: true,
-        slideUnsaved: false,
-        templateMode: true,
-        templateDirty: true,
-      }),
-      {
-        restoringTemplate: true,
-        dropSlide: false,
-        repopulateSlide: true,
-        syncLocalSlides: false,
-      }
-    );
-  });
-
-  it("touches no slide state when only the template is dirty", () => {
-    assert.deepEqual(
-      planDiscard({
-        slideDirty: false,
-        slideUnsaved: false,
-        templateMode: true,
-        templateDirty: true,
-      }),
-      {
-        restoringTemplate: true,
-        dropSlide: false,
-        repopulateSlide: false,
-        syncLocalSlides: false,
-      }
-    );
-  });
-
-  it("counts a discard as complete only once no scope is dirty", () => {
-    assert.equal(
-      isDiscardComplete({ slideDirty: false, templateDirty: false }),
-      true
-    );
-    assert.equal(
-      isDiscardComplete({ slideDirty: true, templateDirty: false }),
-      false
-    );
-    assert.equal(
-      isDiscardComplete({ slideDirty: false, templateDirty: true }),
-      false
-    );
+  it("counts a discard as complete only once the draft is clean", () => {
+    assert.equal(isDiscardComplete({ slideDirty: false }), true);
+    assert.equal(isDiscardComplete({ slideDirty: true }), false);
   });
 });
 
@@ -684,71 +415,62 @@ describe("guarded transition orchestration", () => {
 
     assert.equal(await runGuardedTransition(harness.options), true);
     assert.equal(harness.calls.transition, 1);
-    assert.deepEqual(harness.calls.dialog, []);
-    assert.deepEqual(harness.calls.saved, []);
+    assert.equal(harness.calls.dialog, 0);
+    assert.equal(harness.calls.saved, 0);
   });
 
-  it("blocks the dialog and the transition while a save is in flight", async () => {
+  it("blocks the dialog and the transition while a write is in flight", async () => {
     const slideBusy = createGuardHarness({
       state: { slideDirty: true, slideSaving: true },
     });
     assert.equal(await runGuardedTransition(slideBusy.options), false);
     assert.equal(slideBusy.calls.transition, 0);
-    assert.deepEqual(slideBusy.calls.dialog, []);
+    assert.equal(slideBusy.calls.dialog, 0);
     assert.equal(slideBusy.calls.blocked, 1);
 
-    const templateBusy = createGuardHarness({
-      state: { templateDirty: true, templateSaving: true },
+    const structureBusy = createGuardHarness({
+      state: { slideDirty: true, structureSaving: true },
     });
-    assert.equal(await runGuardedTransition(templateBusy.options), false);
-    assert.equal(templateBusy.calls.transition, 0);
-    assert.deepEqual(templateBusy.calls.dialog, []);
-    assert.equal(templateBusy.calls.blocked, 1);
+    assert.equal(await runGuardedTransition(structureBusy.options), false);
+    assert.equal(structureBusy.calls.transition, 0);
+    assert.equal(structureBusy.calls.blocked, 1);
   });
 
-  it("transitions only after every required save succeeds", async () => {
+  it("transitions once the save succeeds", async () => {
     const harness = createGuardHarness({
       state: { slideDirty: true },
       choices: ["save"],
-      saveScope: (scope, state) => {
-        if (scope === "slide") {
-          state.slideDirty = false;
-          state.templateDirty = true;
-        } else {
-          state.templateDirty = false;
-        }
+      save: (state) => {
+        state.slideDirty = false;
         return true;
       },
     });
 
     assert.equal(await runGuardedTransition(harness.options), true);
-    assert.deepEqual(harness.calls.dialog, [["slide"]]);
-    assert.deepEqual(harness.calls.saved, ["slide", "template"]);
+    assert.equal(harness.calls.dialog, 1);
+    assert.equal(harness.calls.saved, 1);
     assert.deepEqual(harness.calls.busy, [true, false]);
     assert.equal(harness.calls.transition, 1);
   });
 
-  it("does not transition when a required save fails, and stays retryable", async () => {
+  it("does not transition when the save fails, and stays retryable", async () => {
     const harness = createGuardHarness({
-      state: { slideDirty: true, templateDirty: true },
+      state: { slideDirty: true },
       choices: ["save", "cancel"],
-      saveScope: () => false,
+      save: () => false,
     });
 
     assert.equal(await runGuardedTransition(harness.options), false);
     assert.equal(harness.calls.transition, 0);
-    assert.deepEqual(harness.calls.saved, ["slide"]);
+    assert.equal(harness.calls.saved, 1);
     // The popup was offered again instead of closing on the failure.
-    assert.deepEqual(harness.calls.dialog, [
-      ["slide", "template"],
-      ["slide", "template"],
-    ]);
+    assert.equal(harness.calls.dialog, 2);
     assert.deepEqual(harness.calls.busy, [true, false]);
   });
 
   it("does not transition when the discard cannot restore saved state", async () => {
     const harness = createGuardHarness({
-      state: { templateDirty: true },
+      state: { slideDirty: true },
       choices: ["discard", "cancel"],
       discard: () => false,
     });
@@ -756,7 +478,7 @@ describe("guarded transition orchestration", () => {
     assert.equal(await runGuardedTransition(harness.options), false);
     assert.equal(harness.calls.discard, 1);
     assert.equal(harness.calls.transition, 0);
-    assert.deepEqual(harness.calls.dialog, [["template"], ["template"]]);
+    assert.equal(harness.calls.dialog, 2);
   });
 
   it("transitions after a successful discard", async () => {
@@ -782,7 +504,7 @@ describe("guarded transition orchestration", () => {
 
     assert.equal(await runGuardedTransition(harness.options), false);
     assert.equal(harness.calls.transition, 0);
-    assert.deepEqual(harness.calls.saved, []);
+    assert.equal(harness.calls.saved, 0);
     assert.equal(harness.calls.discard, 0);
   });
 });

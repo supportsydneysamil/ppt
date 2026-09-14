@@ -341,7 +341,9 @@ async function runScenario(name, body, options = {}) {
     } else {
       diagnostics.alerts.push({ type: dialog.type(), message: dialog.message() });
     }
-    await dialog.accept();
+    await dialog.accept(
+      dialog.type() === "prompt" ? options.promptAnswer ?? "" : undefined
+    );
   });
 
   try {
@@ -387,7 +389,13 @@ async function setup(page, options = {}) {
       slidePost: 0,
       slideDelete: 0,
       bulkDelete: 0,
-      templatePut: 0,
+      templateSlidePost: 0,
+      templateSlidePut: 0,
+      templateSlideDelete: 0,
+      templateBulkDelete: 0,
+      templateDuplicate: 0,
+      templateOrderPut: 0,
+      templatePatch: 0,
       templateDelete: 0,
       uploadPost: 0,
       scriptureGenerate: 0,
@@ -511,32 +519,155 @@ async function setup(page, options = {}) {
         : state.templates;
       return route.fulfill({ status: 200, json: responseTemplates });
     }
-    if (/^\/api\/templates\/[^/]+$/.test(url.pathname) && method === "PUT") {
-      state.counts.templatePut += 1;
-      const payload = request.postDataJSON();
-      const id = decodeURIComponent(url.pathname.split("/").pop());
-      const nextTemplate = {
-        ...(state.templates.find((entry) => entry.id === id) || {}),
-        id,
-        name: payload.name,
-        slideCount: payload.slides.length,
-        slides: clone(payload.slides),
-      };
-      const response = options.onTemplatePut
-        ? await options.onTemplatePut({
-            count: state.counts.templatePut,
-            payload,
-            nextTemplate,
-            state,
-          })
-        : { status: 200, json: { success: true, template: nextTemplate } };
-      if (response.status < 400) {
-        state.templates = state.templates.map((entry) =>
-          entry.id === id ? clone(nextTemplate) : entry
-        );
+    // One stub per scope, mirroring the server: a slide route can only touch
+    // that slide, and a structural route can only touch order, membership or
+    // the name.
+    const templateMatch = url.pathname.match(
+      /^\/api\/templates\/([^/]+)(\/.*)?$/
+    );
+    if (templateMatch && templateMatch[2] !== undefined) {
+      const templateId = decodeURIComponent(templateMatch[1]);
+      const rest = templateMatch[2];
+      const template = state.templates.find((entry) => entry.id === templateId);
+      if (!template) {
+        return route.fulfill({
+          status: 404,
+          json: { error: "Template not found" },
+        });
       }
-      return route.fulfill(response);
+
+      const commit = (nextSlides, name = template.name) => ({
+        ...template,
+        name,
+        slideCount: nextSlides.length,
+        slides: clone(nextSlides),
+      });
+      const store = (nextTemplate, response) => {
+        if (response.status < 400) {
+          state.templates = state.templates.map((entry) =>
+            entry.id === templateId ? clone(nextTemplate) : entry
+          );
+        }
+        return route.fulfill(response);
+      };
+
+      const slideMatch = rest.match(/^\/slides\/([^/]+)$/);
+      if (slideMatch && method === "PUT") {
+        state.counts.templateSlidePut += 1;
+        const slideId = decodeURIComponent(slideMatch[1]);
+        const payload = request.postDataJSON();
+        const nextTemplate = commit(
+          template.slides.map((entry) =>
+            entry.id === slideId
+              ? { ...clone(payload.slide), id: slideId }
+              : entry
+          )
+        );
+        const response = options.onTemplateSlidePut
+          ? await options.onTemplateSlidePut({
+              count: state.counts.templateSlidePut,
+              nextTemplate,
+              state,
+            })
+          : { status: 200, json: { success: true, template: nextTemplate } };
+        return store(nextTemplate, response);
+      }
+
+      if (rest === "/slides" && method === "POST") {
+        state.counts.templateSlidePost += 1;
+        const payload = request.postDataJSON();
+        const nextSlides = clone(template.slides);
+        nextSlides.splice(
+          Math.max(0, Math.min(payload.index ?? nextSlides.length, nextSlides.length)),
+          0,
+          clone(payload.slide)
+        );
+        const nextTemplate = commit(nextSlides);
+        return store(nextTemplate, {
+          status: 200,
+          json: { success: true, template: nextTemplate },
+        });
+      }
+
+      if (rest === "/slides/bulk-delete" && method === "POST") {
+        state.counts.templateBulkDelete += 1;
+        const payload = request.postDataJSON();
+        const nextTemplate = commit(
+          template.slides.filter((entry) => !payload.ids.includes(entry.id))
+        );
+        return store(nextTemplate, {
+          status: 200,
+          json: { success: true, template: nextTemplate },
+        });
+      }
+
+      if (slideMatch && method === "DELETE") {
+        state.counts.templateSlideDelete += 1;
+        const slideId = decodeURIComponent(slideMatch[1]);
+        const nextTemplate = commit(
+          template.slides.filter((entry) => entry.id !== slideId)
+        );
+        return store(nextTemplate, {
+          status: 200,
+          json: { success: true, template: nextTemplate },
+        });
+      }
+
+      const duplicateMatch = rest.match(/^\/slides\/([^/]+)\/duplicate$/);
+      if (duplicateMatch && method === "POST") {
+        state.counts.templateDuplicate += 1;
+        const slideId = decodeURIComponent(duplicateMatch[1]);
+        const sourceIndex = template.slides.findIndex(
+          (entry) => entry.id === slideId
+        );
+        const duplicate = {
+          ...clone(template.slides[sourceIndex]),
+          id: `${slideId}-copy`,
+          name: `${template.slides[sourceIndex].name} 복사`,
+        };
+        const nextSlides = clone(template.slides);
+        nextSlides.splice(sourceIndex + 1, 0, duplicate);
+        const nextTemplate = commit(nextSlides);
+        return store(nextTemplate, {
+          status: 200,
+          json: { success: true, template: nextTemplate, slide: duplicate },
+        });
+      }
+
+      if (rest === "/slide-order" && method === "PUT") {
+        state.counts.templateOrderPut += 1;
+        const payload = request.postDataJSON();
+        const nextTemplate = commit(
+          payload.slideIds.map((id) =>
+            template.slides.find((entry) => entry.id === id)
+          )
+        );
+        const response = options.onTemplateOrderPut
+          ? await options.onTemplateOrderPut({
+              count: state.counts.templateOrderPut,
+              nextTemplate,
+              state,
+            })
+          : { status: 200, json: { success: true, template: nextTemplate } };
+        return store(nextTemplate, response);
+      }
     }
+
+    if (/^\/api\/templates\/[^/]+$/.test(url.pathname) && method === "PATCH") {
+      state.counts.templatePatch += 1;
+      const id = decodeURIComponent(url.pathname.split("/").pop());
+      const payload = request.postDataJSON();
+      const template = state.templates.find((entry) => entry.id === id);
+      const nextTemplate = { ...template, name: payload.name };
+      state.templates = state.templates.map((entry) =>
+        entry.id === id ? clone(nextTemplate) : entry
+      );
+      return route.fulfill({
+        status: 200,
+        json: { success: true, template: nextTemplate },
+      });
+    }
+
     if (/^\/api\/templates\/[^/]+$/.test(url.pathname) && method === "DELETE") {
       state.counts.templateDelete += 1;
       const id = decodeURIComponent(url.pathname.split("/").pop());
@@ -637,6 +768,16 @@ async function assertDialogOpenCount(page, expected) {
   assert.equal(await page.locator("dialog[open]").count(), 1);
 }
 
+// The request counters live in Node, so scenarios that assert on them have to
+// wait for the browser's request to actually land.
+async function waitForCount(read, expected, label) {
+  const deadline = Date.now() + 5000;
+  while (read() !== expected && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert.equal(read(), expected, label);
+}
+
 async function fillName(page, value) {
   await page.locator("#slideName").fill(value);
 }
@@ -698,44 +839,131 @@ await runScenario("save buttons across saved types and main success", async (pag
   assert.equal(state.counts.slidePost, 1);
 });
 
-await runScenario("template two-stage save buttons, hint and toasts", async (page) => {
+await runScenario("a template slide save writes that slide only", async (page) => {
   const state = await setup(page);
   await openTemplate(page);
   await fillName(page, "템플릿 수정 1");
   assert.equal(await page.locator("#editorSaveBtn").isEnabled(), true);
-  assert.equal(await page.locator("#templateSaveBtn").isDisabled(), true);
-  // The two-stage rule is the one disabled reason a user cannot guess.
-  await page.locator("#templateSaveHint").waitFor({ state: "visible" });
-  assert.match(
-    await page.locator("#templateSaveHint").textContent(),
-    /슬라이드 변경사항을 먼저 저장/
-  );
-  assert.equal(
-    await page.locator("#templateSaveBtn").getAttribute("aria-describedby"),
-    "templateSaveHint"
-  );
-  assert.equal(
-    await page.locator("#templateSaveHint").getAttribute("aria-live"),
-    "polite",
-    "the hint has to be announced when it appears"
-  );
+  // There is no second save to press: the workspace bar carries no save button.
+  assert.equal(await page.locator("#templateSaveBtn").count(), 0);
 
   await page.locator("#editorSaveBtn").click();
   assert.equal(await page.locator("#editorSaveBtn").isDisabled(), true);
-  assert.equal(await page.locator("#templateSaveBtn").isEnabled(), true);
-  assert.equal(await page.locator("#templateSaveHint").isHidden(), true);
-  await expectToastOnce(
-    page,
-    "슬라이드 변경사항이 반영되었습니다 · 템플릿 저장 필요"
-  );
-  assert.equal(state.counts.slidePost, 0);
+  await expectToastOnce(page, "슬라이드가 저장되었습니다");
 
-  await page.locator("#templateSaveBtn").click();
-  assert.equal(await page.locator("#editorSaveBtn").isDisabled(), true);
-  assert.equal(await page.locator("#templateSaveBtn").isDisabled(), true);
-  await expectToastOnce(page, "템플릿이 저장되었습니다");
-  assert.equal(state.counts.templatePut, 1);
+  assert.equal(state.counts.templateSlidePut, 1);
+  assert.equal(state.counts.slidePost, 0, "the main slide list is untouched");
+  assert.equal(state.counts.templateOrderPut, 0, "a content save sets no order");
+  assert.equal(state.counts.templatePatch, 0, "a content save sets no name");
+  assert.equal(state.templates[0].slides[0].name, "템플릿 수정 1");
+  assert.deepEqual(
+    state.templates[0].slides.map((entry) => entry.id),
+    ["tpl-slide-1", "tpl-slide-2"],
+    "the order the request never carried must be unchanged"
+  );
 });
+
+await runScenario("a template reorder writes the order only", async (page) => {
+  const state = await setup(page);
+  await openTemplate(page);
+  await page.locator("#slideName").waitFor();
+
+  await page
+    .locator("#slideListContainer .slide-card")
+    .first()
+    .locator(".slide-move-btn")
+    .last()
+    .click();
+  await waitForCount(
+    () => state.counts.templateOrderPut,
+    1,
+    "the reorder must reach the server on its own"
+  );
+  // The bar has no save button, so the toast is what tells the user the new
+  // order is already stored.
+  await expectToastOnce(page, "순서를 저장했습니다");
+
+  assert.deepEqual(await slideNames(page), [
+    "템플릿 둘째 슬라이드",
+    "템플릿 첫 슬라이드",
+  ]);
+  assert.equal(state.counts.templateSlidePut, 0, "no content was written");
+  assert.deepEqual(
+    state.templates[0].slides.map((entry) => entry.id),
+    ["tpl-slide-2", "tpl-slide-1"]
+  );
+  // A structural change is not the editor's business, so its button stays shut.
+  assert.equal(await page.locator("#editorSaveBtn").isDisabled(), true);
+});
+
+await runScenario(
+  "a rejected template reorder restores the server order",
+  async (page, diagnostics) => {
+    const state = await setup(page, {
+      onTemplateOrderPut: () => ({
+        status: 500,
+        json: { error: "injected order failure" },
+      }),
+    });
+    await openTemplate(page);
+
+    await page
+      .locator("#slideListContainer .slide-card")
+      .first()
+      .locator(".slide-move-btn")
+      .last()
+      .click();
+    await waitForAlert(diagnostics, "슬라이드 순서를 저장하지 못했습니다");
+
+    assert.deepEqual(await slideNames(page), [
+      "템플릿 첫 슬라이드",
+      "템플릿 둘째 슬라이드",
+    ]);
+    assert.deepEqual(
+      state.templates[0].slides.map((entry) => entry.id),
+      ["tpl-slide-1", "tpl-slide-2"]
+    );
+  },
+  { expectedConsole: [/500/, "Failed to reorder template slides"] }
+);
+
+await runScenario("template delete and duplicate write membership", async (page) => {
+  const state = await setup(page);
+  await openTemplate(page);
+
+  await page.locator("#duplicateSlideBtn").click();
+  await expectToast(page, "슬라이드를 복제했습니다");
+  await waitForCount(() => state.counts.templateDuplicate, 1, "duplicate landed");
+  assert.equal(state.templates[0].slides.length, 3);
+  assert.equal(state.counts.templateSlidePut, 0, "no content was written");
+
+  await page.locator("#editorDeleteBtn").click();
+  await page.waitForFunction(
+    () => document.querySelectorAll("#slideListContainer .slide-card").length === 2
+  );
+  await waitForCount(() => state.counts.templateSlideDelete, 1, "delete landed");
+  await expectToastOnce(page, "슬라이드를 삭제했습니다");
+  assert.equal(state.templates[0].slides.length, 2);
+});
+
+await runScenario(
+  "renaming a template writes the name only",
+  async (page) => {
+  const state = await setup(page);
+  await openTemplate(page);
+
+  await page.locator("#templateNameDisplay").click();
+  await page.waitForFunction(
+    () => document.querySelector("#templateNameDisplay").textContent === "새 템플릿 이름"
+  );
+  assert.equal(state.counts.templatePatch, 1);
+  await expectToastOnce(page, "템플릿 이름을 변경했습니다");
+  assert.equal(state.templates[0].name, "새 템플릿 이름");
+  assert.equal(state.counts.templateSlidePut, 0);
+  assert.equal(state.counts.templateOrderPut, 0);
+  },
+  { promptAnswer: "새 템플릿 이름" }
+);
 
 await runScenario("navigation popup is singular and continue retains state", async (page) => {
   await setup(page);
@@ -764,18 +992,37 @@ await runScenario("navigation popup is singular and continue retains state", asy
   assert.equal(await page.locator("#slideName").inputValue(), "계속 편집 유지");
 });
 
-await runScenario("both dirty scopes show one popup", async (page) => {
-  await setup(page);
+await runScenario("only the slide draft can raise the popup", async (page) => {
+  const state = await setup(page);
   await openTemplate(page);
-  await fillName(page, "stage one");
-  await page.locator("#editorSaveBtn").click();
-  await fillName(page, "both dirty");
   await installDialogCounter(page);
+
+  // A structural change is already on the server, so leaving asks nothing.
+  await page
+    .locator("#slideListContainer .slide-card")
+    .first()
+    .locator(".slide-move-btn")
+    .last()
+    .click();
+  await waitForCount(() => state.counts.templateOrderPut, 1, "reorder landed");
+
+  await page.locator("#templateBackBtn").click();
+  await page.locator("#templateGallery").waitFor({ state: "visible" });
+  assert.equal(
+    await page.evaluate(() => window.__unsavedOpenCount),
+    0,
+    "a change that is already saved must not be questioned"
+  );
+
+  // An unsaved draft still does.
+  await page.locator(".template-card-open").first().click();
+  await selectMainSlide(page, 0);
+  await fillName(page, "미저장 초안");
   await page.locator("#templateBackBtn").click();
   await assertDialogOpenCount(page, 1);
   assert.match(
     await page.locator("#unsavedChangesMessage").textContent(),
-    /슬라이드 편집과 템플릿 변경사항/
+    /슬라이드에 저장하지 않은 변경사항/
   );
   await page.locator("#unsavedCancelBtn").click();
 });
@@ -805,16 +1052,10 @@ await runScenario("discard removes new and restores existing slide", async (page
   );
 });
 
-await runScenario("discard restores template server copy", async (page) => {
-  const original = templateFixture();
-  await setup(page, {
-    templates: [original],
-    onTemplatesGet: () => [clone(original)],
-  });
+await runScenario("discard restores a template slide from its record", async (page) => {
+  const state = await setup(page);
   await openTemplate(page);
   await fillName(page, "로컬 템플릿 수정");
-  await page.locator("#editorSaveBtn").click();
-  assert.equal(await page.locator("#templateSaveBtn").isEnabled(), true);
   await page.locator("#templateBackBtn").click();
   await page.locator("#unsavedDiscardBtn").click();
   await page.locator(".template-card-open").waitFor({ state: "visible" });
@@ -824,31 +1065,9 @@ await runScenario("discard restores template server copy", async (page) => {
     await page.locator("#slideName").inputValue(),
     "템플릿 첫 슬라이드"
   );
-  assert.equal(await page.locator("#templateSaveBtn").isDisabled(), true);
+  assert.equal(state.counts.templateSlidePut, 0, "a discard writes nothing");
+  assert.equal(await page.locator("#editorSaveBtn").isDisabled(), true);
 });
-
-await runScenario(
-  "discard of a deleted template returns to the gallery",
-  async (page, diagnostics) => {
-    // The template exists when the gallery loads and is gone by the time the
-    // discard refetches it.
-    let templateGets = 0;
-    await setup(page, {
-      onTemplatesGet: ({ state }) => {
-        templateGets += 1;
-        return templateGets === 1 ? state.templates : [];
-      },
-    });
-    await openTemplate(page);
-    await fillName(page, "삭제된 템플릿 수정");
-    await page.locator("#editorSaveBtn").click();
-    await page.locator("#templateBackBtn").click();
-    await page.locator("#unsavedDiscardBtn").click();
-    await waitForAlert(diagnostics, "템플릿이 서버에서 삭제되어");
-    await page.locator("#templateGallery").waitFor({ state: "visible" });
-    assert.equal(await page.locator("#templateWorkspaceBar").isHidden(), true);
-  }
-);
 
 await runScenario("save then move main runs one POST", async (page) => {
   const gate = createGate();
@@ -882,23 +1101,17 @@ await runScenario("save then move main runs one POST", async (page) => {
   await expectToastOnce(page, "변경사항을 저장했습니다");
 });
 
-await runScenario("save then move template persists both scopes once", async (page) => {
+await runScenario("save then move writes the template slide once", async (page) => {
   const state = await setup(page);
   await openTemplate(page);
-  await fillName(page, "첫 단계");
-  await page.locator("#editorSaveBtn").click();
-  await fillName(page, "가드 두 번째 단계");
+  await fillName(page, "가드가 저장한 이름");
   await page.locator("#templateBackBtn").click();
   await page.locator("#unsavedSaveBtn").click();
   await page.locator("#unsavedChangesModal").waitFor({ state: "hidden" });
   await page.locator(".template-card-open").waitFor({ state: "visible" });
   assert.equal(state.counts.slidePost, 0);
-  assert.equal(state.counts.templatePut, 1);
-  assert.equal(
-    state.templates[0].slides[0].name,
-    "가드 두 번째 단계",
-    "template PUT body must include the slide scope committed by the guard"
-  );
+  assert.equal(state.counts.templateSlidePut, 1);
+  assert.equal(state.templates[0].slides[0].name, "가드가 저장한 이름");
   await expectToastOnce(page, "변경사항을 저장했습니다");
 });
 
@@ -948,38 +1161,36 @@ await runScenario(
 );
 
 await runScenario(
-  "PUT template failure preserves draft and retry",
+  "a failed template slide save preserves the draft and retries",
   async (page, diagnostics) => {
     const state = await setup(page, {
-      onTemplatePut: ({ count, nextTemplate }) =>
+      onTemplateSlidePut: ({ count, nextTemplate }) =>
         count === 1
-          ? { status: 500, json: { error: "injected template failure" } }
+          ? { status: 500, json: { error: "injected slide failure" } }
           : { status: 200, json: { success: true, template: nextTemplate } },
     });
     await openTemplate(page);
-    await fillName(page, "PUT 실패 초안");
+    await fillName(page, "저장 실패 초안");
     await page.locator("#editorSaveBtn").click();
-    await page.locator("#templateBackBtn").click();
-    await page.locator("#unsavedSaveBtn").click();
-    await page.locator("#unsavedChangesModal").waitFor({ state: "visible" });
-    await waitForAlert(diagnostics, "injected template failure");
-    assert.equal(await page.locator("#slideName").inputValue(), "PUT 실패 초안");
-    assert.equal(await page.locator("#templateSaveBtn").isEnabled(), true);
+    await waitForAlert(diagnostics, "injected slide failure");
+    assert.equal(await page.locator("#slideName").inputValue(), "저장 실패 초안");
     assert.equal(
-      await page.locator("#templateSaveBtn").textContent(),
-      "템플릿 저장",
+      await page.locator("#editorSaveBtn").isEnabled(),
+      true,
+      "a refused save has to stay retryable"
+    );
+    assert.equal(
+      await page.locator("#editorSaveBtn").textContent(),
+      "저장",
       "the progress label must be restored after a failure"
     );
-    assert.equal(
-      await page.locator(".slide-card.active .slide-save-badge").textContent(),
-      "저장됨"
-    );
-    await page.locator("#unsavedSaveBtn").click();
-    await page.locator("#unsavedChangesModal").waitFor({ state: "hidden" });
-    assert.equal(state.counts.templatePut, 2);
-    await page.locator(".template-card-open").waitFor({ state: "visible" });
+
+    await page.locator("#editorSaveBtn").click();
+    await waitForCount(() => state.counts.templateSlidePut, 2, "retry landed");
+    assert.equal(await page.locator("#editorSaveBtn").isDisabled(), true);
+    assert.equal(state.templates[0].slides[0].name, "저장 실패 초안");
   },
-  { expectedConsole: [/500/, "Failed to save template"] }
+  { expectedConsole: [/500/, "Error in saveCurrentSlide"] }
 );
 
 await runScenario(
@@ -1204,11 +1415,11 @@ await runScenario(
 );
 
 await runScenario(
-  "a running template save blocks rename and delete",
+  "a running slide save blocks template rename and delete",
   async (page, diagnostics) => {
     const gate = createGate();
     const state = await setup(page, {
-      onTemplatePut: async ({ nextTemplate }) => {
+      onTemplateSlidePut: async ({ nextTemplate }) => {
         await gate.promise;
         return { status: 200, json: { success: true, template: nextTemplate } };
       },
@@ -1217,11 +1428,9 @@ await runScenario(
     await openTemplate(page);
     await fillName(page, "템플릿 저장 중 초안");
     await page.locator("#editorSaveBtn").click();
-    await page.locator("#templateSaveBtn:not([disabled])").waitFor();
-    await page.locator("#templateSaveBtn").click();
-    await page.locator("#templateSaveBtn[disabled]").waitFor();
+    await page.locator("#editorSaveBtn[disabled]").waitFor();
 
-    // A rename accepted here would be overwritten by the in-flight PUT, and a
+    // A rename accepted here would race the write already in flight, and a
     // delete would race a template the server is still writing.
     await page.locator("#templateNameDisplay").click();
     await expectToast(page, "저장이 진행 중입니다");
@@ -1233,11 +1442,11 @@ await runScenario(
       "neither the rename prompt nor the delete confirm may open"
     );
     assert.equal(state.counts.templateDelete, 0, "no DELETE during a save");
-    assert.equal(state.counts.templatePut, 1, "no extra PUT during a save");
+    assert.equal(state.counts.templatePatch, 0, "no rename during a save");
 
     gate.release();
-    await expectToastOnce(page, "템플릿이 저장되었습니다");
-    assert.equal(state.counts.templatePut, 1);
+    await expectToastOnce(page, "슬라이드가 저장되었습니다");
+    assert.equal(state.counts.templateSlidePut, 1);
     assert.equal(state.counts.templateDelete, 0);
     assert.equal(state.templates.length, 1);
     assert.equal(state.templates[0].name, "주일 템플릿");
@@ -1460,16 +1669,24 @@ await runScenario("cancel restores an existing dirty slide in place", async (pag
   assert.deepEqual(await slideNames(page), ["첫 슬라이드", "둘째 슬라이드"]);
 });
 
-await runScenario("cancel leaves template-level dirty state alone", async (page) => {
-  await setup(page);
+await runScenario("cancel preserves committed template structure", async (page) => {
+  const state = await setup(page);
   await openTemplate(page);
-  await fillName(page, "템플릿 저장 대기");
-  await page.locator("#editorSaveBtn").click();
-  await page.locator("#templateSaveBtn:not([disabled])").waitFor();
-  assert.equal(await page.locator("#templateSaveBtn").isEnabled(), true);
+
+  await page
+    .locator("#slideListContainer .slide-card")
+    .first()
+    .locator(".slide-move-btn")
+    .last()
+    .click();
+  await waitForCount(
+    () => state.counts.templateOrderPut,
+    1,
+    "the template order must be committed before cancel"
+  );
 
   await fillName(page, "슬라이드만 취소");
-  assert.equal(await page.locator("#editorSaveBtn").isEnabled(), true);
+  await page.locator("#editorSaveBtn:not([disabled])").waitFor();
   await page.locator("#editorCancelBtn").click();
 
   assert.equal(await page.locator("#slideEditor").isVisible(), true);
@@ -1477,9 +1694,18 @@ await runScenario("cancel leaves template-level dirty state alone", async (page)
     await page.locator(".slide-card.active").getAttribute("data-slide-id"),
     "tpl-slide-1"
   );
-  assert.equal(await page.locator("#slideName").inputValue(), "템플릿 저장 대기");
+  assert.equal(
+    await page.locator("#slideName").inputValue(),
+    "템플릿 첫 슬라이드"
+  );
   assert.equal(await page.locator("#editorSaveBtn").isDisabled(), true);
-  assert.equal(await page.locator("#templateSaveBtn").isEnabled(), true);
+  assert.deepEqual(
+    state.templates[0].slides.map((slide) => slide.id),
+    ["tpl-slide-2", "tpl-slide-1"],
+    "cancel must not roll back a committed template-level change"
+  );
+  assert.equal(state.counts.templateOrderPut, 1);
+  assert.equal(state.counts.templateSlidePut, 0);
   assert.equal(await page.locator("#templateWorkspaceBar").isVisible(), true);
 });
 
