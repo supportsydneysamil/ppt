@@ -177,7 +177,22 @@ describe("seasonal worship title designs", () => {
     const { x, w } = geometry(title);
     assert.ok(x >= 4.2);
     assert.ok(x + w <= 9.13);
-    assert.ok(fontSize(title) <= 27);
+    assert.equal(fontSize(title), 21);
+  });
+
+  it("keeps a long editable English title inside the inner arch", async () => {
+    const titleEn = "CELEBRATING THE RISEN CHRIST TOGETHER";
+    const xml = await render({
+      ...content,
+      titleDesign: "easter-stained",
+      titleEn,
+    });
+    const title = shapeWithText(xml, titleEn);
+    assert.ok(title);
+    const { x, w } = geometry(title);
+    assert.ok(x >= 4.2);
+    assert.ok(x + w <= 9.13);
+    assert.equal(fontSize(title), 8);
   });
 
   it("uses the specified burgundy spine and large star", async () => {

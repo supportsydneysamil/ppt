@@ -10,6 +10,8 @@ import {
   TITLE_DESIGNS,
   normalizeTitleDesign,
   buildTitleContent,
+  worshipEnFontSize,
+  worshipKoFontSize,
 } from "../lib/title-slide.js";
 
 function parse(slideXml) {
@@ -102,6 +104,40 @@ describe("buildTitleContent", () => {
       ""
     );
     assert.equal(buildTitleContent({ serviceDate: "nope" }).koDate, "");
+  });
+});
+
+describe("worship title font sizing", () => {
+  it("caps long Korean copy to the requested width", () => {
+    const text = "부활의소망을기뻐하는온가족예배";
+    const characterCount = [...text].length;
+    const maxWidthInches = 4.93;
+    const uncapped = worshipKoFontSize(text, 64);
+    const capped = worshipKoFontSize(text, 64, maxWidthInches);
+
+    assert.equal(characterCount, 15);
+    assert.equal(uncapped, 27);
+    assert.equal(capped, 21);
+    assert.ok(capped < uncapped);
+    assert.ok(
+      (characterCount * capped) / 72 <= maxWidthInches * 0.92
+    );
+  });
+
+  it("preserves legacy English sizes while optionally enforcing width", () => {
+    const text = "CELEBRATING THE RISEN CHRIST TOGETHER";
+    const characterCount = text.length;
+    const maxWidthInches = 4.93;
+
+    assert.equal(worshipEnFontSize("SUNDAY WORSHIP", 17), 17);
+    assert.equal(worshipEnFontSize("SUNDAY WORSHIP SERVICE", 17), 15);
+    assert.equal(worshipEnFontSize(text, 17), 13);
+
+    const capped = worshipEnFontSize(text, 17, maxWidthInches);
+    assert.equal(capped, 8);
+    assert.ok(
+      (characterCount * capped) / 72 <= maxWidthInches * 0.92
+    );
   });
 });
 
