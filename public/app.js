@@ -33,6 +33,13 @@ import {
   hasOwnedSlideAsset,
   insertSlideAfter,
 } from "@lib/slide-duplicate.js";
+import {
+  createCustomTitleDesignPicker,
+  restoreCustomTitleDesignEditor,
+} from "./custom-title-design-picker.js";
+import {
+  buildCustomTitleSlidePreview as buildCatalogCustomTitleSlidePreview,
+} from "./custom-title-preview.js";
 import { buildHymnSubtitle } from "@lib/cover-title-content.js";
 import {
   TEMPLATE_SCHEMA_ERROR,
@@ -922,11 +929,13 @@ const titleServiceDateSelect = document.getElementById("titleServiceDate");
 const titleSubtitleInput = document.getElementById("titleSubtitle");
 const titleSeasonSuggestBtn = document.getElementById("titleSeasonSuggestBtn");
 const customTitleSlideSettings = document.getElementById("customTitleSlideSettings");
+const customTitleDesignCategories = document.getElementById("customTitleDesignCategories");
 const customTitleDesignGrid = document.getElementById("customTitleDesignGrid");
 const customTitleDesignSelect = document.getElementById("customTitleDesign");
 const customTitleKoInput = document.getElementById("customTitleKo");
 const customTitleEnInput = document.getElementById("customTitleEn");
 const customTitleSubtitleInput = document.getElementById("customTitleSubtitle");
+let customTitleDesignPicker = null;
 const unsavedChangesModal = document.getElementById("unsavedChangesModal");
 const unsavedChangesCard = document.getElementById("unsavedChangesCard");
 const unsavedChangesMessage = document.getElementById("unsavedChangesMessage");
@@ -3698,10 +3707,7 @@ function populateEditor(
     );
     updateTitleSeasonSuggestion();
   } else if (slide.type === 'custom-title') {
-    customTitleDesignSelect.value = normalizeCustomTitleDesign(
-      slide.customTitleDesign
-    );
-    syncCustomTitleDesignCards(customTitleDesignSelect.value);
+    restoreCustomTitleDesignEditor(customTitleDesignPicker, slide);
     customTitleKoInput.value = slide.customTitleKo || '';
     customTitleEnInput.value = slide.customTitleEn || '';
     customTitleSubtitleInput.value = slide.customTitleSubtitle || '';
@@ -4248,42 +4254,18 @@ function buildTitleSlidePreview(data, previewWidth) {
 
 // --- Title (Custom) slide helpers ---
 
-const CUSTOM_TITLE_DESIGNS = ["aurora", "monolith", "ivory", "marquee"];
+function customTitleCatalogApi() {
+  return window.CustomTitleDesignCatalog || null;
+}
 
 function normalizeCustomTitleDesign(value) {
-  return CUSTOM_TITLE_DESIGNS.includes(value) ? value : "aurora";
+  const api = customTitleCatalogApi();
+  return api ? api.normalizeCustomTitleDesignId(value) : "aurora";
 }
 
 // Loaded as a module, so it lands after this script's top-level run.
 function customTitleTextApi() {
   return window.CustomTitleText || null;
-}
-
-function customTitleKoSize(text) {
-  const api = customTitleTextApi();
-  return api ? api.koTitleFontSize(text) : 70;
-}
-
-function customTitleEnSize(text) {
-  const api = customTitleTextApi();
-  return api ? api.enTitleFontSize(text) : 19;
-}
-
-function customTitleSubtitleSize(text) {
-  const api = customTitleTextApi();
-  return api ? api.subtitleFontSize(text) : 28;
-}
-
-function syncCustomTitleDesignCards(value) {
-  if (!customTitleDesignGrid) return;
-  customTitleDesignGrid
-    .querySelectorAll("[data-custom-title-design]")
-    .forEach((card) => {
-      card.classList.toggle(
-        "is-active",
-        card.dataset.customTitleDesign === value
-      );
-    });
 }
 
 function collectCustomTitleSlideData() {
@@ -4297,251 +4279,12 @@ function collectCustomTitleSlideData() {
 
 // --- Title (Custom) preview (mirrors lib/custom-title-slide.js coordinates) ---
 
-const CUSTOM_TITLE_THEMES = {
-  aurora: {
-    background:
-      "radial-gradient(72% 72% at 78% 8%, rgba(139,92,246,0.46), rgba(139,92,246,0) 72%)," +
-      "radial-gradient(78% 78% at 10% 96%, rgba(45,212,191,0.34), rgba(45,212,191,0) 72%)," +
-      "linear-gradient(135deg, #170E33 0%, #2C1A63 52%, #0C3A52 100%)",
-    koFont: TITLE_SANS,
-    koWeight: 700,
-    koColor: "#FFFFFF",
-    koTracking: 0.02,
-    koGap: 0.34,
-    dividerGap: 0.3,
-    ruleWidth: 3.4,
-    ruleWeight: 0.024,
-    ruleColor: "#8B6BFF",
-    enColor: "#C4B2FF",
-    enWeight: 700,
-    enTracking: 0.42,
-    subtitleHalo:
-      "radial-gradient(ellipse at center, rgba(196,178,255,0.15), rgba(196,178,255,0) 68%)",
-    subtitleText: "#FFFFFF",
-  },
-  monolith: {
-    background:
-      "radial-gradient(62% 62% at 50% 0%, rgba(255,255,255,0.12), rgba(255,255,255,0) 70%)," +
-      "linear-gradient(90deg, #0A0B0D 25%, #15171B 50%, #0A0B0D 75%)",
-    koFont: TITLE_SERIF,
-    koWeight: 700,
-    koColor: "#F4F1EA",
-    koTracking: 0.06,
-    koGap: 0.36,
-    dividerGap: 0.28,
-    ruleWidth: 1.1,
-    ruleWeight: 0.014,
-    ruleColor: "#9A9689",
-    enColor: "#9A9689",
-    enWeight: 400,
-    enTracking: 0.5,
-    hairline: "#2C2E33",
-    subtitleHalo:
-      "radial-gradient(ellipse at center, rgba(255,255,255,0.10), rgba(255,255,255,0) 68%)",
-    subtitleText: "#EEE9DC",
-  },
-  ivory: {
-    background: "#FAF6EF",
-    koFont: TITLE_SERIF,
-    koWeight: 700,
-    koColor: "#1F1B16",
-    koTracking: 0.04,
-    koGap: 0.32,
-    dividerGap: 0.28,
-    ruleWidth: 2.2,
-    ruleWeight: 0.017,
-    ruleColor: "#C2A87A",
-    enColor: "#907A52",
-    enWeight: 700,
-    enTracking: 0.45,
-    frame: "#C2A87A",
-    frameWeight: 0.021,
-    subtitleHalo:
-      "radial-gradient(ellipse at center, rgba(194,168,122,0.16), rgba(194,168,122,0) 68%)",
-    subtitleText: "#5F4B2C",
-  },
-  marquee: {
-    background: "#2A0F16",
-    koFont: TITLE_SERIF,
-    koWeight: 700,
-    koColor: "#F7EBDA",
-    koTracking: 0.05,
-    koGap: 0.34,
-    dividerGap: 0.3,
-    ruleWidth: 3.6,
-    ruleWeight: 0.014,
-    ruleColor: "#D9B376",
-    enColor: "#D9B376",
-    enWeight: 700,
-    enTracking: 0.48,
-    frame: "#D9B376",
-    frameWeight: 0.024,
-    diamonds: true,
-    subtitleHalo:
-      "radial-gradient(ellipse at center, rgba(217,179,118,0.12), rgba(217,179,118,0) 68%)",
-    subtitleText: "#F7EBDA",
-  },
-};
-
-function customTitleDiamond(cssText, size, color) {
-  return titlePreviewNode(
-    `position:absolute;${cssText}width:${size}px;height:${size}px;` +
-      `background:${color};transform:rotate(45deg);`
-  );
-}
-
-function addCustomTitleFrame(container, theme, unit) {
-  const { inch } = unit;
-
-  if (theme.hairline) {
-    [`top:${inch(0.45)}px`, `bottom:${inch(0.45)}px`].forEach((edge) => {
-      container.appendChild(
-        titlePreviewNode(
-          `position:absolute;${edge};left:${inch(0.45)}px;right:${inch(0.45)}px;` +
-            `height:1px;background:${theme.hairline};`
-        )
-      );
-    });
-  }
-
-  if (!theme.frame) return;
-
-  const inset = theme.diamonds ? 0.44 : 0.42;
-  container.appendChild(
-    titlePreviewNode(
-      `position:absolute;inset:${inch(inset)}px;border:${Math.max(
-        1,
-        inch(theme.frameWeight)
-      )}px solid ${theme.frame};`
-    )
-  );
-
-  if (theme.diamonds) {
-    const size = inch(0.11);
-    const offset = inch(inset) - size / 2;
-    [
-      `top:${offset}px;left:${offset}px;`,
-      `top:${offset}px;right:${offset}px;`,
-      `bottom:${offset}px;left:${offset}px;`,
-      `bottom:${offset}px;right:${offset}px;`,
-    ].forEach((position) => {
-      container.appendChild(customTitleDiamond(position, size, theme.frame));
-    });
-    return;
-  }
-
-  container.appendChild(
-    titlePreviewNode(
-      `position:absolute;inset:${inch(0.56)}px;border:1px solid ${theme.frame};`
-    )
-  );
-}
-
-function addCustomTitleSubtitleHalo(container, subtitle, theme, unit) {
-  const { inch, pt } = unit;
-  const halo = titlePreviewNode(
-    `position:absolute;left:8%;right:8%;bottom:${inch(0.55)}px;` +
-      `height:${inch(0.85)}px;display:flex;align-items:center;justify-content:center;` +
-      `box-sizing:border-box;background:${theme.subtitleHalo};border:none;z-index:2;`
-  );
-
-  halo.appendChild(
-    titlePreviewNode(
-      `position:relative;font-family:${TITLE_SANS};font-weight:700;` +
-        `font-size:${pt(customTitleSubtitleSize(subtitle))}px;line-height:1.2;` +
-        `color:${theme.subtitleText};white-space:nowrap;letter-spacing:0.08em;`,
-      subtitle
-    )
-  );
-  container.appendChild(halo);
-}
-
 function buildCustomTitleSlidePreview(data, previewWidth) {
-  const width = previewWidth || 400;
-  const perInch = width / 13.333;
-  const unit = {
-    inch: (value) => value * perInch,
-    pt: (value) => (value / 72) * perInch,
-  };
-  const { inch, pt } = unit;
-
-  const ko = (data.customTitleKo || "").trim() || "타이틀 이름";
-  const en = (data.customTitleEn || "").trim();
-  const subtitle = (data.customTitleSubtitle || "").trim();
-  const theme =
-    CUSTOM_TITLE_THEMES[normalizeCustomTitleDesign(data.customTitleDesign)];
-
-  const container = document.createElement("div");
-  container.style.cssText =
-    `position:relative;width:${width}px;height:${width * 0.5625}px;overflow:hidden;`;
-  container.style.background = theme.background;
-
-  addCustomTitleFrame(container, theme, unit);
-
-  const stackOffset = subtitle
-    ? `transform:translateY(${inch(-0.45)}px);`
-    : "";
-  const stack = titlePreviewNode(
-    "position:relative;height:100%;display:flex;flex-direction:column;" +
-      `align-items:center;justify-content:center;${stackOffset}`
-  );
-
-  const koSize = pt(customTitleKoSize(ko));
-  stack.appendChild(
-    titlePreviewNode(
-      `font-family:${theme.koFont};font-weight:${theme.koWeight};font-size:${koSize}px;` +
-        `line-height:1.22;color:${theme.koColor};white-space:nowrap;` +
-        `letter-spacing:${koSize * theme.koTracking}px;` +
-        `padding-left:${koSize * theme.koTracking}px;`,
-      ko
-    )
-  );
-
-  if (en) {
-    const rule = titlePreviewNode(
-      `position:relative;width:${inch(theme.ruleWidth)}px;` +
-        `height:${Math.max(1, inch(theme.ruleWeight))}px;background:${theme.ruleColor};` +
-        `margin-top:${inch(theme.koGap)}px;`
-    );
-
-    if (theme.diamonds) {
-      // The renderer breaks the rule for a centre diamond.
-      const size = inch(0.12);
-      rule.appendChild(
-        titlePreviewNode(
-          `position:absolute;top:0;left:50%;width:${inch(0.26)}px;height:100%;` +
-            `transform:translateX(-50%);background:${theme.background};`
-        )
-      );
-      rule.appendChild(
-        customTitleDiamond(
-          `top:${-size / 2}px;left:calc(50% - ${size / 2}px);`,
-          size,
-          theme.ruleColor
-        )
-      );
-    }
-
-    stack.appendChild(rule);
-
-    const enSize = pt(customTitleEnSize(en));
-    stack.appendChild(
-      titlePreviewNode(
-        `font-family:${TITLE_LATIN};font-weight:${theme.enWeight};font-size:${enSize}px;` +
-          `line-height:1.5;color:${theme.enColor};white-space:nowrap;` +
-          `letter-spacing:${enSize * theme.enTracking}px;` +
-          `padding-left:${enSize * theme.enTracking}px;` +
-          `margin-top:${inch(theme.dividerGap)}px;`,
-        en.toUpperCase()
-      )
-    );
-  }
-
-  container.appendChild(stack);
-  if (subtitle) {
-    addCustomTitleSubtitleHalo(container, subtitle, theme, unit);
-  }
-  return container;
+  return buildCatalogCustomTitleSlidePreview(data, previewWidth, {
+    document,
+    catalogApi: customTitleCatalogApi(),
+    textApi: customTitleTextApi() || undefined,
+  });
 }
 
 // --- Custom (WYSIWYG) slide editor integration ---
@@ -6687,16 +6430,20 @@ function maybeAutoNameCustomTitleSlide() {
   if (ko) slideNameInput.value = ko;
 }
 
-if (customTitleDesignGrid) {
-  customTitleDesignGrid.addEventListener('click', (event) => {
-    const card = event.target.closest('[data-custom-title-design]');
-    if (!card) return;
-    customTitleDesignSelect.value = normalizeCustomTitleDesign(
-      card.dataset.customTitleDesign
-    );
-    syncCustomTitleDesignCards(customTitleDesignSelect.value);
-    renderPreview();
-    refreshSaveState();
+if (
+  customTitleDesignCategories &&
+  customTitleDesignGrid &&
+  customTitleDesignSelect
+) {
+  customTitleDesignPicker = createCustomTitleDesignPicker({
+    document,
+    categoryGroup: customTitleDesignCategories,
+    designGrid: customTitleDesignGrid,
+    designSelect: customTitleDesignSelect,
+    catalogApi: customTitleCatalogApi(),
+    buildPreview: buildCustomTitleSlidePreview,
+    render: renderPreview,
+    refreshDirty: refreshSaveState,
   });
 }
 

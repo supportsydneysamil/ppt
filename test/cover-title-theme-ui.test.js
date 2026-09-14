@@ -334,8 +334,12 @@ describe("cover title theme picker UI", () => {
     );
   });
 
-  it("formats original and themed hymn subtitles identically without cropping", () => {
+  it("renders all four themed hymn covers without a catalog API", async () => {
     const document = createDocument();
+    const { buildThemedHymnTitleSlidePreview: buildThemed } = await import(
+      "../public/custom-title-preview.js"
+    );
+    const catalogApi = await import("../lib/custom-title-design-catalog.js");
     const buildHymnSubtitle = (data) =>
       buildCoverTitleContent("hymn", data).subtitle;
     const original = compileFunction(
@@ -343,39 +347,37 @@ describe("cover title theme picker UI", () => {
       ["hymnNumber", "korTitle", "engTitle"],
       { document, buildHymnSubtitle }
     );
-    const themed = compileFunction(
-      "buildThemedHymnTitleSlidePreview",
-      ["titleThemeId", "hymnNumber", "korTitle", "engTitle", "previewWidth"],
-      {
-        buildHymnSubtitle,
-        normalizeCoverTitleThemeId: (value) => value,
-        buildCustomTitleSlidePreview(data, width) {
-          const node = document.createElement("div");
-          node.style.width = `${width}px`;
-          node.style.height = `${width * 0.5625}px`;
-          node.previewData = data;
-          return node;
-        },
-      }
-    );
-
     const originalNode = original(1, "  찬양하라  ", "  Praise Him  ");
-    const themedNode = themed(
-      "aurora",
-      1,
-      "  찬양하라  ",
-      "  Praise Him  ",
-      640
-    );
-
     assert.equal(originalNode.children[1].textContent, "1. 찬양하라\n(Praise Him)");
-    assert.equal(
-      themedNode.previewData.customTitleSubtitle,
-      "1. 찬양하라\n(Praise Him)"
-    );
-    assert.equal(themedNode.style.width, "100%");
-    assert.equal(themedNode.style.aspectRatio, "16 / 9");
-    assert.equal(themedNode.style.marginBottom, "8px");
-    assert.equal(themedNode.style.borderRadius, "4px");
+
+    for (const themeId of ["aurora", "monolith", "ivory", "marquee"]) {
+      for (const api of [null, catalogApi]) {
+        let themedNode;
+        assert.doesNotThrow(() => {
+          themedNode = buildThemed(
+            themeId,
+            1,
+            "  찬양하라  ",
+            "  Praise Him  ",
+            640,
+            { document, catalogApi: api }
+          );
+        });
+        assert.equal(themedNode.dataset.customTitleDesign, themeId);
+        assert.equal(
+          themedNode.querySelectorAll("[data-custom-title-family-motif]").length,
+          0,
+          `${themeId} hymn/scripture cover must keep the legacy frame only`
+        );
+        assert.equal(
+          themedNode.querySelector("[data-custom-title-subtitle]").textContent,
+          "1. 찬양하라\n(Praise Him)"
+        );
+        assert.equal(themedNode.style.width, "100%");
+        assert.equal(themedNode.style.aspectRatio, "16 / 9");
+        assert.equal(themedNode.style.marginBottom, "8px");
+        assert.equal(themedNode.style.borderRadius, "4px");
+      }
+    }
   });
 });
