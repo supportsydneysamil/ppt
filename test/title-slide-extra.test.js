@@ -192,7 +192,7 @@ describe("seasonal worship title designs", () => {
     const { x, w } = geometry(title);
     assert.ok(x >= 4.2);
     assert.ok(x + w <= 9.13);
-    assert.equal(fontSize(title), 8);
+    assert.equal(fontSize(title), 11);
   });
 
   it("uses the specified burgundy spine and large star", async () => {

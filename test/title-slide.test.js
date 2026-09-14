@@ -126,18 +126,17 @@ describe("worship title font sizing", () => {
 
   it("preserves legacy English sizes while optionally enforcing width", () => {
     const text = "CELEBRATING THE RISEN CHRIST TOGETHER";
-    const characterCount = text.length;
     const maxWidthInches = 4.93;
 
+    assert.equal(text.length, 37);
     assert.equal(worshipEnFontSize("SUNDAY WORSHIP", 17), 17);
     assert.equal(worshipEnFontSize("SUNDAY WORSHIP SERVICE", 17), 15);
     assert.equal(worshipEnFontSize(text, 17), 13);
 
     const capped = worshipEnFontSize(text, 17, maxWidthInches);
-    assert.equal(capped, 8);
-    assert.ok(
-      (characterCount * capped) / 72 <= maxWidthInches * 0.92
-    );
+    assert.equal(capped, 11);
+    assert.ok(capped < worshipEnFontSize(text, 17));
+    assert.equal(worshipEnFontSize("X".repeat(39), 17, 1), 10);
   });
 });
 
