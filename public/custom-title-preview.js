@@ -178,6 +178,7 @@ function motifNode(document, family, style) {
 }
 
 function addFamilyMotif(container, design, unit, document) {
+  if (LEGACY_THEMES[design.id]) return;
   const { inch } = unit;
   const family = design.layoutFamily;
   const source = design.theme || {};
