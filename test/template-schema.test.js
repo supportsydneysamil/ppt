@@ -1,0 +1,192 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+
+import {
+  TEMPLATE_SCHEMA_KIND,
+  TEMPLATE_SCHEMA_VERSION,
+  TEMPLATE_SCHEMA_ERROR,
+  toPortableTemplateSchema,
+  unrestorableSlideNames,
+  parseTemplateSchema,
+  templateSchemaFilename,
+} from "../lib/template-schema.js";
+
+function baseSlide(overrides = {}) {
+  return {
+    id: "slide-local",
+    name: "타이틀",
+    type: "title",
+    sourceType: "basic",
+    content: "본문",
+    churchName: "Sydney 삼일교회",
+    serviceDate: "2026-09-20",
+    titleDesign: "glow",
+    serverFilePath: null,
+    thumbnail: null,
+    originalUrl: null,
+    hymnNumber: null,
+    adBgSource: "none",
+    adBgImagePath: null,
+    customImageData: null,
+    customSlide: null,
+    ...overrides,
+  };
+}
+
+test("toPortableTemplateSchema writes version 1 and drops local paths", () => {
+  const doc = toPortableTemplateSchema({
+    id: "template-local",
+    name: "주일 예배",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    slides: [
+      baseSlide({
+        name: "찬송",
+        type: "hymn",
+        sourceType: "upload",
+        fileName: "nhymn25.ppt",
+        fileSaved: true,
+        serverFilePath: "/uploads/hymn.ppt",
+        thumbnail: "/uploads/hymn.ppt-thumb.jpeg",
+        hymnNumber: "25",
+        originalUrl: "https://example.test/nhymn25.ppt",
+      }),
+      baseSlide({
+        name: "올린 파일",
+        type: "simple",
+        sourceType: "upload",
+        fileName: "wide.pptx",
+        serverFilePath: "/uploads/wide.pptx",
+        thumbnail: "/uploads/wide-thumb.jpeg",
+      }),
+      baseSlide({
+        name: "광고",
+        type: "ad",
+        adBgSource: "file",
+        adBgImagePath: "/uploads/bg.png",
+        adTitle: "주보",
+      }),
+    ],
+  });
+
+  assert.equal(doc.kind, TEMPLATE_SCHEMA_KIND);
+  assert.equal(doc.version, TEMPLATE_SCHEMA_VERSION);
+  assert.equal(doc.version, 1);
+  assert.match(doc.exportedAt, /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal(doc.template.name, "주일 예배");
+  assert.equal("id" in doc.template, false);
+  assert.equal("createdAt" in doc.template, false);
+
+  const [hymn, uploaded, ad] = doc.template.slides;
+  assert.equal("id" in hymn, false);
+  assert.equal(hymn.serverFilePath, null);
+  assert.equal(hymn.thumbnail, null);
+  assert.equal(hymn.fileSaved, false);
+  assert.equal(hymn.hymnNumber, "25");
+  assert.equal(hymn.originalUrl, "https://example.test/nhymn25.ppt");
+  assert.equal(hymn.fileName, "nhymn25.ppt");
+  assert.equal(uploaded.serverFilePath, null);
+  assert.equal(ad.adBgImagePath, null);
+  assert.equal(ad.adTitle, "주보");
+});
+
+test("unrestorableSlideNames skips hymns with originalUrl", () => {
+  const names = unrestorableSlideNames([
+    baseSlide({
+      name: "찬송",
+      type: "hymn",
+      sourceType: "upload",
+      fileName: "nhymn25.ppt",
+      serverFilePath: "/uploads/hymn.ppt",
+      originalUrl: "https://example.test/nhymn25.ppt",
+    }),
+    baseSlide({
+      name: "올린 파일",
+      type: "simple",
+      sourceType: "upload",
+      fileName: "wide.pptx",
+      serverFilePath: "/uploads/wide.pptx",
+    }),
+    baseSlide({
+      name: "광고",
+      type: "ad",
+      adBgSource: "file",
+      adBgImagePath: "/uploads/bg.png",
+    }),
+    baseSlide({
+      name: "커스텀",
+      type: "custom",
+      customSlide: {
+        width: 1280,
+        height: 720,
+        background: "#ffffff",
+        elements: [{ id: "img-1", type: "image", src: "/uploads/pic.png" }],
+      },
+    }),
+  ]);
+
+  assert.deepEqual(names, ["올린 파일", "광고", "커스텀"]);
+});
+
+test("parseTemplateSchema rejects bad files and newer versions", () => {
+  assert.equal(parseTemplateSchema("{").ok, false);
+  assert.equal(parseTemplateSchema("{").code, TEMPLATE_SCHEMA_ERROR.INVALID_JSON);
+
+  const valid = toPortableTemplateSchema({
+    name: "주일 예배",
+    slides: [baseSlide()],
+  });
+
+  assert.equal(
+    parseTemplateSchema(JSON.stringify({ ...valid, kind: "nope" })).code,
+    TEMPLATE_SCHEMA_ERROR.KIND
+  );
+
+  const noVersion = { ...valid };
+  delete noVersion.version;
+  assert.equal(
+    parseTemplateSchema(JSON.stringify(noVersion)).code,
+    TEMPLATE_SCHEMA_ERROR.VERSION_INVALID
+  );
+
+  assert.equal(
+    parseTemplateSchema(JSON.stringify({ ...valid, version: 2 })).code,
+    TEMPLATE_SCHEMA_ERROR.VERSION_TOO_NEW
+  );
+  assert.match(
+    parseTemplateSchema(JSON.stringify({ ...valid, version: 2 })).message,
+    /업데이트/
+  );
+
+  assert.equal(
+    parseTemplateSchema(JSON.stringify({ ...valid, template: { name: "", slides: [baseSlide()] } })).code,
+    TEMPLATE_SCHEMA_ERROR.NAME
+  );
+  assert.equal(
+    parseTemplateSchema(JSON.stringify({ ...valid, template: { name: "A", slides: [] } })).code,
+    TEMPLATE_SCHEMA_ERROR.SLIDES
+  );
+});
+
+test("parseTemplateSchema accepts v1 and returns portable slides", () => {
+  const text = JSON.stringify(
+    toPortableTemplateSchema({
+      name: "주일 예배",
+      slides: [
+        baseSlide({
+          serverFilePath: "/uploads/stale.pptx",
+          customImageData: "/uploads/bg.png",
+        }),
+      ],
+    })
+  );
+  const result = parseTemplateSchema(text);
+  assert.equal(result.ok, true);
+  assert.equal(result.schema.version, 1);
+  assert.equal(result.schema.template.slides[0].serverFilePath, null);
+  assert.equal(result.schema.template.slides[0].customImageData, null);
+});
+
+test("templateSchemaFilename sanitizes the name", () => {
+  assert.equal(templateSchemaFilename("주일 예배"), "주일 예배.samil-template.json");
+  assert.equal(templateSchemaFilename("a/b:c"), "a_b_c.samil-template.json");
+});
