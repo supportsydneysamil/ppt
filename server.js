@@ -27,6 +27,10 @@ import {
 } from "./lib/template-store.js";
 import { appendCustomSlide } from "./lib/custom-slide-pptx.js";
 import { appendCustomTitleSlide } from "./lib/custom-title-slide.js";
+import {
+  appendThemedCoverTitleSlide,
+  normalizeTitleThemeId,
+} from "./lib/cover-title-slide.js";
 import { convertLegacyPptToPptx } from "./lib/legacy-ppt.js";
 import { mergePptxBuffers } from "./lib/merge-pptx.js";
 import { fetchRemoteImage, sniffImageMimeType } from "./lib/remote-image.js";
@@ -34,7 +38,21 @@ import { appendTitleSlide } from "./lib/title-slide.js";
 
 const execAsync = promisify(exec);
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+async function canonicalPath(value) {
+  const resolved = path.resolve(value);
+  try {
+    return await fs.realpath(resolved);
+  } catch {
+    return resolved;
+  }
+}
+
+const modulePath = await canonicalPath(fileURLToPath(import.meta.url));
+const directRunPath = process.argv[1]
+  ? await canonicalPath(process.argv[1])
+  : null;
+const __dirname = path.dirname(modulePath);
+const isDirectRun = directRunPath === modulePath;
 const app = express();
 const PORT = process.env.PORT || 3000;
 const BASE_URLS = {
@@ -89,12 +107,14 @@ const hymnTitleBandImagePath = path.join(
 const scriptureSessions = new Map();
 
 // Ensure structure exists
-(async () => {
-  try { await fs.access(uploadsDir); } catch { await fs.mkdir(uploadsDir, { recursive: true }); }
-  try { await fs.access(path.dirname(slidesPath)); } catch { await fs.mkdir(path.dirname(slidesPath), { recursive: true }); }
-  try { await fs.access(slidesPath); } catch { await fs.writeFile(slidesPath, "[]", "utf-8"); }
-  try { await fs.access(templatesPath); } catch { await fs.writeFile(templatesPath, "[]", "utf-8"); }
-})();
+if (isDirectRun) {
+  (async () => {
+    try { await fs.access(uploadsDir); } catch { await fs.mkdir(uploadsDir, { recursive: true }); }
+    try { await fs.access(path.dirname(slidesPath)); } catch { await fs.mkdir(path.dirname(slidesPath), { recursive: true }); }
+    try { await fs.access(slidesPath); } catch { await fs.writeFile(slidesPath, "[]", "utf-8"); }
+    try { await fs.access(templatesPath); } catch { await fs.writeFile(templatesPath, "[]", "utf-8"); }
+  })();
+}
 
 const booksData = JSON.parse(await fs.readFile(booksPath, "utf-8"));
 const hymnsData = JSON.parse(await fs.readFile(hymnsPath, "utf-8"));
@@ -408,12 +428,25 @@ async function buffersForSlide(slideData, warnings) {
   if (slideData.type === "hymn" && slideData.includeTitle) {
     buffers.push(
       await writeGeneratedDeck((pptx) => {
-        addHymnTitleSlide(
-          pptx,
-          slideData.hymnNumber,
-          slideData.hymnKorTitle,
-          slideData.hymnEngTitle
-        );
+        const titleThemeId = normalizeTitleThemeId(slideData.titleThemeId);
+        if (titleThemeId === "original") {
+          addHymnTitleSlide(
+            pptx,
+            slideData.hymnNumber,
+            slideData.hymnKorTitle,
+            slideData.hymnEngTitle
+          );
+        } else {
+          appendThemedCoverTitleSlide(pptx, {
+            titleThemeId,
+            kind: "hymn",
+            data: {
+              hymnNumber: slideData.hymnNumber,
+              hymnKorTitle: slideData.hymnKorTitle,
+              hymnEngTitle: slideData.hymnEngTitle,
+            },
+          });
+        }
       })
     );
   }
@@ -467,7 +500,7 @@ async function buffersForSlide(slideData, warnings) {
 
 // `warnings` collects the pictures that were skipped, so a combined deck can
 // report the same count as a single custom slide download.
-async function buildCombinedSlidesDeck(slides, warnings) {
+export async function buildCombinedSlidesDeck(slides, warnings) {
   const buffers = [];
   for (const rawSlide of slides) {
     buffers.push(
@@ -1219,6 +1252,7 @@ async function writeScripturePptxFile(body, slideName) {
   const pptx = buildPptx(payload, theme, {
     includeTitleSlide,
     titleSlideType,
+    titleThemeId: body?.titleThemeId,
     referenceText: buildScriptureReferenceText(payload.meta, body),
   });
 
@@ -1594,7 +1628,7 @@ function buildUploadSlideRecord({
   };
 }
 
-function buildPptx(payload, theme, options = {}) {
+export function buildPptx(payload, theme, options = {}) {
   const pptx = new PptxGenJS();
   pptx.layout = "LAYOUT_WIDE";
 
@@ -1611,10 +1645,24 @@ function buildPptx(payload, theme, options = {}) {
   const slideTheme = theme || getPptxTheme("dark");
 
   if (options.includeTitleSlide) {
-    if (options.titleSlideType === "봉독") {
-      addScriptureBongdokTitleSlide(pptx, payload, layout, options.referenceText);
+    const titleThemeId = normalizeTitleThemeId(options.titleThemeId);
+    if (titleThemeId === "original") {
+      if (options.titleSlideType === "봉독") {
+        addScriptureBongdokTitleSlide(pptx, payload, layout, options.referenceText);
+      } else {
+        addScriptureTitleSlide(pptx, payload, layout, options.referenceText);
+      }
     } else {
-      addScriptureTitleSlide(pptx, payload, layout, options.referenceText);
+      appendThemedCoverTitleSlide(pptx, {
+        titleThemeId,
+        kind:
+          options.titleSlideType === "봉독"
+            ? "scripture-reading"
+            : "scripture",
+        data: {
+          referenceText: options.referenceText,
+        },
+      });
     }
   }
 
@@ -2718,7 +2766,7 @@ async function extractThumbnail(filePath, uploadsDir) {
 
 const publicDir = path.join(__dirname, "public");
 const distDir = path.join(__dirname, "dist");
-const httpServer = http.createServer(app);
+const httpServer = isDirectRun ? http.createServer(app) : null;
 
 async function mountFrontend() {
   if (process.env.ENABLE_VITE === "1") {
@@ -2737,8 +2785,9 @@ async function mountFrontend() {
   app.use(express.static(publicDir));
 }
 
-await mountFrontend();
-
-httpServer.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server running on http://0.0.0.0:${PORT}`);
-});
+if (isDirectRun) {
+  await mountFrontend();
+  httpServer.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://0.0.0.0:${PORT}`);
+  });
+}
