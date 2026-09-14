@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 
 import {
@@ -82,8 +84,25 @@ const EXPECTED_ASSETS = {
   "cobalt-ripple": "assets/custom-title/cobalt-ripple.png",
 };
 
+const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
 function keys(value) {
   return Object.keys(value).sort();
+}
+
+function assetFile(assetPath) {
+  return fileURLToPath(new URL(`../public/${assetPath}`, import.meta.url));
+}
+
+/** Pixel size straight out of the PNG header, or null if it is not a PNG. */
+function pngHeaderSize(buffer) {
+  if (buffer.length < 24 || !buffer.subarray(0, 8).equals(PNG_MAGIC)) {
+    return null;
+  }
+  if (buffer.subarray(12, 16).toString("latin1") !== "IHDR") {
+    return null;
+  }
+  return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
 }
 
 describe("custom title design categories", () => {
@@ -271,6 +290,28 @@ describe("custom title asset paths", () => {
         { width: design.asset.width, height: design.asset.height },
         { width: 1280, height: 720 },
         `${design.id} metadata must match its generated source`
+      );
+    }
+  });
+
+  it("ships every declared asset as a PNG of its declared size", () => {
+    for (const design of CUSTOM_TITLE_DESIGN_CATALOG) {
+      if (!design.asset) {
+        continue;
+      }
+
+      const file = assetFile(design.asset.path);
+      assert.ok(existsSync(file), `${design.id} asset must exist at ${file}`);
+
+      const size = pngHeaderSize(readFileSync(file));
+      assert.ok(
+        size,
+        `${design.id} asset must really be a PNG, not just named one`
+      );
+      assert.deepEqual(
+        size,
+        { width: design.asset.width, height: design.asset.height },
+        `${design.id} metadata must match the file's own pixels`
       );
     }
   });
