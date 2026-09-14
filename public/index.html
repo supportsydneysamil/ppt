@@ -295,7 +295,32 @@
             <div class="slide-list-title-wrap">
               <h3>슬라이드 목록</h3>
             </div>
-            <button id="addSlideBtn" class="ghost small">추가</button>
+            <div class="add-slide-control">
+              <div class="split-btn">
+                <button id="addSlideBtn" type="button" class="ghost small">추가</button>
+                <button
+                  id="addSlideMenuBtn"
+                  type="button"
+                  class="ghost small split-btn-caret"
+                  aria-haspopup="menu"
+                  aria-expanded="false"
+                  aria-label="추가 위치 선택"
+                >
+                  <span class="dropdown-caret" aria-hidden="true">▾</span>
+                </button>
+              </div>
+              <div id="addSlideDropdown" class="bulk-dropdown" hidden role="menu">
+                <button id="addSlideAfterBtn" type="button" class="bulk-dropdown-item" role="menuitem">
+                  아래에 추가
+                </button>
+                <button id="addSlideBeforeBtn" type="button" class="bulk-dropdown-item" role="menuitem">
+                  위에 추가
+                </button>
+                <button id="addSlideEndBtn" type="button" class="bulk-dropdown-item" role="menuitem">
+                  맨 아래에 추가
+                </button>
+              </div>
+            </div>
           </div>
           <div class="slide-list-toolbar">
             <label class="selection-toggle">

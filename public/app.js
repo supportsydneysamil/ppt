@@ -805,6 +805,11 @@ const templateDeleteBtn = document.getElementById("templateDeleteBtn");
 const slideEditor = document.getElementById("slideEditor");
 const emptyEditorState = document.getElementById("emptyEditorState");
 const addSlideBtn = document.getElementById("addSlideBtn");
+const addSlideMenuBtn = document.getElementById("addSlideMenuBtn");
+const addSlideDropdown = document.getElementById("addSlideDropdown");
+const addSlideAfterBtn = document.getElementById("addSlideAfterBtn");
+const addSlideBeforeBtn = document.getElementById("addSlideBeforeBtn");
+const addSlideEndBtn = document.getElementById("addSlideEndBtn");
 const editorSaveBtn = document.getElementById("editorSaveBtn");
 const editorResetBtn = document.getElementById("editorResetBtn");
 const editorCancelBtn = document.getElementById("editorCancelBtn");
@@ -2409,6 +2414,7 @@ function hasPendingSelectionEdits() {
 }
 
 function updateSlideListControls() {
+  updateAddSlideMenuState();
   const total = slides.length;
   const selectedCount = selectedSlideIds.size;
   const allSelected = total > 0 && selectedCount === total;
@@ -2442,6 +2448,29 @@ function updateSlideListControls() {
 function closeBulkDropdown() {
   if (bulkActionDropdown) bulkActionDropdown.hidden = true;
   if (bulkActionMenuBtn) bulkActionMenuBtn.classList.remove("open");
+}
+
+function openAddSlideDropdown() {
+  if (!addSlideDropdown) return;
+  addSlideDropdown.hidden = false;
+  addSlideMenuBtn.setAttribute("aria-expanded", "true");
+}
+
+function closeAddSlideDropdown() {
+  if (!addSlideDropdown) return;
+  addSlideDropdown.hidden = true;
+  addSlideMenuBtn.setAttribute("aria-expanded", "false");
+}
+
+// Relative placement needs a slide to anchor to; without one only the
+// append-to-end entry means anything.
+function updateAddSlideMenuState() {
+  const hasAnchor = Boolean(currentSlideId);
+  [addSlideAfterBtn, addSlideBeforeBtn].forEach((btn) => {
+    if (!btn) return;
+    btn.disabled = !hasAnchor;
+    btn.title = hasAnchor ? "" : "슬라이드를 먼저 선택하세요";
+  });
 }
 
 function toggleSlideSelection(id, forceValue) {
@@ -2567,13 +2596,27 @@ function getSlideTypeLabel(slide) {
 
 // Guarded before the draft exists so a cancelled popup cannot leave an
 // orphan slide behind.
-function createSlide() {
+// The position is applied inside the transition, not at click time: the guard
+// can discard the slide being edited, so the anchor is only known once the
+// popup has settled.
+function createSlide(position = "after") {
   return guardTransition(async () => {
-    appendNewSlide();
+    appendNewSlide(position);
   });
 }
 
-function appendNewSlide() {
+function resolveInsertIndex(position) {
+  if (position === "end" || !currentSlideId) {
+    return slides.length;
+  }
+  const index = slides.findIndex((slide) => slide.id === currentSlideId);
+  if (index < 0) {
+    return slides.length;
+  }
+  return position === "before" ? index : index + 1;
+}
+
+function appendNewSlide(position = "end") {
   const newSlide = {
     id: generateClientId("slide"),
     name: "새 슬라이드",
@@ -2607,7 +2650,7 @@ function appendNewSlide() {
     customTitleSubtitle: "",
     customSlide: emptyCustomSlideModel(),
   };
-  slides.push(newSlide);
+  slides.splice(resolveInsertIndex(position), 0, newSlide);
   // Do NOT save to storage yet
   applySlideSelection(newSlide.id);
   refreshSaveState();
@@ -5719,7 +5762,28 @@ async function downloadSelectedSlidesBundle() {
 
 // --- Event Listeners ---
 
-addSlideBtn.addEventListener("click", createSlide);
+addSlideBtn.addEventListener("click", () => createSlide());
+addSlideMenuBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (addSlideDropdown.hidden) {
+    closeBulkDropdown();
+    openAddSlideDropdown();
+  } else {
+    closeAddSlideDropdown();
+  }
+});
+addSlideAfterBtn.addEventListener("click", () => {
+  closeAddSlideDropdown();
+  createSlide("after");
+});
+addSlideBeforeBtn.addEventListener("click", () => {
+  closeAddSlideDropdown();
+  createSlide("before");
+});
+addSlideEndBtn.addEventListener("click", () => {
+  closeAddSlideDropdown();
+  createSlide("end");
+});
 
 editorSaveBtn.addEventListener("click", () => saveCurrentSlide());
 editorResetBtn.addEventListener("click", resetCurrentSlide);
@@ -5791,6 +5855,7 @@ bulkActionMenuBtn.addEventListener("click", (e) => {
     closeBulkDropdown();
   } else {
     closeBulkDropdown();
+    closeAddSlideDropdown();
     bulkActionDropdown.hidden = false;
     bulkActionMenuBtn.classList.add("open");
   }
@@ -5802,8 +5867,24 @@ document.addEventListener("click", (e) => {
       closeBulkDropdown();
     }
   }
+  if (addSlideDropdown && !addSlideDropdown.hidden) {
+    if (!addSlideMenuBtn.contains(e.target) && !addSlideDropdown.contains(e.target)) {
+      closeAddSlideDropdown();
+    }
+  }
   if (templateGalleryGrid && !templateGalleryGrid.contains(e.target)) {
     closeTemplateCardMenus();
+  }
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (addSlideDropdown && !addSlideDropdown.hidden) {
+    closeAddSlideDropdown();
+    addSlideMenuBtn.focus();
+  }
+  if (bulkActionDropdown && !bulkActionDropdown.hidden) {
+    closeBulkDropdown();
   }
 });
 
