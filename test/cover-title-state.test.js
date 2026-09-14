@@ -71,13 +71,22 @@ describe("cover title theme browser state", () => {
     );
 
     const saveBody = functionBody(app, "saveCurrentSlide");
-    assert.ok(
-      (
-        saveBody.match(
-          /slide\.titleThemeId\s*=\s*slide\.titleThemeId\s*\|\|\s*["']original["']/g
-        ) || []
-      ).length >= 2,
-      "hymn and scripture saves must both preserve the cover theme"
+    const hymnBranch = saveBody.slice(
+      saveBody.indexOf("} else if (slide.type === 'hymn')"),
+      saveBody.indexOf("} else if (slide.type === 'scripture')")
+    );
+    const scriptureBranch = saveBody.slice(
+      saveBody.indexOf("} else if (slide.type === 'scripture')"),
+      saveBody.indexOf("} else if (slide.type === 'ad')")
+    );
+
+    assert.match(
+      hymnBranch,
+      /slide\.titleThemeId\s*=\s*slide\.titleThemeId\s*\|\|\s*["']original["']/
+    );
+    assert.match(
+      scriptureBranch,
+      /slide\.titleThemeId\s*=\s*slide\.titleThemeId\s*\|\|\s*["']original["']/
     );
   });
 
@@ -85,6 +94,53 @@ describe("cover title theme browser state", () => {
     assert.match(
       functionBody(app, "buildSerializableSlide"),
       /titleThemeId:\s*slide\.titleThemeId\s*\|\|\s*["']original["']/
+    );
+  });
+
+  it("routes clone boundaries through the canonical serializer", () => {
+    assert.match(
+      functionBody(app, "cloneSlide"),
+      /buildSerializableSlide\(slide\)/
+    );
+    assert.match(
+      functionBody(app, "cloneTemplate"),
+      /template\.slides\.map\(\(slide\)\s*=>\s*cloneSlide\(slide\)\)/
+    );
+    assert.match(
+      functionBody(app, "duplicateCurrentSlide"),
+      /slide:\s*buildSerializableSlide\(draft\)/
+    );
+  });
+
+  it("routes template persistence through the canonical serializer", () => {
+    const commitBody = functionBody(app, "commitSlideCandidate");
+    assert.match(
+      commitBody,
+      /slide:\s*buildSerializableSlide\(candidate\)/
+    );
+    assert.match(
+      commitBody,
+      /nextSlides\.map\(buildSerializableSlide\)/
+    );
+    assert.match(
+      functionBody(app, "createTemplateFromSelection"),
+      /slides:\s*selectedSlides\.map\(buildSerializableSlide\)/
+    );
+  });
+
+  it("routes individual and bulk cover exports through the canonical serializer", () => {
+    const individualExport = functionBody(app, "downloadSlide");
+    assert.match(individualExport, /["']\/api\/slides\/export-pptx["']/);
+    assert.match(
+      individualExport,
+      /slides:\s*\[buildSerializableSlide\(slide\)\]/
+    );
+
+    const bulkExport = functionBody(app, "downloadSelectedSlidesBundle");
+    assert.match(bulkExport, /["']\/api\/slides\/export-pptx["']/);
+    assert.match(
+      bulkExport,
+      /slides:\s*selectedSlides\.map\(buildSerializableSlide\)/
     );
   });
 
