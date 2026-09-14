@@ -10,12 +10,20 @@ import {
 } from "../lib/custom-title-slide.js";
 import * as customTitleText from "../lib/custom-title-text.js";
 
-async function render(slide) {
+async function renderArchive(slide) {
   const pptx = new PptxGenJS();
   pptx.layout = "LAYOUT_WIDE";
   appendCustomTitleSlide(pptx, slide);
   const buffer = await pptx.write({ outputType: "nodebuffer" });
-  return new AdmZip(buffer).readAsText("ppt/slides/slide1.xml");
+  const zip = new AdmZip(buffer);
+  return {
+    zip,
+    slideXml: zip.readAsText("ppt/slides/slide1.xml"),
+  };
+}
+
+async function render(slide) {
+  return (await renderArchive(slide)).slideXml;
 }
 
 function dividerCount(slideXml) {
@@ -30,6 +38,13 @@ function shapeByName(slideXml, name) {
   return Array.from(parse(slideXml).getElementsByTagName("p:sp")).find(
     (shape) =>
       shape.getElementsByTagName("p:cNvPr")[0]?.getAttribute("name") === name
+  );
+}
+
+function pictureByName(slideXml, name) {
+  return Array.from(parse(slideXml).getElementsByTagName("p:pic")).find(
+    (picture) =>
+      picture.getElementsByTagName("p:cNvPr")[0]?.getAttribute("name") === name
   );
 }
 
@@ -52,8 +67,20 @@ function textMetrics(shape) {
     y: Number((Number(offset.getAttribute("y")) / 914400).toFixed(2)),
     w: Number((Number(extent.getAttribute("cx")) / 914400).toFixed(2)),
     h: Number((Number(extent.getAttribute("cy")) / 914400).toFixed(2)),
-    fontSize: Number(run.getAttribute("sz")) / 100,
+    fontSize: run ? Number(run.getAttribute("sz")) / 100 : 0,
   };
+}
+
+function haloSvg(zip) {
+  const entry = zip
+    .getEntries()
+    .find(
+      ({ entryName }) =>
+        entryName.startsWith("ppt/media/") &&
+        entryName.endsWith(".svg") &&
+        zip.readAsText(entryName).includes('id="subtitle-halo"')
+    );
+  return entry ? zip.readAsText(entry.entryName) : "";
 }
 
 describe("subtitleFontSize", () => {
@@ -68,12 +95,12 @@ describe("subtitleFontSize", () => {
 });
 
 describe("appendCustomTitleSlide", () => {
-  it("renders a fixed lower panel and shifts the title stack in every design", async () => {
-    const fills = {
-      aurora: "170E33",
-      monolith: "111216",
-      ivory: "F2EADC",
-      marquee: "34131C",
+  it("renders one theme-tinted lower halo and shifts the title stack", async () => {
+    const themes = {
+      aurora: { color: "C4B2FF", opacity: "0.15" },
+      monolith: { color: "FFFFFF", opacity: "0.10" },
+      ivory: { color: "C2A87A", opacity: "0.16" },
+      marquee: { color: "D9B376", opacity: "0.12" },
     };
 
     for (const customTitleDesign of CUSTOM_TITLE_DESIGNS) {
@@ -82,17 +109,23 @@ describe("appendCustomTitleSlide", () => {
         customTitleKo: "성찬 예배",
         customTitleEn: "Holy Communion",
       });
-      const subtitleXml = await render({
+      const { zip, slideXml } = await renderArchive({
         customTitleDesign,
         customTitleKo: "성찬 예배",
         customTitleEn: "Holy Communion",
         customTitleSubtitle: "한 몸을 이루는 교회",
       });
 
-      const subtitle = shapeByName(
-        subtitleXml,
-        "custom-title:subtitle-text"
-      );
+      const halo = pictureByName(slideXml, "custom-title:subtitle-halo");
+      const subtitle = shapeByName(slideXml, "custom-title:subtitle-text");
+      assert.ok(halo, `${customTitleDesign} halo image must exist`);
+      assert.deepEqual(textMetrics(halo), {
+        x: 1.07,
+        y: 6.1,
+        w: 11.19,
+        h: 0.85,
+        fontSize: 0,
+      });
       assert.ok(subtitle, `${customTitleDesign} subtitle text must exist`);
       assert.deepEqual(textMetrics(subtitle), {
         x: 1.07,
@@ -103,52 +136,26 @@ describe("appendCustomTitleSlide", () => {
       });
 
       const baselineKo = textMetrics(shapeWithText(baselineXml, "성찬 예배"));
-      const subtitleKo = textMetrics(shapeWithText(subtitleXml, "성찬 예배"));
+      const subtitleKo = textMetrics(shapeWithText(slideXml, "성찬 예배"));
       assert.equal(
         Number((subtitleKo.y - baselineKo.y).toFixed(2)),
         -0.45,
         `${customTitleDesign} title stack must move up`
       );
 
-      const panel = shapeByName(subtitleXml, "custom-title:subtitle-panel");
-      assert.ok(panel, `${customTitleDesign} subtitle panel must exist`);
-      assert.match(panel.toString(), new RegExp(`val="${fills[customTitleDesign]}"`));
+      const svg = haloSvg(zip);
       assert.match(
-        panel.getElementsByTagName("a:ln")[0].toString(),
-        /<a:alpha val="0"\/>/,
-        `${customTitleDesign} panel outline must be invisible`
+        svg,
+        new RegExp(`stop-color="#${themes[customTitleDesign].color}"`)
       );
-    }
-  });
-
-  it("uses only minimal theme accents on borderless panels", async () => {
-    const expectedAccents = {
-      aurora: [],
-      monolith: ["custom-title:subtitle-accent"],
-      ivory: [
-        "custom-title:subtitle-dot-1",
-        "custom-title:subtitle-dot-2",
-      ],
-      marquee: [
-        "custom-title:subtitle-diamond-1",
-        "custom-title:subtitle-diamond-2",
-      ],
-    };
-
-    for (const customTitleDesign of CUSTOM_TITLE_DESIGNS) {
-      const slideXml = await render({
-        customTitleDesign,
-        customTitleKo: "성찬 예배",
-        customTitleSubtitle: "한 몸을 이루는 교회",
-      });
-
-      assert.equal(
-        slideXml.includes("custom-title:subtitle-inner-line"),
-        false
+      assert.match(
+        svg,
+        new RegExp(`stop-opacity="${themes[customTitleDesign].opacity}"`)
       );
-      for (const name of expectedAccents[customTitleDesign]) {
-        assert.match(slideXml, new RegExp(`name="${name}"`));
-      }
+      assert.doesNotMatch(
+        slideXml,
+        /custom-title:subtitle-(panel|accent|dot|diamond)/
+      );
     }
   });
 
@@ -192,7 +199,11 @@ describe("appendCustomTitleSlide", () => {
         textMetrics(shapeWithText(baselineXml, "성찬 예배"))
       );
       assert.equal(
-        shapeByName(emptySubtitleXml, "custom-title:subtitle-panel"),
+        pictureByName(emptySubtitleXml, "custom-title:subtitle-halo"),
+        undefined
+      );
+      assert.equal(
+        shapeByName(emptySubtitleXml, "custom-title:subtitle-text"),
         undefined
       );
     }
