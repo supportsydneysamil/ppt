@@ -881,6 +881,7 @@ const customTitleDesignGrid = document.getElementById("customTitleDesignGrid");
 const customTitleDesignSelect = document.getElementById("customTitleDesign");
 const customTitleKoInput = document.getElementById("customTitleKo");
 const customTitleEnInput = document.getElementById("customTitleEn");
+const customTitleSubtitleInput = document.getElementById("customTitleSubtitle");
 const templateSaveHint = document.getElementById("templateSaveHint");
 const unsavedChangesModal = document.getElementById("unsavedChangesModal");
 const unsavedChangesCard = document.getElementById("unsavedChangesCard");
@@ -2603,6 +2604,7 @@ function appendNewSlide() {
     customTitleDesign: "aurora",
     customTitleKo: "",
     customTitleEn: "",
+    customTitleSubtitle: "",
     customSlide: emptyCustomSlideModel(),
   };
   slides.push(newSlide);
@@ -3363,6 +3365,7 @@ function populateEditor(slide, { reloadCustomCanvas = true } = {}) {
     syncCustomTitleDesignCards(customTitleDesignSelect.value);
     customTitleKoInput.value = slide.customTitleKo || '';
     customTitleEnInput.value = slide.customTitleEn || '';
+    customTitleSubtitleInput.value = slide.customTitleSubtitle || '';
   } else if (slide.type === 'hymn') {
     // Hymn fields are filled above.
   } else if (slide.type === 'ad') {
@@ -3926,6 +3929,7 @@ function collectCustomTitleSlideData() {
     customTitleDesign: normalizeCustomTitleDesign(customTitleDesignSelect.value),
     customTitleKo: customTitleKoInput.value.trim(),
     customTitleEn: customTitleEnInput.value.trim(),
+    customTitleSubtitle: customTitleSubtitleInput.value.trim(),
   };
 }
 
@@ -4070,6 +4074,7 @@ function buildCustomTitleSlidePreview(data, previewWidth) {
 
   const ko = (data.customTitleKo || "").trim() || "타이틀 이름";
   const en = (data.customTitleEn || "").trim();
+  const subtitle = (data.customTitleSubtitle || "").trim();
   const theme =
     CUSTOM_TITLE_THEMES[normalizeCustomTitleDesign(data.customTitleDesign)];
 
@@ -4132,6 +4137,17 @@ function buildCustomTitleSlidePreview(data, previewWidth) {
           `padding-left:${enSize * theme.enTracking}px;` +
           `margin-top:${inch(theme.dividerGap)}px;`,
         en.toUpperCase()
+      )
+    );
+  }
+
+  if (subtitle) {
+    stack.appendChild(
+      titlePreviewNode(
+        `font-family:${TITLE_SANS};font-weight:600;font-size:${pt(18)}px;` +
+          `line-height:1.35;color:${theme.enColor};white-space:nowrap;` +
+          `margin-top:${inch(en ? 0.2 : theme.koGap)}px;`,
+        subtitle
       )
     );
   }
@@ -5085,6 +5101,7 @@ async function downloadSlide() {
           customTitleDesign: slide.customTitleDesign,
           customTitleKo: slide.customTitleKo,
           customTitleEn: slide.customTitleEn,
+          customTitleSubtitle: slide.customTitleSubtitle,
         })
       });
 
@@ -5351,6 +5368,7 @@ function buildSerializableSlide(slide) {
     customTitleDesign: slide.customTitleDesign,
     customTitleKo: slide.customTitleKo,
     customTitleEn: slide.customTitleEn,
+    customTitleSubtitle: slide.customTitleSubtitle,
     includeTitle: slide.includeTitle,
     titleSlideType: slide.titleSlideType,
     testament: slide.testament,
@@ -5991,6 +6009,11 @@ customTitleKoInput.addEventListener('input', () => {
 });
 
 customTitleEnInput.addEventListener('input', () => {
+  renderPreview();
+  refreshSaveState();
+});
+
+customTitleSubtitleInput.addEventListener('input', () => {
   renderPreview();
   refreshSaveState();
 });
