@@ -141,4 +141,45 @@ test("sanitizeSlideForTemplate", async (t) => {
       createDefaultCustomSlide()
     );
   });
+
+  await t.test("keeps missing worship titles unset instead of empty", () => {
+    const sanitized = sanitizeSlideForTemplate({
+      id: "x",
+      type: "title",
+      titleDesign: "chapel",
+      churchName: "삼일",
+      serviceDate: "2026-09-20",
+    });
+    assert.equal(sanitized.titleKo, null);
+    assert.equal(sanitized.titleEn, null);
+    assert.equal(sanitized.dateMode, "custom");
+    assert.equal(sanitized.showDate, true);
+  });
+
+  await t.test("preserves blank worship titles as hide sentinels", () => {
+    const sanitized = sanitizeSlideForTemplate({
+      id: "x",
+      type: "title",
+      titleKo: "",
+      titleEn: "  ",
+      dateMode: "today",
+      showDate: false,
+    });
+    assert.equal(sanitized.titleKo, "");
+    assert.equal(sanitized.titleEn, "");
+    assert.equal(sanitized.dateMode, "today");
+    assert.equal(sanitized.showDate, false);
+  });
+
+  await t.test("keeps explicit worship titles", () => {
+    const sanitized = sanitizeSlideForTemplate({
+      id: "x",
+      titleKo: " 성찬예배 ",
+      titleEn: "HOLY COMMUNION",
+      dateMode: "nope",
+    });
+    assert.equal(sanitized.titleKo, "성찬예배");
+    assert.equal(sanitized.titleEn, "HOLY COMMUNION");
+    assert.equal(sanitized.dateMode, "custom");
+  });
 });

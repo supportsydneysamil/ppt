@@ -1060,6 +1060,219 @@ body {
   background: url("/assets/scriptures/title-bottom.png") center / cover no-repeat;
 }
 
+.title-preview-easter-dawn,
+.title-preview-easter-stained,
+.title-preview-christmas-burgundy,
+.title-preview-christmas-evergreen,
+.title-preview-thanksgiving,
+.title-preview-advent,
+.title-preview-midnight-slab,
+.title-preview-slate-split,
+.title-preview-deep-fog {
+  isolation: isolate;
+}
+
+.title-preview-easter-dawn::before,
+.title-preview-easter-dawn::after,
+.title-preview-easter-stained::before,
+.title-preview-easter-stained::after,
+.title-preview-christmas-burgundy::before,
+.title-preview-christmas-burgundy::after,
+.title-preview-christmas-evergreen::before,
+.title-preview-christmas-evergreen::after,
+.title-preview-thanksgiving::before,
+.title-preview-thanksgiving::after,
+.title-preview-advent::before,
+.title-preview-advent::after,
+.title-preview-midnight-slab::before,
+.title-preview-midnight-slab::after,
+.title-preview-slate-split::before,
+.title-preview-slate-split::after,
+.title-preview-deep-fog::before,
+.title-preview-deep-fog::after {
+  display: none;
+}
+
+.title-preview-motif,
+.title-preview-rule {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+}
+
+.title-preview-easter-dawn {
+  align-items: start;
+  padding-top: 24px;
+  background: linear-gradient(155deg, #fffbf2, #f3dcbd);
+  color: #4a3617;
+  font-family: "Fraunces", Georgia, serif;
+}
+
+.title-preview-easter-dawn .motif-rays {
+  top: -22px;
+  left: 50%;
+  width: 66px;
+  height: 66px;
+  border-radius: 50%;
+  transform: translateX(-50%);
+  background: #fff0cd;
+  box-shadow: 0 0 28px 12px rgba(214, 164, 74, 0.25);
+}
+
+.title-preview-easter-dawn .motif-rays::after {
+  content: "";
+  position: absolute;
+  top: 76px;
+  left: -65px;
+  width: 196px;
+  height: 1px;
+  background: rgba(180, 140, 74, 0.7);
+}
+
+.title-preview-easter-stained {
+  background:
+    radial-gradient(circle at 50% 44%, rgba(138, 92, 199, 0.42), transparent 55%),
+    linear-gradient(145deg, #0b1a33, #322055);
+  color: #fff;
+  font-family: "Fraunces", Georgia, serif;
+}
+
+.title-preview-easter-stained .motif-arch {
+  inset: 10px 31px 7px;
+  border: 1px solid rgba(242, 193, 91, 0.6);
+  border-radius: 48px 48px 8px 8px;
+}
+
+.title-preview-easter-stained .motif-arch::after {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  border: 1px solid rgba(242, 193, 91, 0.38);
+  border-radius: inherit;
+}
+
+.title-preview-christmas-burgundy {
+  justify-items: start;
+  padding-left: 18px;
+  background: linear-gradient(90deg, #d9b376 0 5px, #2a0f16 5px);
+  color: #f7ebda;
+  font-family: "Fraunces", Georgia, serif;
+}
+
+.title-preview-christmas-burgundy .motif-star {
+  right: 15px;
+  width: 38px;
+  height: 38px;
+  background: rgba(217, 179, 118, 0.24);
+  clip-path: polygon(50% 0, 61% 37%, 100% 50%, 61% 63%, 50% 100%, 39% 63%, 0 50%, 39% 37%);
+}
+
+.title-preview-christmas-evergreen {
+  align-items: start;
+  padding-top: 20px;
+  background: linear-gradient(145deg, #07140c, #12301c);
+  color: #f7ebda;
+  font-family: "Fraunces", Georgia, serif;
+}
+
+.title-preview-christmas-evergreen .motif-trees {
+  inset: auto 0 0;
+  height: 34px;
+  background: #07180d;
+  clip-path: polygon(0 100%, 12% 20%, 24% 100%, 39% 35%, 50% 100%, 67% 10%, 82% 100%, 93% 28%, 100% 100%);
+}
+
+.title-preview-thanksgiving {
+  background: linear-gradient(145deg, #3a2410, #1b1108);
+  color: #fff1d6;
+  font-family: "Fraunces", Georgia, serif;
+}
+
+.title-preview-thanksgiving .motif-wheat {
+  inset: 15px 18px;
+  border-left: 1px solid #c99b54;
+  border-right: 1px solid #c99b54;
+}
+
+.title-preview-thanksgiving .motif-wheat::after {
+  content: "◆  ◆";
+  position: absolute;
+  inset: 15px -7px auto;
+  color: #c99b54;
+  font-size: 8px;
+  word-spacing: 96px;
+}
+
+.title-preview-advent {
+  align-items: end;
+  padding-bottom: 16px;
+  background:
+    radial-gradient(circle at 50% 10%, rgba(228, 188, 115, 0.3), transparent 34%),
+    linear-gradient(145deg, #1a2140, #0a0e1a);
+  color: #f5f0e7;
+  font-family: "Fraunces", Georgia, serif;
+}
+
+.title-preview-advent .motif-candle {
+  top: 12px;
+  left: calc(50% - 4px);
+  width: 8px;
+  height: 25px;
+  border-radius: 3px 3px 1px 1px;
+  background: #e9e4d8;
+  box-shadow: 0 -7px 0 -2px #f2c15b, -12px 52px 0 -2px #a7b8e8,
+    -4px 52px 0 -2px #a7b8e8, 4px 52px 0 -2px #a7b8e8,
+    12px 52px 0 -2px #a7b8e8;
+}
+
+.title-preview-midnight-slab {
+  justify-items: end;
+  padding-right: 14px;
+  background: linear-gradient(145deg, #08090b, #181c23);
+  color: #f2f4f7;
+}
+
+.title-preview-midnight-slab .rule-spine {
+  top: 16px;
+  bottom: 16px;
+  left: 18px;
+  width: 1px;
+  background: #9aa3ae;
+}
+
+.title-preview-slate-split {
+  justify-items: end;
+  padding-right: 12px;
+  background: linear-gradient(90deg, #1c2431 0 37%, #0d1117 37%);
+  color: #f2f4f7;
+}
+
+.title-preview-slate-split .rule-split {
+  top: 0;
+  bottom: 0;
+  left: 37%;
+  width: 1px;
+  background: #748094;
+}
+
+.title-preview-deep-fog {
+  align-items: end;
+  justify-items: start;
+  padding: 0 0 15px 14px;
+  background:
+    radial-gradient(ellipse at 66% 28%, rgba(167, 175, 186, 0.34), transparent 58%),
+    #0d1117;
+  color: #f2f4f7;
+}
+
+.title-preview-deep-fog .rule-underline {
+  bottom: 10px;
+  left: 14px;
+  width: 42px;
+  height: 1px;
+  background: #98a2ae;
+}
+
 /* Custom title thumbnails: one rule under the headline, like the renderers. */
 .title-preview-aurora,
 .title-preview-monolith,
@@ -2490,6 +2703,12 @@ body {
 .rte-seg-item input:checked + span {
   background: rgba(255,255,255,0.13);
   color: var(--ink);
+}
+
+.rte-seg-item input:focus-visible + span {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  box-shadow: var(--focus-ring);
 }
 
 /* Color preview tabs (텍스트 색상) */

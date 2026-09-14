@@ -921,34 +921,9 @@
               <div class="rte-panel">
                 <div class="rte-panel-label">디자인</div>
                 <div class="rte-panel-body">
-                  <div class="theme-option-grid" id="titleDesignGrid" role="list" aria-label="타이틀 디자인 목록">
-                    <button type="button" class="theme-option-card is-active" data-title-design="chapel">
-                      <span class="title-design-preview title-preview-chapel"><span>주일예배</span></span>
-                      <span class="theme-option-copy">
-                        <strong>클래식 채플</strong>
-                        <small>검정 · 금색 괘선</small>
-                      </span>
-                    </button>
-                    <button type="button" class="theme-option-card" data-title-design="editorial">
-                      <span class="title-design-preview title-preview-editorial"><span>주일예배</span></span>
-                      <span class="theme-option-copy">
-                        <strong>모던 에디토리얼</strong>
-                        <small>아이보리 · 좌측 정렬</small>
-                      </span>
-                    </button>
-                    <button type="button" class="theme-option-card" data-title-design="glow">
-                      <span class="title-design-preview title-preview-glow"><span>주일예배</span></span>
-                      <span class="theme-option-copy">
-                        <strong>스테인드 글로우</strong>
-                        <small>네이비 · 금색 글로우</small>
-                      </span>
-                    </button>
-                  </div>
-                  <select id="titleDesign" class="hidden-select">
-                    <option value="chapel" selected>클래식 채플</option>
-                    <option value="editorial">모던 에디토리얼</option>
-                    <option value="glow">스테인드 글로우</option>
-                  </select>
+                  <div id="titleDesignCategoryGroup" class="custom-title-category-group" role="toolbar" aria-label="타이틀 디자인 카테고리"></div>
+                  <div class="theme-option-grid custom-title-design-grid" id="titleDesignGrid" role="list" aria-label="타이틀 디자인 목록"></div>
+                  <select id="titleDesign" class="hidden-select"></select>
                 </div>
               </div>
 
@@ -956,22 +931,42 @@
                 <div class="rte-panel-label">예배 정보</div>
                 <div class="rte-panel-body">
                   <div class="rte-panel-row">
-                    <span class="rte-row-label">교회 이름</span>
+                    <label class="rte-row-label" for="titleChurchName">교회 이름</label>
                     <input id="titleChurchName" type="text" class="rte-url-input" placeholder="예: 삼일교회" />
                   </div>
                   <div class="rte-panel-row">
-                    <span class="rte-row-label">주일 날짜</span>
-                    <select id="titleServiceDate" class="rte-select"></select>
+                    <label class="rte-row-label" for="titleKo">한글 타이틀</label>
+                    <input id="titleKo" type="text" class="rte-url-input" placeholder="주일예배" />
                   </div>
                   <div class="rte-panel-row">
-                    <span class="rte-row-label">부제 <span class="rte-panel-hint">선택</span></span>
+                    <label class="rte-row-label" for="titleEn">영문 타이틀</label>
+                    <input id="titleEn" type="text" class="rte-url-input" placeholder="SUNDAY WORSHIP" />
+                  </div>
+                  <div class="rte-panel-row">
+                    <label class="rte-row-label" for="titleSubtitle">부제 <span class="rte-panel-hint">선택</span></label>
                     <div class="rte-row-main">
                       <input id="titleSubtitle" type="text" class="rte-url-input" placeholder="예: 성찬 예배" />
                       <button type="button" id="titleSeasonSuggestBtn" class="ghost" hidden></button>
                     </div>
                   </div>
+                  <label class="rte-panel-row">
+                    <span class="rte-row-label">날짜 표시</span>
+                    <input id="titleShowDate" type="checkbox" checked />
+                  </label>
+                  <div class="rte-panel-row">
+                    <span class="rte-row-label" id="titleDateModeLabel">날짜 모드</span>
+                    <div class="rte-seg-group" id="titleDateMode" role="radiogroup" aria-labelledby="titleDateModeLabel">
+                      <label class="rte-seg-item"><input type="radio" name="titleDateMode" value="next-sunday" /><span>다음 주일</span></label>
+                      <label class="rte-seg-item"><input type="radio" name="titleDateMode" value="today" /><span>오늘</span></label>
+                      <label class="rte-seg-item"><input type="radio" name="titleDateMode" value="custom" checked /><span>수동</span></label>
+                    </div>
+                  </div>
+                  <div class="rte-panel-row">
+                    <label class="rte-row-label" for="titleServiceDate">날짜 값</label>
+                    <input id="titleServiceDate" type="date" class="rte-url-input" />
+                  </div>
                   <p class="hint rte-hint">
-                    날짜는 다음 주일이 기본값이고, 절기에 해당하면 부제를 자동으로 제안합니다.
+                    날짜 기본은 오늘이며 수동으로 바꿀 수 있습니다. 절기에 해당하면 부제를 자동으로 제안합니다.
                   </p>
                 </div>
               </div>
