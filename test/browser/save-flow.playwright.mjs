@@ -184,6 +184,33 @@ const allTypeSlides = [
   }),
 ];
 
+const customCanvasSlides = [
+  slide("custom-canvas", "커스텀 캔버스", "custom", {
+    customSlide: {
+      version: 1,
+      width: 1280,
+      height: 720,
+      background: { color: "#1e293b" },
+      elements: [
+        {
+          id: "saved-rect",
+          type: "rect",
+          x: 120,
+          y: 100,
+          width: 480,
+          height: 260,
+          rotation: 0,
+          opacity: 1,
+          fill: "#ef4444",
+          stroke: "",
+          strokeWidth: 0,
+          zIndex: 0,
+        },
+      ],
+    },
+  }),
+];
+
 const scriptureSlides = [
   slide("main-scripture", "말씀 슬라이드", "scripture", {
     sourceType: "upload",
@@ -987,6 +1014,14 @@ await runScenario(
     await page.locator("#editorSaveBtn").waitFor({ state: "visible" });
     await page.locator("#editorSaveBtn[disabled]").waitFor();
 
+    await page.locator("#editorCancelBtn").click();
+    await expectToast(page, "저장이 진행 중입니다");
+    assert.equal(
+      await page.locator("#slideName").inputValue(),
+      "저장 중 파괴 시도",
+      "cancel must not roll the draft back mid-save"
+    );
+
     await page.locator("#editorResetBtn").click();
     await expectToast(page, "저장이 진행 중입니다");
     assert.equal(
@@ -1411,6 +1446,124 @@ await runScenario("cancel of the only new slide shows the empty editor", async (
   assert.equal(await page.locator("#slideEditor").isVisible(), false);
   assert.equal(await page.locator("#emptyEditorState").isVisible(), true);
 });
+
+// --- Confirmed, type-preserving slide reset ---
+
+await runScenario(
+  "reset dialog cancellation is inert and confirmation keeps slide context",
+  async (page) => {
+    const state = await setup(page);
+    await selectMainSlide(page, 1);
+    await page.locator("#adBodyContent").fill("초기화 전 초안");
+    await page.locator('input[name="sourceType"][value="upload"]').check();
+    await page.locator("#userPptxFile").setInputFiles({
+      name: "reset-me.pptx",
+      mimeType:
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      buffer: Buffer.from("fixture"),
+    });
+
+    await page.locator("#editorResetBtn").click();
+    await page.locator("#slideResetModal").waitFor({ state: "visible" });
+    assert.equal(
+      await page.locator("#slideResetModal").getAttribute("aria-labelledby"),
+      "slideResetTitle"
+    );
+    assert.equal(
+      await page.locator("#slideResetModal").getAttribute("aria-describedby"),
+      "slideResetDescription"
+    );
+    assert.equal(
+      await page.evaluate(() => document.activeElement?.id),
+      "slideResetBackBtn",
+      "the safe action must receive initial focus"
+    );
+
+    await page.keyboard.press("Escape");
+    await page.locator("#slideResetModal").waitFor({ state: "hidden" });
+    assert.equal(await page.locator("#adBodyContent").inputValue(), "초기화 전 초안");
+    assert.equal(
+      await page.locator("#userPptxFile").evaluate((input) => input.files[0]?.name),
+      "reset-me.pptx"
+    );
+
+    await page.locator("#editorResetBtn").click();
+    await page.locator("#slideResetModal").waitFor({ state: "visible" });
+    await page.mouse.click(4, 4);
+    await page.locator("#slideResetModal").waitFor({ state: "hidden" });
+    assert.equal(await page.locator("#adBodyContent").inputValue(), "초기화 전 초안");
+
+    await page.locator("#editorResetBtn").click();
+    await page.locator("#slideResetConfirmBtn").click();
+    await page.locator("#slideResetModal").waitFor({ state: "hidden" });
+
+    assert.equal(await page.locator("#slideName").inputValue(), "둘째 슬라이드");
+    assert.equal(await page.locator("#slideType").inputValue(), "ad");
+    assert.equal(await page.locator("#adBodyContent").inputValue(), "");
+    assert.equal(
+      await page.locator("#userPptxFile").evaluate((input) => input.files.length),
+      0,
+      "reset clears transient files"
+    );
+    assert.equal(
+      await page.locator(".slide-card.active").getAttribute("data-slide-id"),
+      "main-2"
+    );
+    assert.equal(await page.locator("#editorSaveBtn").isEnabled(), true);
+    assert.equal(await page.locator("#editorCancelBtn").isEnabled(), true);
+    assert.equal(await page.locator("#editorResetBtn").isDisabled(), true);
+    assert.equal(state.slides[1].content, "광고 본문", "stored data stays untouched");
+    assert.equal(state.counts.slidePost, 0);
+
+    await page.locator("#editorCancelBtn").click();
+    assert.equal(await page.locator("#adBodyContent").inputValue(), "광고 본문");
+    assert.equal(await page.locator("#adTitle").inputValue(), "광고");
+    assert.equal(await page.locator("#editorSaveBtn").isDisabled(), true);
+    assert.equal(await page.locator("#editorCancelBtn").isDisabled(), true);
+  }
+);
+
+await runScenario(
+  "custom reset makes a blank draft and cancel restores the saved canvas",
+  async (page) => {
+    const state = await setup(page, { slides: customCanvasSlides });
+    await selectMainSlide(page, 0);
+    const status = page.locator(
+      "#customSlideEditor [data-custom-editor='status']"
+    ).first();
+    await status.filter({ hasText: "슬라이드를 불러왔습니다" }).waitFor();
+
+    await page.locator("#editorResetBtn").click();
+    await page.locator("#slideResetConfirmBtn").click();
+    await status.filter({ hasText: "편집 내용을 초기화했습니다" }).waitFor();
+
+    assert.equal(await page.locator("#slideName").inputValue(), "커스텀 캔버스");
+    assert.equal(await page.locator("#slideType").inputValue(), "custom");
+    assert.equal(
+      await page.locator(".slide-card.active").getAttribute("data-slide-id"),
+      "custom-canvas"
+    );
+    assert.equal(await page.locator("#editorSaveBtn").isEnabled(), true);
+    assert.equal(await page.locator("#editorResetBtn").isDisabled(), true);
+    assert.equal(state.slides[0].customSlide.elements.length, 1);
+    assert.equal(state.slides[0].customSlide.background.color, "#1e293b");
+
+    await page.locator("#editorCancelBtn").click();
+    await status.filter({ hasText: "슬라이드를 불러왔습니다" }).waitFor();
+    assert.equal(await page.locator("#editorSaveBtn").isDisabled(), true);
+    assert.equal(state.slides[0].customSlide.elements.length, 1);
+
+    await page.locator("#editorResetBtn").click();
+    await page.locator("#slideResetConfirmBtn").click();
+    await status.filter({ hasText: "편집 내용을 초기화했습니다" }).waitFor();
+    await page.locator("#editorSaveBtn").click();
+    await page.locator("#editorSaveBtn[disabled]").waitFor();
+
+    assert.equal(state.counts.slidePost, 1);
+    assert.deepEqual(state.slides[0].customSlide.elements, []);
+    assert.equal(state.slides[0].customSlide.background.color, "#ffffff");
+  }
+);
 
 await browser.close();
 if (server) {

@@ -504,6 +504,14 @@ body {
   box-shadow: none;
 }
 
+.cta.danger {
+  background: var(--danger);
+}
+
+.cta.danger:hover {
+  box-shadow: 0 10px 20px color-mix(in srgb, var(--danger) 30%, transparent);
+}
+
 .output {
   background: var(--panel);
   border-radius: 20px;

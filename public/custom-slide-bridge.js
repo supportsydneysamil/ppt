@@ -252,6 +252,13 @@ export function createCustomEditorSession(options = {}) {
       }
       return editor.serialize();
     },
+    async reset(slideId) {
+      if (!ownsSlide(slideId)) {
+        return false;
+      }
+      await editor.reset();
+      return ownsSlide(slideId);
+    },
     markSaved(slideId) {
       if (!ownsSlide(slideId)) {
         return;
