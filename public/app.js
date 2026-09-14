@@ -878,7 +878,10 @@ const titleSlideSettings = document.getElementById("titleSlideSettings");
 const titleDesignGrid = document.getElementById("titleDesignGrid");
 const titleDesignSelect = document.getElementById("titleDesign");
 const titleChurchNameInput = document.getElementById("titleChurchName");
-const titleServiceDateSelect = document.getElementById("titleServiceDate");
+const titleKoInput = document.getElementById("titleKo");
+const titleEnInput = document.getElementById("titleEn");
+const titleShowDate = document.getElementById("titleShowDate");
+const titleServiceDateInput = document.getElementById("titleServiceDate");
 const titleSubtitleInput = document.getElementById("titleSubtitle");
 const titleSeasonSuggestBtn = document.getElementById("titleSeasonSuggestBtn");
 const customTitleSlideSettings = document.getElementById("customTitleSlideSettings");
@@ -2674,7 +2677,11 @@ function appendNewSlide(position = "end") {
     adBgOpacity: 30,
     titleDesign: "chapel",
     churchName: "",
-    serviceDate: "",
+    titleKo: "주일예배",
+    titleEn: "SUNDAY WORSHIP",
+    dateMode: "custom",
+    showDate: true,
+    serviceDate: titleDateApi()?.todayIsoDate() || "",
     titleSubtitle: "",
     customTitleDesign: "aurora",
     customTitleKo: "",
@@ -3426,12 +3433,22 @@ function populateEditor(slide, { reloadCustomCanvas = true } = {}) {
   } else if (slide.type === 'scripture') {
     populateScriptureEditor(slide);
   } else if (slide.type === 'title') {
-
     titleDesignSelect.value = normalizeTitleDesign(slide.titleDesign);
     syncTitleDesignCards(titleDesignSelect.value);
     titleChurchNameInput.value = slide.churchName || rememberedChurchName();
+    titleKoInput.value = slide.titleKo == null ? "주일예배" : slide.titleKo;
+    titleEnInput.value =
+      slide.titleEn == null
+        ? defaultTitleEn(titleDesignSelect.value)
+        : slide.titleEn;
     titleSubtitleInput.value = slide.titleSubtitle || '';
-    ensureTitleServiceDateOptions(slide.serviceDate || defaultServiceDate());
+    const api = titleDateApi();
+    const dateMode = api ? api.normalizeDateMode(slide.dateMode) : "custom";
+    setSelectedDateMode(dateMode);
+    titleShowDate.checked = slide.showDate !== false;
+    titleServiceDateInput.value = api
+      ? api.resolveServiceDate(dateMode, slide.serviceDate, api.todayIsoDate())
+      : slide.serviceDate || defaultServiceDate();
     updateTitleSeasonSuggestion();
   } else if (slide.type === 'custom-title') {
     customTitleDesignSelect.value = normalizeCustomTitleDesign(
@@ -3560,17 +3577,66 @@ function syncAdTextColorTabs(value) {
 
 // --- Title slide (Sunday worship cover) helpers ---
 
-const TITLE_DESIGNS = ["chapel", "editorial", "glow"];
+const TITLE_DESIGNS = [
+  "chapel",
+  "editorial",
+  "glow",
+  "easter-dawn",
+  "easter-stained",
+  "christmas-burgundy",
+  "christmas-evergreen",
+  "thanksgiving",
+  "advent",
+  "midnight-slab",
+  "slate-split",
+  "deep-fog",
+];
 const TITLE_CHURCH_STORAGE_KEY = "ppt.titleChurchName";
 
-// Loaded as a module, so it lands after this script's top-level run.
-// Always reach for it from inside a function, never at load time.
 function titleDateApi() {
   return window.TitleSlideDate || null;
 }
 
+function titleTextApi() {
+  return window.TitleSlideText || null;
+}
+
 function normalizeTitleDesign(value) {
-  return TITLE_DESIGNS.includes(value) ? value : "chapel";
+  const api = titleTextApi();
+  return api
+    ? api.normalizeTitleDesign(value)
+    : TITLE_DESIGNS.includes(value) ? value : "chapel";
+}
+
+function defaultTitleEn(design) {
+  const api = titleTextApi();
+  return api ? api.defaultTitleEn(design) : "SUNDAY WORSHIP";
+}
+
+function resolveTitlePreviewKo(data) {
+  const api = titleTextApi();
+  return api
+    ? api.resolveTitleLine(data.titleKo, api.defaultTitleKo())
+    : typeof data.titleKo === "string" ? data.titleKo.trim() : "주일예배";
+}
+
+function resolveTitlePreviewEn(data, design) {
+  const api = titleTextApi();
+  return api
+    ? api.resolveTitleLine(data.titleEn, api.defaultTitleEn(design))
+    : typeof data.titleEn === "string"
+      ? data.titleEn.trim()
+      : defaultTitleEn(design);
+}
+
+function titleKoFontSize(text, base, maxWidthInches) {
+  const api = titleTextApi();
+  return api ? api.worshipKoFontSize(text, base, maxWidthInches) : base;
+}
+
+function titleEnFontSize(text, base, maxWidthInches) {
+  const api = titleTextApi();
+  return api ? api.worshipEnFontSize(text, base, maxWidthInches) : base;
 }
 
 function formatTitleDateKo(isoDate) {
@@ -3585,7 +3651,7 @@ function formatTitleDateEn(isoDate) {
 
 function defaultServiceDate() {
   const api = titleDateApi();
-  return api ? api.upcomingSundays(1)[0] || "" : "";
+  return api ? api.todayIsoDate() : "";
 }
 
 function rememberedChurchName() {
@@ -3612,29 +3678,18 @@ function syncTitleDesignCards(value) {
   });
 }
 
-function ensureTitleServiceDateOptions(selectedIso) {
+function selectedDateMode() {
   const api = titleDateApi();
-  if (!api || !titleServiceDateSelect) return;
+  const checked = document.querySelector('input[name="titleDateMode"]:checked');
+  return api ? api.normalizeDateMode(checked && checked.value) : "custom";
+}
 
-  const sundays = api.upcomingSundays(12);
-  const values =
-    selectedIso && !sundays.includes(selectedIso)
-      ? [selectedIso, ...sundays]
-      : sundays;
-  const signature = values.join(",");
-
-  if (titleServiceDateSelect.dataset.signature !== signature) {
-    titleServiceDateSelect.innerHTML = "";
-    values.forEach((iso) => {
-      const option = document.createElement("option");
-      option.value = iso;
-      option.textContent = api.formatServiceDateKo(iso);
-      titleServiceDateSelect.appendChild(option);
-    });
-    titleServiceDateSelect.dataset.signature = signature;
-  }
-
-  titleServiceDateSelect.value = selectedIso || values[0] || "";
+function setSelectedDateMode(mode) {
+  const api = titleDateApi();
+  const normalized = api ? api.normalizeDateMode(mode) : "custom";
+  document.querySelectorAll('input[name="titleDateMode"]').forEach((radio) => {
+    radio.checked = radio.value === normalized;
+  });
 }
 
 function updateTitleSeasonSuggestion() {
@@ -3642,7 +3697,7 @@ function updateTitleSeasonSuggestion() {
 
   const api = titleDateApi();
   const suggestion = api
-    ? api.suggestSeasonLabel(titleServiceDateSelect.value)
+    ? api.suggestSeasonLabel(titleServiceDateInput.value)
     : "";
 
   if (!suggestion || titleSubtitleInput.value.trim() === suggestion) {
@@ -3656,12 +3711,21 @@ function updateTitleSeasonSuggestion() {
 }
 
 function collectTitleSlideData() {
-  const isoDate = titleServiceDateSelect.value;
+  const api = titleDateApi();
+  const dateMode = selectedDateMode();
+  const typed = titleServiceDateInput.value;
+  const serviceDate = api
+    ? api.resolveServiceDate(dateMode, typed, api.todayIsoDate())
+    : typed;
   return {
     titleDesign: normalizeTitleDesign(titleDesignSelect.value),
     churchName: titleChurchNameInput.value.trim(),
-    serviceDate: isoDate,
+    titleKo: titleKoInput.value,
+    titleEn: titleEnInput.value,
     titleSubtitle: titleSubtitleInput.value.trim(),
+    dateMode,
+    showDate: titleShowDate.checked,
+    serviceDate,
   };
 }
 
@@ -3717,14 +3781,16 @@ function buildChapelPreview(container, content, unit) {
     )
   );
   stack.appendChild(rule(0.28));
-  stack.appendChild(
-    titlePreviewNode(
-      `font-family:${TITLE_SERIF};font-weight:700;font-size:${pt(96)}px;line-height:1.1;` +
-        `letter-spacing:${inch(0.1)}px;padding-left:${inch(0.1)}px;color:#FFFFFF;` +
-        `margin-top:${inch(0.3)}px;`,
-      "주일예배"
-    )
-  );
+  if (content.ko) {
+    stack.appendChild(
+      titlePreviewNode(
+        `font-family:${TITLE_SERIF};font-weight:700;font-size:${pt(titleKoFontSize(content.ko, 96))}px;line-height:1.1;` +
+          `letter-spacing:${inch(0.1)}px;padding-left:${inch(0.1)}px;color:#FFFFFF;` +
+          `margin-top:${inch(0.3)}px;`,
+        content.ko
+      )
+    );
+  }
   if (content.subtitle) {
     stack.appendChild(
       titlePreviewNode(
@@ -3734,14 +3800,16 @@ function buildChapelPreview(container, content, unit) {
       )
     );
   }
-  stack.appendChild(
-    titlePreviewNode(
-      `font-family:${TITLE_LATIN};font-weight:700;font-size:${pt(16)}px;` +
-        `letter-spacing:${pt(16) * 0.6}px;padding-left:${pt(16) * 0.6}px;color:${gold};` +
-        `margin-top:${inch(0.28)}px;`,
-      "SUNDAY WORSHIP"
-    )
-  );
+  if (content.en) {
+    stack.appendChild(
+      titlePreviewNode(
+        `font-family:${TITLE_LATIN};font-weight:700;font-size:${pt(16)}px;` +
+          `letter-spacing:${pt(16) * 0.6}px;padding-left:${pt(16) * 0.6}px;color:${gold};` +
+          `margin-top:${inch(0.28)}px;`,
+        content.en
+      )
+    );
+  }
   stack.appendChild(rule(0.3));
   if (content.koDate) {
     stack.appendChild(
@@ -3798,25 +3866,29 @@ function buildEditorialPreview(container, content, unit) {
   const middle = titlePreviewNode(
     "flex:1;display:flex;flex-direction:column;justify-content:center;"
   );
-  middle.appendChild(
-    titlePreviewNode(
-      `font-family:${TITLE_SANS};font-weight:800;font-size:${pt(112)}px;line-height:1;color:${ink};`,
-      "주일예배"
-    )
-  );
+  if (content.ko) {
+    middle.appendChild(
+      titlePreviewNode(
+        `font-family:${TITLE_SANS};font-weight:800;font-size:${pt(titleKoFontSize(content.ko, 112))}px;line-height:1;color:${ink};`,
+        content.ko
+      )
+    );
+  }
   middle.appendChild(
     titlePreviewNode(
       `width:${inch(4.4)}px;height:${Math.max(1, inch(0.009))}px;background:${hair};` +
         `margin-top:${inch(0.36)}px;`
     )
   );
-  middle.appendChild(
-    titlePreviewNode(
-      `font-family:${TITLE_LATIN};font-weight:700;font-size:${pt(14)}px;` +
-        `letter-spacing:${pt(14) * 0.55}px;color:${muted};margin-top:${inch(0.2)}px;`,
-      "SUNDAY WORSHIP SERVICE"
-    )
-  );
+  if (content.en) {
+    middle.appendChild(
+      titlePreviewNode(
+        `font-family:${TITLE_LATIN};font-weight:700;font-size:${pt(titleEnFontSize(content.en, 14))}px;` +
+          `letter-spacing:${pt(14) * 0.55}px;color:${muted};margin-top:${inch(0.2)}px;`,
+        content.en
+      )
+    );
+  }
   frame.appendChild(middle);
 
   if (content.koDate) {
@@ -3873,20 +3945,30 @@ function buildGlowPreview(container, content, unit) {
     );
   }
 
-  const letters = titlePreviewNode(
-    `display:flex;align-items:flex-start;gap:${inch(0.06)}px;`
-  );
-  ["주", "일", "예", "배"].forEach((letter, index) => {
-    letters.appendChild(
+  if (content.ko === "주일예배") {
+    const letters = titlePreviewNode(
+      `display:flex;align-items:flex-start;gap:${inch(0.06)}px;`
+    );
+    ["주", "일", "예", "배"].forEach((letter, index) => {
+      letters.appendChild(
+        titlePreviewNode(
+          `font-family:${TITLE_SERIF};font-weight:700;font-size:${pt(88)}px;line-height:1.05;` +
+            `color:#FFFFFF;width:${inch(1.3)}px;text-align:center;` +
+            `margin-top:${index % 2 === 1 ? inch(0.34) : 0}px;`,
+          letter
+        )
+      );
+    });
+    upper.appendChild(letters);
+  } else if (content.ko) {
+    upper.appendChild(
       titlePreviewNode(
-        `font-family:${TITLE_SERIF};font-weight:700;font-size:${pt(88)}px;line-height:1.05;` +
-          `color:#FFFFFF;width:${inch(1.3)}px;text-align:center;` +
-          `margin-top:${index % 2 === 1 ? inch(0.34) : 0}px;`,
-        letter
+        `font-family:${TITLE_SERIF};font-weight:700;font-size:${pt(titleKoFontSize(content.ko, 88))}px;` +
+          `line-height:1.05;color:#FFFFFF;text-align:center;`,
+        content.ko
       )
     );
-  });
-  upper.appendChild(letters);
+  }
 
   const rule = titlePreviewNode(
     `position:relative;width:${inch(4.6)}px;height:${Math.max(1, inch(0.011))}px;` +
@@ -3902,14 +3984,16 @@ function buildGlowPreview(container, content, unit) {
   });
   upper.appendChild(rule);
 
-  upper.appendChild(
-    titlePreviewNode(
-      `font-family:${TITLE_LATIN};font-weight:700;font-size:${pt(17)}px;` +
-        `letter-spacing:${pt(17) * 0.62}px;padding-left:${pt(17) * 0.62}px;color:#F3E6C8;` +
-        `margin-top:${inch(0.24)}px;`,
-      "SUNDAY WORSHIP"
-    )
-  );
+  if (content.en) {
+    upper.appendChild(
+      titlePreviewNode(
+        `font-family:${TITLE_LATIN};font-weight:700;font-size:${pt(17)}px;` +
+          `letter-spacing:${pt(17) * 0.62}px;padding-left:${pt(17) * 0.62}px;color:#F3E6C8;` +
+          `margin-top:${inch(0.24)}px;`,
+        content.en
+      )
+    );
+  }
   container.appendChild(upper);
 
   const band = titlePreviewNode(
@@ -3934,6 +4018,308 @@ function buildGlowPreview(container, content, unit) {
   container.appendChild(band);
 }
 
+function titlePreviewShape(cssText, kind = "motif") {
+  const shape = titlePreviewNode(cssText);
+  shape.className =
+    kind === "rule" ? "title-preview-rule" : "title-preview-motif";
+  return shape;
+}
+
+function buildEasterDawnPreview(container, content, unit) {
+  const { inch, pt } = unit;
+  container.style.background = "linear-gradient(145deg,#FFFBF2,#F3DCBD)";
+  container.appendChild(
+    titlePreviewShape(
+      `position:absolute;left:${inch(5.55)}px;top:${inch(-0.35)}px;width:${inch(2.2)}px;` +
+        `height:${inch(2.2)}px;border-radius:50%;background:#FFF0CD;` +
+        `box-shadow:0 0 ${inch(1.1)}px rgba(214,164,74,.28);`
+    )
+  );
+  [-52, -34, -17, 0, 17, 34, 52].forEach((angle, index) => {
+    container.appendChild(
+      titlePreviewShape(
+        `position:absolute;left:${inch(6.62)}px;top:${inch(1.18)}px;width:${inch(0.05)}px;` +
+          `height:${inch(0.92 - Math.abs(index - 3) * 0.07)}px;background:rgba(214,164,74,.28);` +
+          `transform-origin:50% ${inch(-0.35)}px;transform:rotate(${angle}deg);`
+      )
+    );
+  });
+  if (content.church) {
+    container.appendChild(titlePreviewNode(
+      `position:absolute;top:${inch(0.58)}px;left:0;width:100%;text-align:center;` +
+        `font-family:${TITLE_SANS};font-weight:700;font-size:${pt(18)}px;color:#9A7B45;`,
+      content.church
+    ));
+  }
+  if (content.ko) {
+    container.appendChild(titlePreviewNode(
+      `position:absolute;top:${inch(1.15)}px;left:0;width:100%;text-align:center;` +
+        `font-family:${TITLE_SERIF};font-weight:700;font-size:${pt(titleKoFontSize(content.ko, 72))}px;color:#4A3617;`,
+      content.ko
+    ));
+  }
+  container.appendChild(titlePreviewShape(
+    `position:absolute;top:${inch(2.75)}px;left:${inch(4.66)}px;width:${inch(4)}px;height:1px;background:#B48C4A;`,
+    "rule"
+  ));
+  if (content.en) {
+    container.appendChild(titlePreviewNode(
+      `position:absolute;top:${inch(2.9)}px;left:0;width:100%;text-align:center;` +
+        `font-family:${TITLE_LATIN};font-weight:700;font-size:${pt(titleEnFontSize(content.en, 16))}px;` +
+        `letter-spacing:${pt(16) * 0.34}px;color:#9A7B45;`,
+      content.en
+    ));
+  }
+  if (content.subtitle) {
+    container.appendChild(titlePreviewNode(
+      `position:absolute;top:${inch(3.42)}px;left:0;width:100%;text-align:center;` +
+        `font-family:${TITLE_SANS};font-size:${pt(18)}px;color:#6A522B;`,
+      content.subtitle
+    ));
+  }
+  container.appendChild(titlePreviewShape(
+    `position:absolute;top:${inch(6.05)}px;left:${inch(1.1)}px;width:${inch(11.1)}px;height:1px;background:#B48C4A;`,
+    "rule"
+  ));
+  if (content.koDate) {
+    container.appendChild(titlePreviewNode(
+      `position:absolute;top:${inch(6.35)}px;left:0;width:100%;text-align:center;` +
+        `font-family:${TITLE_SANS};font-size:${pt(19)}px;color:#6A522B;`,
+      content.koDate
+    ));
+  }
+}
+
+function buildEasterStainedPreview(container, content, unit) {
+  const { inch, pt } = unit;
+  container.style.background =
+    "radial-gradient(circle at 50% 44%,rgba(138,92,199,.35),transparent 58%),linear-gradient(145deg,#0B1A33,#322055)";
+  [0, 0.42].forEach((inset) => {
+    container.appendChild(
+      titlePreviewShape(
+        `position:absolute;left:${inch(3.55 + inset)}px;top:${inch(0.45 + inset)}px;` +
+          `width:${inch(6.23 - inset * 2)}px;height:${inch(6.15 - inset * 2)}px;` +
+          `border:${Math.max(1, inch(0.015))}px solid rgba(242,193,91,.5);border-radius:${inch(2.8)}px ${inch(2.8)}px ${inch(0.2)}px ${inch(0.2)}px;`
+      )
+    );
+  });
+  const centered = (text, top, size, color, font = TITLE_SANS) => {
+    if (!text) return;
+    container.appendChild(titlePreviewNode(
+      `position:absolute;top:${inch(top)}px;left:${inch(4.2)}px;width:${inch(4.93)}px;text-align:center;` +
+        `font-family:${font};font-weight:700;font-size:${pt(size)}px;color:${color};`,
+      text
+    ));
+  };
+  centered(content.subtitle, 1.72, 17, "#F2C15B");
+  centered(content.ko, 2.35, titleKoFontSize(content.ko, 64, 4.93), "#FFFFFF", TITLE_SERIF);
+  centered(content.en, 3.95, titleEnFontSize(content.en, 17, 4.93), "#E4D4FF", TITLE_LATIN);
+  centered(content.koDate, 4.55, 18, "#E9DFC8");
+  centered(content.church, 6.55, 17, "#C9B8F0");
+}
+
+function buildChristmasBurgundyPreview(container, content, unit) {
+  const { inch, pt } = unit;
+  container.style.background = "#2A0F16";
+  container.appendChild(titlePreviewShape(
+    `position:absolute;inset:0 auto 0 0;width:${inch(0.12)}px;background:#D9B376;`,
+    "rule"
+  ));
+  container.appendChild(titlePreviewShape(
+    `position:absolute;left:${inch(8.7)}px;top:${inch(1.85)}px;width:${inch(3.4)}px;height:${inch(3.4)}px;` +
+      `background:rgba(217,179,118,.22);clip-path:polygon(50% 0,61% 37%,100% 50%,61% 63%,50% 100%,39% 63%,0 50%,39% 37%);`
+  ));
+  const left = (text, top, size, color, font = TITLE_SANS) => {
+    if (!text) return;
+    container.appendChild(titlePreviewNode(
+      `position:absolute;left:${inch(1.15)}px;top:${inch(top)}px;width:${inch(6.75)}px;` +
+        `font-family:${font};font-weight:700;font-size:${pt(size)}px;color:${color};`,
+      text
+    ));
+  };
+  left(content.church, 1.18, 18, "#D9B376");
+  left(content.ko, 2, titleKoFontSize(content.ko, 68), "#F7EBDA", TITLE_SERIF);
+  container.appendChild(titlePreviewShape(
+    `position:absolute;left:${inch(1.15)}px;top:${inch(3.55)}px;width:${inch(3.2)}px;height:1px;background:#D9B376;`,
+    "rule"
+  ));
+  left(content.en, 3.74, titleEnFontSize(content.en, 17), "#D9B376", TITLE_LATIN);
+  left(content.subtitle, 4.3, 18, "#E4D8C8");
+  left(content.koDate, 5.55, 19, "#E4D8C8");
+}
+
+function buildChristmasEvergreenPreview(container, content, unit) {
+  const { inch, pt } = unit;
+  container.style.background = "linear-gradient(145deg,#07140C,#12301C)";
+  [[1, .65, .22], [10.75, .82, .3], [11.8, 1.48, .18]].forEach(([x, y, size]) => {
+    container.appendChild(titlePreviewShape(
+      `position:absolute;left:${inch(x)}px;top:${inch(y)}px;width:${inch(size)}px;height:${inch(size)}px;` +
+        `background:#D9B376;clip-path:polygon(50% 0,60% 40%,100% 50%,60% 60%,50% 100%,40% 60%,0 50%,40% 40%);`
+    ));
+  });
+  [[-0.25, 5.75, 3.15, 2.15], [2.25, 6.05, 2.55, 1.7], [4.65, 5.65, 3.55, 2.25], [7.65, 5.95, 2.85, 1.9], [10.15, 5.6, 3.45, 2.3]].forEach(([x, y, w, h], index) => {
+    container.appendChild(titlePreviewShape(
+      `position:absolute;left:${inch(x)}px;top:${inch(y)}px;width:${inch(w)}px;height:${inch(h)}px;` +
+        `background:${index % 2 ? "#0A2012" : "#07180D"};clip-path:polygon(50% 0,100% 100%,0 100%);`
+    ));
+  });
+  const centered = (text, top, size, color, font = TITLE_SANS) => {
+    if (!text) return;
+    container.appendChild(titlePreviewNode(
+      `position:absolute;top:${inch(top)}px;left:0;width:100%;text-align:center;font-family:${font};` +
+        `font-weight:700;font-size:${pt(size)}px;color:${color};`,
+      text
+    ));
+  };
+  centered(content.church, 1.4, 18, "#D9B376");
+  centered(content.ko, 2, titleKoFontSize(content.ko, 64), "#F7EBDA", TITLE_SERIF);
+  centered(content.en, 3.45, titleEnFontSize(content.en, 17), "#D9B376", TITLE_LATIN);
+  centered(content.subtitle, 4.02, 18, "#CFD8CD");
+  centered(content.koDate, 5.55, 18, "#CFD8CD");
+}
+
+function buildThanksgivingPreview(container, content, unit) {
+  const { inch, pt } = unit;
+  container.style.background = "linear-gradient(145deg,#3A2410,#1B1108)";
+  [2.08, 11.253].forEach((x, side) => {
+    container.appendChild(titlePreviewShape(
+      `position:absolute;left:${inch(x)}px;top:${inch(1.35)}px;width:1px;height:${inch(4.8)}px;background:#C99B54;`
+    ));
+    for (let index = 0; index < 4; index += 1) {
+      container.appendChild(titlePreviewShape(
+        `position:absolute;left:${inch(x + (side ? 0.06 : -0.4))}px;top:${inch(2 + index * .78)}px;` +
+          `width:${inch(.34)}px;height:${inch(.58)}px;border-radius:70% 20% 70% 20%;` +
+          `background:#C99B54;transform:rotate(${side ? -52 : 52}deg);`
+      ));
+    }
+  });
+  const centered = (text, top, size, color, font = TITLE_SANS) => {
+    if (!text) return;
+    container.appendChild(titlePreviewNode(
+      `position:absolute;top:${inch(top)}px;left:${inch(2.6)}px;width:${inch(8.13)}px;text-align:center;` +
+        `font-family:${font};font-weight:700;font-size:${pt(size)}px;color:${color};`,
+      text
+    ));
+  };
+  centered(content.church, 1.2, 18, "#C99B54");
+  centered(content.ko, 2.05, titleKoFontSize(content.ko, 64), "#FFF1D6", TITLE_SERIF);
+  centered(content.en, 3.52, titleEnFontSize(content.en, 17), "#E6BD75", TITLE_LATIN);
+  centered(content.subtitle, 4.08, 18, "#E8D8BD");
+  centered(content.koDate, 5.42, 18, "#E8D8BD");
+}
+
+function buildAdventPreview(container, content, unit) {
+  const { inch, pt } = unit;
+  container.style.background =
+    "radial-gradient(circle at 50% 18%,rgba(228,188,115,.28),transparent 38%),linear-gradient(145deg,#1A2140,#0A0E1A)";
+  container.appendChild(titlePreviewShape(
+    `position:absolute;left:${inch(6.24)}px;top:${inch(.34)}px;width:${inch(.85)}px;height:${inch(1.12)}px;` +
+      `background:#F2C15B;border-radius:65% 35% 60% 40%;transform:rotate(45deg);`
+  ));
+  container.appendChild(titlePreviewShape(
+    `position:absolute;left:${inch(6.37)}px;top:${inch(1.34)}px;width:${inch(.59)}px;height:${inch(1.52)}px;` +
+      `background:#E9E4D8;border-radius:${inch(.04)}px;`
+  ));
+  const centered = (text, top, size, color, font = TITLE_SANS) => {
+    if (!text) return;
+    container.appendChild(titlePreviewNode(
+      `position:absolute;top:${inch(top)}px;left:0;width:100%;text-align:center;font-family:${font};` +
+        `font-weight:700;font-size:${pt(size)}px;color:${color};`,
+      text
+    ));
+  };
+  centered(content.ko, 3.2, titleKoFontSize(content.ko, 64), "#F5F0E7", TITLE_SERIF);
+  centered(content.en, 4.48, titleEnFontSize(content.en, 17), "#A7B8E8", TITLE_LATIN);
+  centered(content.subtitle, 4.98, 17, "#D7DCEE");
+  centered(content.koDate, 5.48, 18, "#D7DCEE");
+  centered(content.church, 6.35, 17, "#D7DCEE");
+  for (let index = 0; index < 4; index += 1) {
+    container.appendChild(titlePreviewShape(
+      `position:absolute;left:${inch(5.7 + .45 * index)}px;top:${inch(6.85)}px;width:${inch(.16)}px;` +
+        `height:${inch(.16)}px;border-radius:50%;background:rgba(167,184,232,${index ? .4 : 1});`
+    ));
+  }
+}
+
+function buildMidnightSlabPreview(container, content, unit) {
+  const { inch, pt } = unit;
+  container.style.background = "linear-gradient(145deg,#08090B,#181C23)";
+  container.appendChild(titlePreviewShape(
+    `position:absolute;left:${inch(1.45)}px;top:${inch(1.2)}px;width:1px;height:${inch(5.1)}px;background:#9AA3AE;`,
+    "rule"
+  ));
+  const right = (text, top, size, color, font = TITLE_SANS) => {
+    if (!text) return;
+    container.appendChild(titlePreviewNode(
+      `position:absolute;left:${inch(4.6)}px;top:${inch(top)}px;width:${inch(7.8)}px;text-align:right;` +
+        `font-family:${font};font-weight:700;font-size:${pt(size)}px;color:${color};`,
+      text
+    ));
+  };
+  right(content.church, 1.2, 17, "#9AA3AE");
+  right(content.ko, 2.16, titleKoFontSize(content.ko, 52), "#F2F4F7");
+  right(content.en, 3.52, titleEnFontSize(content.en, 17), "#C5CBD3", TITLE_LATIN);
+  right(content.subtitle, 4.12, 18, "#9AA3AE");
+  right(content.koDate, 5.78, 18, "#9AA3AE");
+}
+
+function buildSlateSplitPreview(container, content, unit) {
+  const { inch, pt } = unit;
+  container.style.background = "linear-gradient(90deg,#1C2431 0 37%,#0D1117 37%)";
+  container.appendChild(titlePreviewShape(
+    `position:absolute;left:${inch(4.93)}px;top:0;width:1px;height:100%;background:#748094;`,
+    "rule"
+  ));
+  const left = (text, top, size, color, font = TITLE_SANS) => {
+    if (!text) return;
+    container.appendChild(titlePreviewNode(
+      `position:absolute;left:${inch(.68)}px;top:${inch(top)}px;width:${inch(3.56)}px;` +
+        `font-family:${font};font-weight:700;font-size:${pt(size)}px;color:${color};`,
+      text
+    ));
+  };
+  left(content.church, 1, 18, "#DCE2EA");
+  left(content.en, 2.62, titleEnFontSize(content.en, 18), "#AEB8C6", TITLE_LATIN);
+  left(content.subtitle, 3.58, 17, "#AEB8C6");
+  left(content.koDate, 5.95, 17, "#8F9AAA");
+  if (content.ko) {
+    container.appendChild(titlePreviewNode(
+      `position:absolute;left:${inch(5.55)}px;top:${inch(2.7)}px;width:${inch(7.2)}px;` +
+        `font-family:${TITLE_SANS};font-weight:700;font-size:${pt(titleKoFontSize(content.ko, 50))}px;color:#F2F4F7;`,
+      content.ko
+    ));
+  }
+}
+
+function buildDeepFogPreview(container, content, unit) {
+  const { inch, pt } = unit;
+  container.style.background =
+    "radial-gradient(ellipse at 66% 34%,rgba(167,175,186,.28),rgba(13,17,23,0) 64%),#0D1117";
+  const left = (text, top, size, color, font = TITLE_SANS) => {
+    if (!text) return;
+    container.appendChild(titlePreviewNode(
+      `position:absolute;left:${inch(1.15)}px;top:${inch(top)}px;width:${inch(11.03)}px;` +
+        `font-family:${font};font-weight:700;font-size:${pt(size)}px;color:${color};`,
+      text
+    ));
+  };
+  left(content.subtitle, 3.72, 17, "#AAB2BD");
+  left(content.en, 4.18, titleEnFontSize(content.en, 17), "#B8C0CA", TITLE_LATIN);
+  left(content.ko, 4.72, titleKoFontSize(content.ko, 46), "#F2F4F7");
+  container.appendChild(titlePreviewShape(
+    `position:absolute;left:${inch(1.15)}px;top:${inch(5.88)}px;width:${inch(3.4)}px;height:1px;background:#98A2AE;`,
+    "rule"
+  ));
+  left(content.church, 6.22, 17, "#AAB2BD");
+  if (content.koDate) {
+    container.appendChild(titlePreviewNode(
+      `position:absolute;right:${inch(1.15)}px;top:${inch(6.22)}px;width:${inch(5.5)}px;text-align:right;` +
+        `font-family:${TITLE_SANS};font-size:${pt(17)}px;color:#AAB2BD;`,
+      content.koDate
+    ));
+  }
+}
+
 function buildTitleSlidePreview(data, previewWidth) {
   const width = previewWidth || 400;
   const perInch = width / 13.333;
@@ -3941,25 +4327,35 @@ function buildTitleSlidePreview(data, previewWidth) {
     inch: (value) => value * perInch,
     pt: (value) => (value / 72) * perInch,
   };
+  const design = normalizeTitleDesign(data.titleDesign);
   const content = {
     church: (data.churchName || "").trim() || "교회 이름",
     subtitle: (data.titleSubtitle || "").trim(),
-    koDate: formatTitleDateKo(data.serviceDate),
-    enDate: formatTitleDateEn(data.serviceDate),
+    ko: resolveTitlePreviewKo(data),
+    en: resolveTitlePreviewEn(data, design),
+    koDate: data.showDate === false ? "" : formatTitleDateKo(data.serviceDate),
+    enDate: data.showDate === false ? "" : formatTitleDateEn(data.serviceDate),
   };
 
   const container = document.createElement("div");
   container.style.cssText =
     `position:relative;width:${width}px;height:${width * 0.5625}px;overflow:hidden;`;
 
-  const design = normalizeTitleDesign(data.titleDesign);
-  if (design === "editorial") {
-    buildEditorialPreview(container, content, unit);
-  } else if (design === "glow") {
-    buildGlowPreview(container, content, unit);
-  } else {
-    buildChapelPreview(container, content, unit);
-  }
+  const builders = {
+    chapel: buildChapelPreview,
+    editorial: buildEditorialPreview,
+    glow: buildGlowPreview,
+    "easter-dawn": buildEasterDawnPreview,
+    "easter-stained": buildEasterStainedPreview,
+    "christmas-burgundy": buildChristmasBurgundyPreview,
+    "christmas-evergreen": buildChristmasEvergreenPreview,
+    thanksgiving: buildThanksgivingPreview,
+    advent: buildAdventPreview,
+    "midnight-slab": buildMidnightSlabPreview,
+    "slate-split": buildSlateSplitPreview,
+    "deep-fog": buildDeepFogPreview,
+  };
+  builders[design](container, content, unit);
 
   return container;
 }
@@ -5182,8 +5578,12 @@ async function downloadSlide() {
         body: JSON.stringify({
           titleDesign: slide.titleDesign,
           churchName: slide.churchName,
+          titleKo: slide.titleKo,
+          titleEn: slide.titleEn,
           serviceDate: slide.serviceDate,
           titleSubtitle: slide.titleSubtitle,
+          dateMode: slide.dateMode,
+          showDate: slide.showDate,
         })
       });
 
@@ -5481,8 +5881,12 @@ function buildSerializableSlide(slide) {
     adBgOpacity: slide.adBgOpacity,
     titleDesign: slide.titleDesign,
     churchName: slide.churchName,
+    titleKo: slide.titleKo,
+    titleEn: slide.titleEn,
     serviceDate: slide.serviceDate,
     titleSubtitle: slide.titleSubtitle,
+    dateMode: slide.dateMode,
+    showDate: slide.showDate,
     customTitleDesign: slide.customTitleDesign,
     customTitleKo: slide.customTitleKo,
     customTitleEn: slide.customTitleEn,
@@ -6080,17 +6484,38 @@ function maybeAutoNameTitleSlide() {
   const isUntouched =
     !current || /^새 슬라이드\d*$/.test(current) || /^주일예배( \d{4})?$/.test(current);
   if (isUntouched) {
-    slideNameInput.value = buildTitleSlideName(titleServiceDateSelect.value);
+    slideNameInput.value = buildTitleSlideName(titleServiceDateInput.value);
   }
 }
 
 function prepareTitleSlideFields() {
+  const slide = slides.find((entry) => entry.id === currentSlideId);
   if (!titleChurchNameInput.value.trim()) {
     titleChurchNameInput.value = rememberedChurchName();
   }
-  ensureTitleServiceDateOptions(
-    titleServiceDateSelect.value || defaultServiceDate()
-  );
+  if (slide?.type !== "title") {
+    titleDesignSelect.value = normalizeTitleDesign(slide?.titleDesign);
+    syncTitleDesignCards(titleDesignSelect.value);
+    titleKoInput.value =
+      slide?.titleKo == null ? "주일예배" : slide.titleKo;
+    titleEnInput.value =
+      slide?.titleEn == null
+        ? "SUNDAY WORSHIP"
+        : slide.titleEn;
+    titleSubtitleInput.value = slide?.titleSubtitle || "";
+    setSelectedDateMode(slide?.dateMode || "custom");
+    titleShowDate.checked = slide?.showDate !== false;
+    const api = titleDateApi();
+    titleServiceDateInput.value = api
+      ? api.resolveServiceDate(
+          slide?.dateMode || "custom",
+          slide?.serviceDate,
+          api.todayIsoDate()
+        )
+      : slide?.serviceDate || defaultServiceDate();
+  } else if (!titleServiceDateInput.value) {
+    titleServiceDateInput.value = defaultServiceDate();
+  }
   updateTitleSeasonSuggestion();
   maybeAutoNameTitleSlide();
 }
@@ -6111,7 +6536,38 @@ titleChurchNameInput.addEventListener('input', () => {
   refreshSaveState();
 });
 
-titleServiceDateSelect.addEventListener('change', () => {
+[titleKoInput, titleEnInput].forEach((input) => {
+  input.addEventListener('input', () => {
+    renderPreview();
+    refreshSaveState();
+  });
+});
+
+titleShowDate.addEventListener('change', () => {
+  renderPreview();
+  refreshSaveState();
+});
+
+document.querySelectorAll('input[name="titleDateMode"]').forEach((radio) => {
+  radio.addEventListener('change', () => {
+    if (!radio.checked) return;
+    const api = titleDateApi();
+    if (api) {
+      titleServiceDateInput.value = api.resolveServiceDate(
+        radio.value,
+        titleServiceDateInput.value,
+        api.todayIsoDate()
+      );
+    }
+    updateTitleSeasonSuggestion();
+    maybeAutoNameTitleSlide();
+    renderPreview();
+    refreshSaveState();
+  });
+});
+
+titleServiceDateInput.addEventListener('input', () => {
+  setSelectedDateMode('custom');
   updateTitleSeasonSuggestion();
   maybeAutoNameTitleSlide();
   renderPreview();

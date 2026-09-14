@@ -5,9 +5,11 @@ import { createRoot } from "react-dom/client";
 
 import * as customTitleText from "@lib/custom-title-text.js";
 import * as titleSlideDate from "@lib/title-slide-date.js";
+import * as titleSlideText from "@lib/title-slide-text.js";
 import { CustomEditorChrome } from "./custom-editor-chrome.jsx";
 
 window.TitleSlideDate = titleSlideDate;
+window.TitleSlideText = titleSlideText;
 window.CustomTitleText = customTitleText;
 
 const editorRoot = document.getElementById("customSlideEditor");

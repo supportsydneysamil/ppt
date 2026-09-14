@@ -31,6 +31,7 @@ import { convertLegacyPptToPptx } from "./lib/legacy-ppt.js";
 import { mergePptxBuffers } from "./lib/merge-pptx.js";
 import { fetchRemoteImage, sniffImageMimeType } from "./lib/remote-image.js";
 import { appendTitleSlide } from "./lib/title-slide.js";
+import { todayIsoDate } from "./lib/title-slide-date.js";
 
 const execAsync = promisify(exec);
 
@@ -419,8 +420,12 @@ async function buffersForSlide(slideData, warnings) {
   }
 
   if (slideData.type === "title") {
+    const titleData = {
+      ...slideData,
+      serviceDate: slideData.serviceDate || todayIsoDate(),
+    };
     buffers.push(
-      await writeGeneratedDeck((pptx) => appendTitleSlide(pptx, slideData))
+      await writeGeneratedDeck((pptx) => appendTitleSlide(pptx, titleData))
     );
     return buffers;
   }
@@ -1051,7 +1056,11 @@ app.post("/api/create-title-slide-pptx", async (req, res) => {
   try {
     const pptx = new PptxGenJS();
     pptx.layout = "LAYOUT_WIDE";
-    appendTitleSlide(pptx, req.body);
+    const titleData = {
+      ...req.body,
+      serviceDate: req.body.serviceDate || todayIsoDate(),
+    };
+    appendTitleSlide(pptx, titleData);
     let buffer = await pptx.write({ outputType: "nodebuffer" });
     buffer = injectThumbnail(buffer);
     const filename = `title_slide_${Date.now()}.pptx`;
