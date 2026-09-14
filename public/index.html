@@ -943,11 +943,83 @@
                         <small>네이비 · 금색 글로우</small>
                       </span>
                     </button>
+                    <button type="button" class="theme-option-card" data-title-design="easter-dawn">
+                      <span class="title-design-preview title-preview-easter-dawn"><i class="title-preview-motif motif-rays"></i><span>주일예배</span></span>
+                      <span class="theme-option-copy">
+                        <strong>부활 새벽빛</strong>
+                        <small>크림 · 햇살과 지평선</small>
+                      </span>
+                    </button>
+                    <button type="button" class="theme-option-card" data-title-design="easter-stained">
+                      <span class="title-design-preview title-preview-easter-stained"><i class="title-preview-motif motif-arch"></i><span>주일예배</span></span>
+                      <span class="theme-option-copy">
+                        <strong>부활 스테인드</strong>
+                        <small>바이올렛 · 아치 창</small>
+                      </span>
+                    </button>
+                    <button type="button" class="theme-option-card" data-title-design="christmas-burgundy">
+                      <span class="title-design-preview title-preview-christmas-burgundy"><i class="title-preview-motif motif-star"></i><span>주일예배</span></span>
+                      <span class="theme-option-copy">
+                        <strong>성탄 버건디</strong>
+                        <small>버건디 · 금색 별</small>
+                      </span>
+                    </button>
+                    <button type="button" class="theme-option-card" data-title-design="christmas-evergreen">
+                      <span class="title-design-preview title-preview-christmas-evergreen"><i class="title-preview-motif motif-trees"></i><span>주일예배</span></span>
+                      <span class="theme-option-copy">
+                        <strong>성탄 상록</strong>
+                        <small>상록 · 전나무 실루엣</small>
+                      </span>
+                    </button>
+                    <button type="button" class="theme-option-card" data-title-design="thanksgiving">
+                      <span class="title-design-preview title-preview-thanksgiving"><i class="title-preview-motif motif-wheat"></i><span>주일예배</span></span>
+                      <span class="theme-option-copy">
+                        <strong>추수 감사</strong>
+                        <small>갈색 · 황금 이삭</small>
+                      </span>
+                    </button>
+                    <button type="button" class="theme-option-card" data-title-design="advent">
+                      <span class="title-design-preview title-preview-advent"><i class="title-preview-motif motif-candle"></i><span>주일예배</span></span>
+                      <span class="theme-option-copy">
+                        <strong>대림 촛불</strong>
+                        <small>네이비 · 촛불과 네 주</small>
+                      </span>
+                    </button>
+                    <button type="button" class="theme-option-card" data-title-design="midnight-slab">
+                      <span class="title-design-preview title-preview-midnight-slab"><i class="title-preview-rule rule-spine"></i><span>주일예배</span></span>
+                      <span class="theme-option-copy">
+                        <strong>미드나잇 슬랩</strong>
+                        <small>차콜 · 우측 정렬</small>
+                      </span>
+                    </button>
+                    <button type="button" class="theme-option-card" data-title-design="slate-split">
+                      <span class="title-design-preview title-preview-slate-split"><i class="title-preview-rule rule-split"></i><span>주일예배</span></span>
+                      <span class="theme-option-copy">
+                        <strong>슬레이트 스플릿</strong>
+                        <small>슬레이트 · 좌우 분할</small>
+                      </span>
+                    </button>
+                    <button type="button" class="theme-option-card" data-title-design="deep-fog">
+                      <span class="title-design-preview title-preview-deep-fog"><i class="title-preview-rule rule-underline"></i><span>주일예배</span></span>
+                      <span class="theme-option-copy">
+                        <strong>딥 포그</strong>
+                        <small>안개 · 하단 정렬</small>
+                      </span>
+                    </button>
                   </div>
                   <select id="titleDesign" class="hidden-select">
                     <option value="chapel" selected>클래식 채플</option>
                     <option value="editorial">모던 에디토리얼</option>
                     <option value="glow">스테인드 글로우</option>
+                    <option value="easter-dawn">부활 새벽빛</option>
+                    <option value="easter-stained">부활 스테인드</option>
+                    <option value="christmas-burgundy">성탄 버건디</option>
+                    <option value="christmas-evergreen">성탄 상록</option>
+                    <option value="thanksgiving">추수 감사</option>
+                    <option value="advent">대림 촛불</option>
+                    <option value="midnight-slab">미드나잇 슬랩</option>
+                    <option value="slate-split">슬레이트 스플릿</option>
+                    <option value="deep-fog">딥 포그</option>
                   </select>
                 </div>
               </div>
@@ -956,22 +1028,42 @@
                 <div class="rte-panel-label">예배 정보</div>
                 <div class="rte-panel-body">
                   <div class="rte-panel-row">
-                    <span class="rte-row-label">교회 이름</span>
+                    <label class="rte-row-label" for="titleChurchName">교회 이름</label>
                     <input id="titleChurchName" type="text" class="rte-url-input" placeholder="예: 삼일교회" />
                   </div>
                   <div class="rte-panel-row">
-                    <span class="rte-row-label">주일 날짜</span>
-                    <select id="titleServiceDate" class="rte-select"></select>
+                    <label class="rte-row-label" for="titleKo">한글 타이틀</label>
+                    <input id="titleKo" type="text" class="rte-url-input" placeholder="주일예배" />
                   </div>
                   <div class="rte-panel-row">
-                    <span class="rte-row-label">부제 <span class="rte-panel-hint">선택</span></span>
+                    <label class="rte-row-label" for="titleEn">영문 타이틀</label>
+                    <input id="titleEn" type="text" class="rte-url-input" placeholder="SUNDAY WORSHIP" />
+                  </div>
+                  <div class="rte-panel-row">
+                    <label class="rte-row-label" for="titleSubtitle">부제 <span class="rte-panel-hint">선택</span></label>
                     <div class="rte-row-main">
                       <input id="titleSubtitle" type="text" class="rte-url-input" placeholder="예: 성찬 예배" />
                       <button type="button" id="titleSeasonSuggestBtn" class="ghost" hidden></button>
                     </div>
                   </div>
+                  <label class="rte-panel-row">
+                    <span class="rte-row-label">날짜 표시</span>
+                    <input id="titleShowDate" type="checkbox" checked />
+                  </label>
+                  <div class="rte-panel-row">
+                    <span class="rte-row-label" id="titleDateModeLabel">날짜 모드</span>
+                    <div class="rte-seg-group" id="titleDateMode" role="radiogroup" aria-labelledby="titleDateModeLabel">
+                      <label class="rte-seg-item"><input type="radio" name="titleDateMode" value="next-sunday" /><span>다음 주일</span></label>
+                      <label class="rte-seg-item"><input type="radio" name="titleDateMode" value="today" /><span>오늘</span></label>
+                      <label class="rte-seg-item"><input type="radio" name="titleDateMode" value="custom" checked /><span>수동</span></label>
+                    </div>
+                  </div>
+                  <div class="rte-panel-row">
+                    <label class="rte-row-label" for="titleServiceDate">날짜 값</label>
+                    <input id="titleServiceDate" type="date" class="rte-url-input" />
+                  </div>
                   <p class="hint rte-hint">
-                    날짜는 다음 주일이 기본값이고, 절기에 해당하면 부제를 자동으로 제안합니다.
+                    날짜 기본은 오늘이며 수동으로 바꿀 수 있습니다. 절기에 해당하면 부제를 자동으로 제안합니다.
                   </p>
                 </div>
               </div>
