@@ -29,6 +29,7 @@ function uploadedSlide(overrides = {}) {
     hymnEngTitle: "Praise God",
     originalUrl: "https://example.test/nhymn1.ppt",
     includeTitle: true,
+    titleThemeId: "marquee",
     titleSlideType: "봉독",
     testament: "old",
     book: "genesis",
@@ -48,14 +49,15 @@ function uploadedSlide(overrides = {}) {
 test("sanitizeSlideForTemplate", async (t) => {
   await t.test("preserves every field the editor reads back", () => {
     const slide = uploadedSlide();
-    const sanitized = sanitizeSlideForTemplate(slide);
+    const saved = sanitizeSlideForTemplate(slide);
 
     for (const key of Object.keys(slide)) {
       if (key === "file" || key === "fileData") {
         continue;
       }
-      assert.deepEqual(sanitized[key], slide[key], `lost ${key}`);
+      assert.deepEqual(saved[key], slide[key], `lost ${key}`);
     }
+    assert.equal(saved.titleThemeId, "marquee");
   });
 
   await t.test("drops runtime-only and unknown fields", () => {
@@ -89,7 +91,17 @@ test("sanitizeSlideForTemplate", async (t) => {
     assert.equal(sanitized.fileSaved, false);
     assert.equal(sanitized.serverFilePath, null);
     assert.equal(sanitized.customTitleSubtitle, "");
+    assert.equal(sanitized.titleThemeId, "original");
     assert.equal(sanitized.customSlide, null);
+  });
+
+  await t.test("normalizes invalid cover title themes at persistence", () => {
+    assert.equal(
+      sanitizeSlideForTemplate(
+        uploadedSlide({ titleThemeId: "future-theme" })
+      ).titleThemeId,
+      "original"
+    );
   });
 
   await t.test("keeps an explicitly unsaved slide unsaved", () => {
