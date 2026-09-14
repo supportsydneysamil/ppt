@@ -14,7 +14,9 @@ const [html, app] = await Promise.all([
 ]);
 
 // Reads one top-level function body out of app.js so a guard can be asserted
-// against the function that owns it rather than the whole file.
+// against the function that owns it rather than the whole file. Comments are
+// dropped so an assertion about statement order cannot be satisfied - or
+// defeated - by prose that happens to name the thing being asserted.
 function functionBody(source, name) {
   const start = source.indexOf(`function ${name}(`);
   assert.notEqual(start, -1, `${name} is missing`);
@@ -26,7 +28,10 @@ function functionBody(source, name) {
     if (source[index] === "}") {
       depth -= 1;
       if (depth === 0) {
-        return source.slice(bodyStart, index + 1);
+        return source
+          .slice(bodyStart, index + 1)
+          .replace(/(^|\s)\/\/[^\n]*/g, "$1")
+          .replace(/\/\*[\s\S]*?\*\//g, "");
       }
     }
   }
@@ -119,6 +124,56 @@ describe("slide list mutations while a duplicate is in flight", () => {
     assert.ok(
       !body.includes("guardTransition("),
       "awaiting the server inside the guard lets nested mutations through"
+    );
+  });
+});
+
+// `duplicateSaving` cannot cover the preflight: it feeds isSaveBusy, so
+// ensureNoPendingChanges would refuse the duplicate's own guard. Without a
+// separate lock claimed before that first await, two rapid clicks both clear
+// the entry checks, stage from the same list, and the later persistence drops
+// the earlier clone.
+describe("duplicate re-entry during the preflight window", () => {
+  it("claims the re-entry lock on entry, before the first await", () => {
+    const body = functionBody(app, "duplicateCurrentSlide");
+    const firstAwait = body.indexOf("await");
+
+    assert.match(body, /duplicateInProgress/);
+    assert.ok(
+      body.indexOf("duplicateInProgress") < firstAwait,
+      "a second call has to be refused before anything is awaited"
+    );
+    assert.ok(
+      body.indexOf("duplicateInProgress = true") < firstAwait,
+      "the lock has to be claimed synchronously"
+    );
+    assert.match(
+      body,
+      /finally\s*\{[\s\S]*duplicateInProgress = false/,
+      "every exit and error has to release the lock"
+    );
+  });
+
+  it("keeps the lock out of the shared busy state", () => {
+    assert.ok(
+      !functionBody(app, "getSaveState").includes("duplicateInProgress"),
+      "a lock in isSaveBusy would make the preflight refuse its own guard"
+    );
+    assert.match(
+      functionBody(app, "refreshSaveState"),
+      /duplicateSlideBtn\.disabled =[\s\S]*duplicateInProgress/,
+      "the duplicate control has to stay disabled through the preflight"
+    );
+  });
+
+  it("does not activate or announce a clone that was never inserted", () => {
+    const body = functionBody(app, "duplicateCurrentSlide");
+    const insertionCheck = body.indexOf("nextSlides.length === slides.length");
+
+    assert.notEqual(insertionCheck, -1, "a vanished source has to be detected");
+    assert.ok(
+      insertionCheck < body.indexOf("applySlideSelection("),
+      "a missing clone must not be selected or toasted as a success"
     );
   });
 });

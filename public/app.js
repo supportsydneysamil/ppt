@@ -928,6 +928,10 @@ let templateSaving = false;
 // flight: nothing may delete, reset or reorder again until it settles.
 let reorderSaving = false;
 let duplicateSaving = false;
+// Claimed for the whole duplicate request, including the preflight that runs
+// before duplicateSaving is set. It is deliberately kept out of the shared
+// busy state: isSaveBusy would make the preflight refuse its own guard.
+let duplicateInProgress = false;
 // Depth > 0 means a guarded transition is already running, so nested helpers
 // must not raise a second unsaved-changes popup.
 let guardedTransitionDepth = 0;
@@ -1156,7 +1160,8 @@ function refreshSaveState() {
     }
   }
   if (duplicateSlideBtn) {
-    duplicateSlideBtn.disabled = !draft || isSaveBusy(getSaveState());
+    duplicateSlideBtn.disabled =
+      !draft || duplicateInProgress || isSaveBusy(getSaveState());
   }
 }
 
@@ -2359,42 +2364,49 @@ async function persistCurrentWorkspace(nextSlides = slides) {
 // guard, so the list this request stages cannot be assigned over a mutation
 // that a nested guarded transition let through while the server was answering.
 async function duplicateCurrentSlide() {
-  if (!currentSlideId || blockedBySaveInProgress()) {
+  if (duplicateInProgress || !currentSlideId || blockedBySaveInProgress()) {
     return false;
   }
 
-  if (!(await ensureNoPendingChanges())) {
-    return false;
-  }
-
-  // The guard is a yield point, so a save may have started behind it.
-  if (blockedBySaveInProgress()) {
-    return false;
-  }
-
-  const sourceId = currentSlideId;
-  const draft = collectCurrentSlideDraft();
-  if (!sourceId || !draft) {
-    return false;
-  }
-
-  if (
-    draft.pendingFile ||
-    draft.pendingBackgroundFile ||
-    draft.pendingScriptureImage
-  ) {
-    alert("선택한 파일을 먼저 저장한 뒤 복제해 주세요.");
-    return false;
-  }
-
-  duplicateSaving = true;
+  // Claimed before the first await: duplicateSaving is only set once the
+  // preflight is done, so without this two rapid clicks would both clear the
+  // checks above and stage a list from the same starting point.
+  duplicateInProgress = true;
   refreshSaveState();
-  const restoreDuplicateLabel = showSaveButtonProgress(
-    duplicateSlideBtn,
-    "복제 중..."
-  );
+  let restoreDuplicateLabel = () => {};
 
   try {
+    if (!(await ensureNoPendingChanges())) {
+      return false;
+    }
+
+    // The guard is a yield point, so a save may have started behind it.
+    if (blockedBySaveInProgress()) {
+      return false;
+    }
+
+    const sourceId = currentSlideId;
+    const draft = collectCurrentSlideDraft();
+    if (!sourceId || !draft) {
+      return false;
+    }
+
+    if (
+      draft.pendingFile ||
+      draft.pendingBackgroundFile ||
+      draft.pendingScriptureImage
+    ) {
+      alert("선택한 파일을 먼저 저장한 뒤 복제해 주세요.");
+      return false;
+    }
+
+    duplicateSaving = true;
+    refreshSaveState();
+    restoreDuplicateLabel = showSaveButtonProgress(
+      duplicateSlideBtn,
+      "복제 중..."
+    );
+
     let duplicate;
     if (hasOwnedSlideAsset(draft)) {
       const response = await fetch("/api/slides/clone", {
@@ -2416,6 +2428,11 @@ async function duplicateCurrentSlide() {
       slides.map((slide) => slide.name)
     );
     const nextSlides = insertSlideAfter(slides, sourceId, duplicate);
+    // The source is gone, so there is nothing to insert after: the clone is
+    // dropped rather than appended somewhere the user did not ask for.
+    if (nextSlides.length === slides.length) {
+      return false;
+    }
 
     if (isTemplateMode()) {
       slides = nextSlides;
@@ -2441,6 +2458,7 @@ async function duplicateCurrentSlide() {
   } finally {
     restoreDuplicateLabel();
     duplicateSaving = false;
+    duplicateInProgress = false;
     refreshSaveState();
   }
 }
