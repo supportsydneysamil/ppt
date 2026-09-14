@@ -15,6 +15,8 @@
 - Always create a new template on import. Never overwrite by name or id.
 - Do not embed PPTX or image bytes. Strip `/uploads/` paths and all `data:` URLs from every asset field, normalize those fields to safe null/empty canonical values, and record the loss with optional boolean `unrestorable: true`.
 - `sanitizeSlideForTemplate` preserves `unrestorable` as a Boolean so warnings survive `POST /api/templates` persistence and re-export. This optional field is backward-compatible in schema v1.
+- The browser field allowlist `buildSerializableSlide` must also preserve `unrestorable` because clone, gallery-cache, and save payload flows all cross it.
+- Keep `unrestorable: true` sticky. There is no complete repair operation that verifies every potentially missing asset, so clearing it after one replacement could hide another loss.
 - Do not add import/export HTTP routes. Use `POST /api/templates`.
 - Do not add Playwright coverage for this feature.
 - Implementation must occur in an isolated git worktree.
@@ -23,7 +25,9 @@
 
 - Create: `lib/template-schema.js` — constants, portable conversion, parse, migrate, error messages, download filename.
 - Create: `test/template-schema.test.js` — unit tests for the module.
+- Create: `test/template-import-guards.test.js` — source-level guard for malformed successful import responses.
 - Modify: `lib/slide-record.js` — preserve the optional `unrestorable` boolean at persistence boundaries.
+- Modify: `test/cover-title-state.test.js` — source-level serializer/clone boundary regression.
 - Modify: `public/index.html` — gallery “스키마 가져오기” control and hidden file input.
 - Modify: `public/styles.css` — gallery toolbar.
 - Modify: `public/app.js` — card Export, gallery Import, confirm/toast.
@@ -531,6 +535,8 @@ EOF
 **Interfaces:**
 - Consumes: `toPortableTemplateSchema`, `unrestorableSlideNames`, `parseTemplateSchema`, `templateSchemaFilename` from `@lib/template-schema.js`.
 - Produces: card menu item `스키마 내보내기`; gallery button `스키마 가져오기` that POSTs `{ name, slides }` to `/api/templates` and `templates.push`es the response. Duplicate names stay as two cards because the existing create route does not uniquify names.
+- `buildSerializableSlide` includes `unrestorable: Boolean(slide.unrestorable)` so `cloneSlide`/`cloneTemplate` and persistence payloads cannot drop the warning.
+- Import validates a successful response's template id, name, and non-empty slides array before mutating `templates`.
 
 The templates tab hides `#pptTabbarActions` while the gallery is showing, so Import must live inside `#templateGallery`, not the slide bulk menu. The gallery section stays visible when empty, so the button still works with zero templates. The workspace hides the whole gallery, which hides Import as specified.
 
@@ -681,10 +687,23 @@ async function importTemplateSchemaFile(file) {
     if (!resp.ok) {
       throw new Error(payload.error || "템플릿 가져오기에 실패했습니다.");
     }
+    const importedTemplate = payload?.template;
+    if (
+      !importedTemplate ||
+      typeof importedTemplate !== "object" ||
+      typeof importedTemplate.id !== "string" ||
+      !importedTemplate.id.trim() ||
+      typeof importedTemplate.name !== "string" ||
+      !importedTemplate.name.trim() ||
+      !Array.isArray(importedTemplate.slides) ||
+      importedTemplate.slides.length === 0
+    ) {
+      throw new Error("템플릿 가져오기에 실패했습니다.");
+    }
 
-    templates.push(cloneTemplate(payload.template));
+    templates.push(cloneTemplate(importedTemplate));
     renderTemplateGallery();
-    showToast(`템플릿을 가져왔습니다: ${payload.template.name}`);
+    showToast(`템플릿을 가져왔습니다: ${importedTemplate.name}`);
     if (parsed.unrestorableNames.length > 0) {
       alert(
         formatUnrestorableSchemaMessage(parsed.unrestorableNames, {

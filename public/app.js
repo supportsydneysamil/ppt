@@ -5872,6 +5872,7 @@ function buildSerializableSlide(slide) {
     fileName: slide.fileName,
     fileSaved: slide.fileSaved,
     saved: slide.saved,
+    unrestorable: Boolean(slide.unrestorable),
     serverFilePath: slide.serverFilePath,
     thumbnail: slide.thumbnail,
     hymnNumber: slide.hymnNumber,
@@ -6052,10 +6053,23 @@ async function importTemplateSchemaFile(file) {
     if (!resp.ok) {
       throw new Error(payload.error || "템플릿 가져오기에 실패했습니다.");
     }
+    const importedTemplate = payload?.template;
+    if (
+      !importedTemplate ||
+      typeof importedTemplate !== "object" ||
+      typeof importedTemplate.id !== "string" ||
+      !importedTemplate.id.trim() ||
+      typeof importedTemplate.name !== "string" ||
+      !importedTemplate.name.trim() ||
+      !Array.isArray(importedTemplate.slides) ||
+      importedTemplate.slides.length === 0
+    ) {
+      throw new Error("템플릿 가져오기에 실패했습니다.");
+    }
 
-    templates.push(cloneTemplate(payload.template));
+    templates.push(cloneTemplate(importedTemplate));
     renderTemplateGallery();
-    showToast(`템플릿을 가져왔습니다: ${payload.template.name}`);
+    showToast(`템플릿을 가져왔습니다: ${importedTemplate.name}`);
     if (parsed.unrestorableNames.length > 0) {
       alert(
         formatUnrestorableSchemaMessage(parsed.unrestorableNames, {

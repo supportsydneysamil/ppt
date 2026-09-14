@@ -107,6 +107,27 @@ describe("cover title theme browser state", () => {
     );
   });
 
+  it("preserves unrestorable through serialization and clone boundaries", () => {
+    const serialize = compileFunction("buildSerializableSlide", ["slide"], {
+      copyCustomSlideModel: (value) => value,
+    });
+    const clone = compileFunction(
+      "cloneSlide",
+      ["slide", "options = {}"],
+      {
+        buildSerializableSlide: serialize,
+        generateClientId: () => "generated-slide",
+      }
+    );
+
+    assert.equal(serialize({ unrestorable: true }).unrestorable, true);
+    assert.equal(serialize({}).unrestorable, false);
+    assert.equal(
+      clone({ id: "slide-1", unrestorable: true }).unrestorable,
+      true
+    );
+  });
+
   it("routes clone boundaries through the canonical serializer", () => {
     assert.match(
       functionBody(app, "cloneSlide"),
