@@ -33,6 +33,13 @@ import {
   hasOwnedSlideAsset,
   insertSlideAfter,
 } from "@lib/slide-duplicate.js";
+import {
+  createCustomTitleDesignPicker,
+  restoreCustomTitleDesignEditor,
+} from "./custom-title-design-picker.js";
+import {
+  buildCustomTitleSlidePreview as buildCatalogCustomTitleSlidePreview,
+} from "./custom-title-preview.js";
 import { buildHymnSubtitle } from "@lib/cover-title-content.js";
 import {
   TEMPLATE_SCHEMA_ERROR,
@@ -928,6 +935,7 @@ const customTitleDesignSelect = document.getElementById("customTitleDesign");
 const customTitleKoInput = document.getElementById("customTitleKo");
 const customTitleEnInput = document.getElementById("customTitleEn");
 const customTitleSubtitleInput = document.getElementById("customTitleSubtitle");
+let customTitleDesignPicker = null;
 const unsavedChangesModal = document.getElementById("unsavedChangesModal");
 const unsavedChangesCard = document.getElementById("unsavedChangesCard");
 const unsavedChangesMessage = document.getElementById("unsavedChangesMessage");
@@ -3699,12 +3707,7 @@ function populateEditor(
     );
     updateTitleSeasonSuggestion();
   } else if (slide.type === 'custom-title') {
-    initializeCustomTitleDesignPicker(
-      customTitleDesignCategories,
-      customTitleDesignGrid,
-      customTitleDesignSelect,
-      slide.customTitleDesign
-    );
+    restoreCustomTitleDesignEditor(customTitleDesignPicker, slide);
     customTitleKoInput.value = slide.customTitleKo || '';
     customTitleEnInput.value = slide.customTitleEn || '';
     customTitleSubtitleInput.value = slide.customTitleSubtitle || '';
@@ -4265,172 +4268,6 @@ function customTitleTextApi() {
   return window.CustomTitleText || null;
 }
 
-function customTitleKoSize(text) {
-  const api = customTitleTextApi();
-  return api ? api.koTitleFontSize(text) : 70;
-}
-
-function customTitleEnSize(text) {
-  const api = customTitleTextApi();
-  return api ? api.enTitleFontSize(text) : 19;
-}
-
-function customTitleSubtitleSize(text) {
-  const api = customTitleTextApi();
-  return api ? api.subtitleFontSize(text) : 28;
-}
-
-function syncCustomTitleDesignCards(value) {
-  if (!customTitleDesignGrid) return;
-  customTitleDesignGrid
-    .querySelectorAll("[data-custom-title-design]")
-    .forEach((card) => {
-      const selected = card.dataset.customTitleDesign === value;
-      card.classList.toggle("is-active", selected);
-      card.setAttribute("aria-pressed", String(selected));
-    });
-}
-
-function createCustomTitleDesignCard(design, selectedId) {
-  const card = document.createElement("button");
-  card.type = "button";
-  card.className = "theme-option-card custom-title-design-card";
-  card.dataset.customTitleDesign = design.id;
-  card.setAttribute("aria-label", `${design.name} 디자인`);
-  const selected = design.id === selectedId;
-  card.classList.toggle("is-active", selected);
-  card.setAttribute("aria-pressed", String(selected));
-
-  const preview = buildCustomTitleSlidePreview(
-    {
-      customTitleDesign: design.id,
-      customTitleKo: "예배",
-      customTitleEn: "WORSHIP",
-      customTitleSubtitle: "",
-    },
-    180
-  );
-  preview.classList.add("custom-title-card-preview");
-  card.appendChild(preview);
-
-  const copy = document.createElement("span");
-  copy.className = "theme-option-copy";
-  const name = document.createElement("strong");
-  name.textContent = design.name;
-  const description = document.createElement("small");
-  description.textContent = design.description;
-  copy.append(name, description);
-  card.appendChild(copy);
-  return card;
-}
-
-function initializeCustomTitleDesignPicker(
-  categoryGroup,
-  designGrid,
-  designSelect,
-  value
-) {
-  const api = customTitleCatalogApi();
-  if (!api || !categoryGroup || !designGrid || !designSelect) return "aurora";
-  const selectedId = api.normalizeCustomTitleDesignId(value);
-  const selectedDesign = api.findCustomTitleDesign(selectedId);
-
-  categoryGroup.replaceChildren();
-  api.CUSTOM_TITLE_DESIGN_CATEGORIES.forEach((category) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "custom-title-category-button";
-    button.dataset.customTitleCategory = category.id;
-    button.textContent = category.name;
-    button.setAttribute("aria-label", `${category.name} 디자인 보기`);
-    const active = category.id === selectedDesign.categoryId;
-    button.classList.toggle("is-active", active);
-    button.setAttribute("aria-pressed", String(active));
-    categoryGroup.appendChild(button);
-  });
-
-  designSelect.replaceChildren();
-  api.CUSTOM_TITLE_DESIGN_CATALOG.forEach((design) => {
-    const option = document.createElement("option");
-    option.value = design.id;
-    option.textContent = design.name;
-    designSelect.appendChild(option);
-  });
-  designSelect.value = selectedId;
-
-  designGrid.replaceChildren();
-  api
-    .listCustomTitleDesignsByCategory(selectedDesign.categoryId)
-    .forEach((design) =>
-      designGrid.appendChild(createCustomTitleDesignCard(design, selectedId))
-    );
-  return selectedId;
-}
-
-function filterCustomTitleDesignCategory(
-  categoryGroup,
-  designGrid,
-  designSelect,
-  categoryId
-) {
-  const api = customTitleCatalogApi();
-  if (!api) return;
-  const categoryExists = api.CUSTOM_TITLE_DESIGN_CATEGORIES.some(
-    (category) => category.id === categoryId
-  );
-  if (!categoryExists) return;
-
-  categoryGroup
-    .querySelectorAll("[data-custom-title-category]")
-    .forEach((button) => {
-      const active = button.dataset.customTitleCategory === categoryId;
-      button.classList.toggle("is-active", active);
-      button.setAttribute("aria-pressed", String(active));
-    });
-  designGrid.replaceChildren();
-  api.listCustomTitleDesignsByCategory(categoryId).forEach((design) => {
-    designGrid.appendChild(
-      createCustomTitleDesignCard(design, designSelect.value)
-    );
-  });
-}
-
-function setupCustomTitleDesignPicker(
-  categoryGroup,
-  designGrid,
-  designSelect,
-  render,
-  refreshDirty
-) {
-  categoryGroup.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-custom-title-category]");
-    if (!button) return;
-    filterCustomTitleDesignCategory(
-      categoryGroup,
-      designGrid,
-      designSelect,
-      button.dataset.customTitleCategory
-    );
-  });
-  designGrid.addEventListener("click", (event) => {
-    const card = event.target.closest("[data-custom-title-design]");
-    if (!card) return;
-    designSelect.value = normalizeCustomTitleDesign(
-      card.dataset.customTitleDesign
-    );
-    designGrid
-      .querySelectorAll("[data-custom-title-design]")
-      .forEach((candidate) => {
-        const selected =
-          candidate.dataset.customTitleDesign === designSelect.value;
-        candidate.classList.toggle("is-active", selected);
-        candidate.setAttribute("aria-pressed", String(selected));
-      });
-    render();
-    refreshDirty();
-  });
-}
-
 function collectCustomTitleSlideData() {
   return {
     customTitleDesign: normalizeCustomTitleDesign(customTitleDesignSelect.value),
@@ -4442,380 +4279,12 @@ function collectCustomTitleSlideData() {
 
 // --- Title (Custom) preview (mirrors lib/custom-title-slide.js coordinates) ---
 
-const CUSTOM_TITLE_THEMES = {
-  aurora: {
-    background:
-      "radial-gradient(72% 72% at 78% 8%, rgba(139,92,246,0.46), rgba(139,92,246,0) 72%)," +
-      "radial-gradient(78% 78% at 10% 96%, rgba(45,212,191,0.34), rgba(45,212,191,0) 72%)," +
-      "linear-gradient(135deg, #170E33 0%, #2C1A63 52%, #0C3A52 100%)",
-    koFont: TITLE_SANS,
-    koWeight: 700,
-    koColor: "#FFFFFF",
-    koTracking: 0.02,
-    koGap: 0.34,
-    dividerGap: 0.3,
-    ruleWidth: 3.4,
-    ruleWeight: 0.024,
-    ruleColor: "#8B6BFF",
-    enColor: "#C4B2FF",
-    enWeight: 700,
-    enTracking: 0.42,
-    subtitleHalo:
-      "radial-gradient(ellipse at center, rgba(196,178,255,0.15), rgba(196,178,255,0) 68%)",
-    subtitleText: "#FFFFFF",
-  },
-  monolith: {
-    background:
-      "radial-gradient(62% 62% at 50% 0%, rgba(255,255,255,0.12), rgba(255,255,255,0) 70%)," +
-      "linear-gradient(90deg, #0A0B0D 25%, #15171B 50%, #0A0B0D 75%)",
-    koFont: TITLE_SERIF,
-    koWeight: 700,
-    koColor: "#F4F1EA",
-    koTracking: 0.06,
-    koGap: 0.36,
-    dividerGap: 0.28,
-    ruleWidth: 1.1,
-    ruleWeight: 0.014,
-    ruleColor: "#9A9689",
-    enColor: "#9A9689",
-    enWeight: 400,
-    enTracking: 0.5,
-    hairline: "#2C2E33",
-    subtitleHalo:
-      "radial-gradient(ellipse at center, rgba(255,255,255,0.10), rgba(255,255,255,0) 68%)",
-    subtitleText: "#EEE9DC",
-  },
-  ivory: {
-    background: "#FAF6EF",
-    koFont: TITLE_SERIF,
-    koWeight: 700,
-    koColor: "#1F1B16",
-    koTracking: 0.04,
-    koGap: 0.32,
-    dividerGap: 0.28,
-    ruleWidth: 2.2,
-    ruleWeight: 0.017,
-    ruleColor: "#C2A87A",
-    enColor: "#907A52",
-    enWeight: 700,
-    enTracking: 0.45,
-    frame: "#C2A87A",
-    frameWeight: 0.021,
-    subtitleHalo:
-      "radial-gradient(ellipse at center, rgba(194,168,122,0.16), rgba(194,168,122,0) 68%)",
-    subtitleText: "#5F4B2C",
-  },
-  marquee: {
-    background: "#2A0F16",
-    koFont: TITLE_SERIF,
-    koWeight: 700,
-    koColor: "#F7EBDA",
-    koTracking: 0.05,
-    koGap: 0.34,
-    dividerGap: 0.3,
-    ruleWidth: 3.6,
-    ruleWeight: 0.014,
-    ruleColor: "#D9B376",
-    enColor: "#D9B376",
-    enWeight: 700,
-    enTracking: 0.48,
-    frame: "#D9B376",
-    frameWeight: 0.024,
-    diamonds: true,
-    subtitleHalo:
-      "radial-gradient(ellipse at center, rgba(217,179,118,0.12), rgba(217,179,118,0) 68%)",
-    subtitleText: "#F7EBDA",
-  },
-};
-
-const CUSTOM_TITLE_FAMILY_LAYOUTS = {
-  "centered-rule": { align: "center", width: "100%", offsetX: "0", offsetY: "0" },
-  "double-frame": { align: "center", width: "100%", offsetX: "0", offsetY: "0" },
-  "ornament-frame": { align: "center", width: "100%", offsetX: "0", offsetY: "0" },
-  "side-band": { align: "left", width: "57%", offsetX: "9.75%", offsetY: "0" },
-  "horizon-split": { align: "center", width: "100%", offsetX: "0", offsetY: "9%" },
-  "emblem-crest": { align: "center", width: "100%", offsetX: "0", offsetY: "6%" },
-  "veil-panel": { align: "left", width: "42.4%", offsetX: "47.6%", offsetY: "0" },
-  "corner-mark": { align: "left", width: "69%", offsetX: "9.4%", offsetY: "0" },
-};
-
-function customTitlePreviewTheme(design) {
-  if (CUSTOM_TITLE_THEMES[design.id]) {
-    return CUSTOM_TITLE_THEMES[design.id];
-  }
-  const source = design.theme;
-  return {
-    background:
-      `radial-gradient(70% 80% at 50% 10%, #${source.accent}33, transparent 72%),` +
-      `linear-gradient(135deg, #${source.background}, #${source.backgroundAccent})`,
-    koFont: source.titleFont === "serif" ? TITLE_SERIF : TITLE_SANS,
-    koWeight: 700,
-    koColor: `#${source.title}`,
-    koTracking: 0.04,
-    koGap: 0.34,
-    dividerGap: 0.3,
-    ruleWidth: 2.6,
-    ruleWeight: 0.017,
-    ruleColor: `#${source.rule}`,
-    enColor: `#${source.accent}`,
-    enWeight: 700,
-    enTracking: 0.42,
-    subtitleHalo:
-      `radial-gradient(ellipse at center, #${source.haloColor}${Math.round(
-        source.haloOpacity * 255
-      )
-        .toString(16)
-        .padStart(2, "0")}, transparent 68%)`,
-    subtitleText: `#${source.subtitleText}`,
-  };
-}
-
-function addCustomTitleFamilyMotif(container, design, unit) {
-  if (CUSTOM_TITLE_THEMES[design.id]) return;
-  const { inch } = unit;
-  const accent = `#${design.theme.accent}`;
-  const rule = `#${design.theme.rule}`;
-  const family = design.layoutFamily;
-  const node = (style) =>
-    titlePreviewNode(`position:absolute;pointer-events:none;${style}`);
-
-  if (family === "centered-rule") {
-    container.append(
-      node(`left:5%;right:5%;top:${inch(0.65)}px;border-top:1px solid ${rule};`),
-      node(`left:31%;right:31%;bottom:${inch(0.65)}px;border-top:1px solid ${rule};`)
-    );
-  } else if (family === "double-frame") {
-    container.append(
-      node(`inset:${inch(0.42)}px;border:1.5px solid ${rule};`),
-      node(`inset:${inch(0.57)}px;border:1px solid ${rule};`)
-    );
-  } else if (family === "ornament-frame") {
-    container.appendChild(
-      node(`inset:${inch(0.46)}px;border:1.5px solid ${rule};`)
-    );
-    [
-      `top:${inch(0.4)}px;left:${inch(0.4)}px;`,
-      `top:${inch(0.4)}px;right:${inch(0.4)}px;`,
-      `bottom:${inch(0.4)}px;left:${inch(0.4)}px;`,
-      `bottom:${inch(0.4)}px;right:${inch(0.4)}px;`,
-    ].forEach((position) =>
-      container.appendChild(
-        customTitleDiamond(position, inch(0.12), accent)
-      )
-    );
-  } else if (family === "side-band") {
-    container.append(
-      node(`inset:0 auto 0 0;width:${inch(0.34)}px;background:${accent};`),
-      node(`inset:0 auto 0 ${inch(0.56)}px;width:${inch(0.06)}px;background:${rule};`)
-    );
-  } else if (family === "horizon-split") {
-    container.append(
-      node(`left:0;right:0;top:63%;bottom:0;background:#${design.theme.backgroundAccent}7A;`),
-      node(`left:0;right:0;top:63%;border-top:1.5px solid ${rule};`)
-    );
-  } else if (family === "emblem-crest") {
-    container.append(
-      node(
-        `left:calc(50% - ${inch(0.34)}px);top:${inch(1.05)}px;width:${inch(
-          0.68
-        )}px;height:${inch(0.68)}px;border:1.5px solid ${accent};border-radius:50%;`
-      ),
-      customTitleDiamond(
-        `left:calc(50% - ${inch(0.07)}px);top:${inch(1.32)}px;`,
-        inch(0.14),
-        accent
-      )
-    );
-  } else if (family === "veil-panel") {
-    container.appendChild(
-      node(
-        `left:43.6%;right:6%;top:9%;bottom:9%;border:1px solid ${rule};` +
-          `border-left:2px solid ${accent};background:#${design.theme.background}CC;`
-      )
-    );
-  } else if (family === "corner-mark") {
-    container.append(
-      node(`left:6%;top:10%;width:8%;height:14%;border-left:2px solid ${accent};border-top:2px solid ${accent};`),
-      node(`right:6%;bottom:10%;width:8%;height:14%;border-right:2px solid ${accent};border-bottom:2px solid ${accent};`)
-    );
-  }
-}
-
-function customTitleDiamond(cssText, size, color) {
-  return titlePreviewNode(
-    `position:absolute;${cssText}width:${size}px;height:${size}px;` +
-      `background:${color};transform:rotate(45deg);`
-  );
-}
-
-function addCustomTitleFrame(container, theme, unit) {
-  const { inch } = unit;
-
-  if (theme.hairline) {
-    [`top:${inch(0.45)}px`, `bottom:${inch(0.45)}px`].forEach((edge) => {
-      container.appendChild(
-        titlePreviewNode(
-          `position:absolute;${edge};left:${inch(0.45)}px;right:${inch(0.45)}px;` +
-            `height:1px;background:${theme.hairline};`
-        )
-      );
-    });
-  }
-
-  if (!theme.frame) return;
-
-  const inset = theme.diamonds ? 0.44 : 0.42;
-  container.appendChild(
-    titlePreviewNode(
-      `position:absolute;inset:${inch(inset)}px;border:${Math.max(
-        1,
-        inch(theme.frameWeight)
-      )}px solid ${theme.frame};`
-    )
-  );
-
-  if (theme.diamonds) {
-    const size = inch(0.11);
-    const offset = inch(inset) - size / 2;
-    [
-      `top:${offset}px;left:${offset}px;`,
-      `top:${offset}px;right:${offset}px;`,
-      `bottom:${offset}px;left:${offset}px;`,
-      `bottom:${offset}px;right:${offset}px;`,
-    ].forEach((position) => {
-      container.appendChild(customTitleDiamond(position, size, theme.frame));
-    });
-    return;
-  }
-
-  container.appendChild(
-    titlePreviewNode(
-      `position:absolute;inset:${inch(0.56)}px;border:1px solid ${theme.frame};`
-    )
-  );
-}
-
-function addCustomTitleSubtitleHalo(container, subtitle, theme, unit) {
-  const { inch, pt } = unit;
-  const halo = titlePreviewNode(
-    `position:absolute;left:8%;right:8%;bottom:${inch(0.55)}px;` +
-      `height:${inch(0.85)}px;display:flex;align-items:center;justify-content:center;` +
-      `box-sizing:border-box;background:${theme.subtitleHalo};border:none;z-index:2;`
-  );
-
-  halo.appendChild(
-    titlePreviewNode(
-      `position:relative;font-family:${TITLE_SANS};font-weight:700;` +
-        `font-size:${pt(customTitleSubtitleSize(subtitle))}px;line-height:1.2;` +
-        `color:${theme.subtitleText};white-space:nowrap;letter-spacing:0.08em;`,
-      subtitle
-    )
-  );
-  container.appendChild(halo);
-}
-
 function buildCustomTitleSlidePreview(data, previewWidth) {
-  const width = previewWidth || 400;
-  const perInch = width / 13.333;
-  const unit = {
-    inch: (value) => value * perInch,
-    pt: (value) => (value / 72) * perInch,
-  };
-  const { inch, pt } = unit;
-
-  const ko = (data.customTitleKo || "").trim() || "타이틀 이름";
-  const en = (data.customTitleEn || "").trim();
-  const subtitle = (data.customTitleSubtitle || "").trim();
-  const api = customTitleCatalogApi();
-  const designId = normalizeCustomTitleDesign(data.customTitleDesign);
-  const design = api.findCustomTitleDesign(designId);
-  const theme = customTitlePreviewTheme(design);
-  const familyLayout = CUSTOM_TITLE_FAMILY_LAYOUTS[design.layoutFamily];
-
-  const container = document.createElement("div");
-  container.style.cssText =
-    `position:relative;width:${width}px;height:${width * 0.5625}px;overflow:hidden;`;
-  container.style.background = theme.background;
-  if (design.asset) {
-    container.style.backgroundImage =
-      `linear-gradient(#${design.theme.background}66,#${design.theme.background}66),` +
-      `url("/${design.asset.path}")`;
-    container.style.backgroundPosition = "center";
-    container.style.backgroundSize = "cover";
-  }
-
-  addCustomTitleFrame(container, theme, unit);
-  addCustomTitleFamilyMotif(container, design, unit);
-
-  const stackOffset = subtitle
-    ? `transform:translateY(${inch(-0.45)}px);`
-    : "";
-  const stack = titlePreviewNode(
-    `position:relative;height:100%;width:${familyLayout.width};margin-left:${familyLayout.offsetX};` +
-      "display:flex;flex-direction:column;justify-content:center;" +
-      `align-items:${familyLayout.align === "center" ? "center" : "flex-start"};` +
-      `text-align:${familyLayout.align};transform:translateY(${familyLayout.offsetY});`
-  );
-  if (subtitle) {
-    stack.style.transform += ` translateY(${inch(-0.45)}px)`;
-  }
-
-  const koSize = pt(customTitleKoSize(ko));
-  stack.appendChild(
-    titlePreviewNode(
-      `font-family:${theme.koFont};font-weight:${theme.koWeight};font-size:${koSize}px;` +
-        `line-height:1.22;color:${theme.koColor};white-space:nowrap;` +
-        `letter-spacing:${koSize * theme.koTracking}px;` +
-        `padding-left:${koSize * theme.koTracking}px;max-width:92%;`,
-      ko
-    )
-  );
-
-  if (en) {
-    const rule = titlePreviewNode(
-      `position:relative;width:${inch(theme.ruleWidth)}px;` +
-        `height:${Math.max(1, inch(theme.ruleWeight))}px;background:${theme.ruleColor};` +
-        `margin-top:${inch(theme.koGap)}px;`
-    );
-
-    if (theme.diamonds) {
-      // The renderer breaks the rule for a centre diamond.
-      const size = inch(0.12);
-      rule.appendChild(
-        titlePreviewNode(
-          `position:absolute;top:0;left:50%;width:${inch(0.26)}px;height:100%;` +
-            `transform:translateX(-50%);background:${theme.background};`
-        )
-      );
-      rule.appendChild(
-        customTitleDiamond(
-          `top:${-size / 2}px;left:calc(50% - ${size / 2}px);`,
-          size,
-          theme.ruleColor
-        )
-      );
-    }
-
-    stack.appendChild(rule);
-
-    const enSize = pt(customTitleEnSize(en));
-    stack.appendChild(
-      titlePreviewNode(
-        `font-family:${TITLE_LATIN};font-weight:${theme.enWeight};font-size:${enSize}px;` +
-          `line-height:1.5;color:${theme.enColor};white-space:nowrap;` +
-          `letter-spacing:${enSize * theme.enTracking}px;` +
-          `padding-left:${enSize * theme.enTracking}px;` +
-          `margin-top:${inch(theme.dividerGap)}px;`,
-        en.toUpperCase()
-      )
-    );
-  }
-
-  container.appendChild(stack);
-  if (subtitle) {
-    addCustomTitleSubtitleHalo(container, subtitle, theme, unit);
-  }
-  return container;
+  return buildCatalogCustomTitleSlidePreview(data, previewWidth, {
+    document,
+    catalogApi: customTitleCatalogApi(),
+    textApi: customTitleTextApi() || undefined,
+  });
 }
 
 // --- Custom (WYSIWYG) slide editor integration ---
@@ -6966,19 +6435,16 @@ if (
   customTitleDesignGrid &&
   customTitleDesignSelect
 ) {
-  initializeCustomTitleDesignPicker(
-    customTitleDesignCategories,
-    customTitleDesignGrid,
-    customTitleDesignSelect,
-    customTitleDesignSelect.value
-  );
-  setupCustomTitleDesignPicker(
-    customTitleDesignCategories,
-    customTitleDesignGrid,
-    customTitleDesignSelect,
-    renderPreview,
-    refreshSaveState
-  );
+  customTitleDesignPicker = createCustomTitleDesignPicker({
+    document,
+    categoryGroup: customTitleDesignCategories,
+    designGrid: customTitleDesignGrid,
+    designSelect: customTitleDesignSelect,
+    catalogApi: customTitleCatalogApi(),
+    buildPreview: buildCustomTitleSlidePreview,
+    render: renderPreview,
+    refreshDirty: refreshSaveState,
+  });
 }
 
 customTitleKoInput.addEventListener('input', () => {
