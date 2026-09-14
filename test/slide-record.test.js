@@ -40,6 +40,7 @@ function uploadedSlide(overrides = {}) {
     themeId: "navy",
     customImageData: "data:image/png;base64,AAAA",
     scriptureSignature: "sig",
+    customTitleSubtitle: "예배와 성찬",
     ...overrides,
   };
 }
@@ -87,6 +88,7 @@ test("sanitizeSlideForTemplate", async (t) => {
     assert.equal(sanitized.saved, true);
     assert.equal(sanitized.fileSaved, false);
     assert.equal(sanitized.serverFilePath, null);
+    assert.equal(sanitized.customTitleSubtitle, "");
     assert.equal(sanitized.customSlide, null);
   });
 
