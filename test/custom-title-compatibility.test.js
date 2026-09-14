@@ -9,10 +9,7 @@ import {
   COVER_TITLE_THEMES,
   normalizeTitleThemeId,
 } from "../lib/cover-title-content.js";
-import {
-  CUSTOM_TITLE_DESIGN_CATALOG,
-  normalizeCustomTitleDesignId,
-} from "../lib/custom-title-design-catalog.js";
+import * as catalogApi from "../lib/custom-title-design-catalog.js";
 import {
   appendCustomTitleSlide,
   normalizeCustomTitleDesign,
@@ -33,7 +30,7 @@ const [html, app] = await Promise.all([
 
 const COVER_IDS = ["original", "aurora", "monolith", "ivory", "marquee"];
 const LEGACY_CUSTOM_IDS = COVER_IDS.slice(1);
-const SEASONAL_DESIGNS = CUSTOM_TITLE_DESIGN_CATALOG.filter(
+const SEASONAL_DESIGNS = catalogApi.CUSTOM_TITLE_DESIGN_CATALOG.filter(
   ({ categoryId }) => categoryId !== "default"
 );
 const CATEGORY_REPRESENTATIVES = [
@@ -56,19 +53,15 @@ function createPicker() {
     categoryGroup: document.getElementById("categories"),
     designGrid: document.getElementById("designs"),
     designSelect: document.getElementById("selected"),
-    catalogApi: {
-      ...(awaitCatalogApi),
-    },
+    catalogApi,
     buildPreview: (data, width) =>
       buildCustomTitleSlidePreview(data, width, {
         document,
-        catalogApi: awaitCatalogApi,
+        catalogApi,
       }),
   });
   return { document, picker };
 }
-
-const awaitCatalogApi = await import("../lib/custom-title-design-catalog.js");
 
 function serializeInClient(designId) {
   const collect = compileFunction(
@@ -80,7 +73,7 @@ function serializeInClient(designId) {
       customTitleKoInput: { value: "  예배  " },
       customTitleEnInput: { value: "  Worship  " },
       customTitleSubtitleInput: { value: "  함께  " },
-      normalizeCustomTitleDesign: normalizeCustomTitleDesignId,
+      normalizeCustomTitleDesign: catalogApi.normalizeCustomTitleDesignId,
     }
   );
   return collect();
@@ -95,6 +88,24 @@ async function renderDesign(designId) {
   });
   const zip = new AdmZip(await pptx.write({ outputType: "nodebuffer" }));
   return zip.readAsText("ppt/slides/slide1.xml");
+}
+
+const LEGACY_RENDER_SIGNALS = {
+  aurora: { family: "centered-rule", background: "170E33" },
+  monolith: { family: "centered-rule", background: "0A0B0D" },
+  ivory: { family: "double-frame", background: "FAF6EF" },
+  marquee: { family: "ornament-frame", background: "2A0F16" },
+};
+
+function assertRendererIdentity(slideXml, design) {
+  assert.match(
+    slideXml,
+    new RegExp(`name="custom-title:family:${design.layoutFamily}"`)
+  );
+  assert.match(
+    slideXml,
+    new RegExp(`<a:srgbClr val="${design.theme.background}"`)
+  );
 }
 
 function savedSlide(designId) {
@@ -153,12 +164,16 @@ describe("saved custom title compatibility", () => {
       assert.equal(
         buildCustomTitleSlidePreview(sanitized, 400, {
           document,
-          catalogApi: awaitCatalogApi,
+          catalogApi,
         }).dataset.customTitleDesign,
         designId
       );
       assert.equal(normalizeCustomTitleDesign(designId), designId);
-      assert.match(await renderDesign(designId), /<p:sld/);
+      const signal = LEGACY_RENDER_SIGNALS[designId];
+      assertRendererIdentity(await renderDesign(designId), {
+        layoutFamily: signal.family,
+        theme: { background: signal.background },
+      });
     }
   });
 
@@ -166,7 +181,9 @@ describe("saved custom title compatibility", () => {
     assert.deepEqual(
       CATEGORY_REPRESENTATIVES.map(
         (id) =>
-          CUSTOM_TITLE_DESIGN_CATALOG.find((design) => design.id === id)
+          catalogApi.CUSTOM_TITLE_DESIGN_CATALOG.find(
+            (design) => design.id === id
+          )
             ?.categoryId
       ),
       [
@@ -190,12 +207,23 @@ describe("saved custom title compatibility", () => {
         designId
       );
       assert.equal(normalizeCustomTitleDesign(designId), designId);
-      assert.match(await renderDesign(designId), /<p:sld/);
+      const design = catalogApi.findCustomTitleDesign(designId);
+      assert.equal(
+        catalogApi.CUSTOM_TITLE_DESIGN_CATALOG.filter(
+          (entry) => entry.theme.background === design.theme.background
+        ).length,
+        1,
+        `${designId} needs a catalog-unique background signal`
+      );
+      assertRendererIdentity(await renderDesign(designId), design);
     }
   });
 
-  it("falls back unknown and missing designs to aurora without mutating records", () => {
-    for (const customTitleDesign of ["future-design", undefined]) {
+  it("preserves unknown persistence while UI and rendering fall back to aurora", async () => {
+    for (const [customTitleDesign, persistedDesign] of [
+      ["future-design", "future-design"],
+      [undefined, null],
+    ]) {
       const source = {
         ...savedSlide(customTitleDesign),
         name: "그대로",
@@ -205,11 +233,12 @@ describe("saved custom title compatibility", () => {
       const sanitized = sanitizeSlideForTemplate(source);
       const { document, picker } = createPicker();
 
+      assert.equal(sanitized.customTitleDesign, persistedDesign);
       assert.equal(restoreCustomTitleDesignEditor(picker, sanitized), "aurora");
       assert.equal(
         buildCustomTitleSlidePreview(sanitized, 400, {
           document,
-          catalogApi: awaitCatalogApi,
+          catalogApi,
         }).dataset.customTitleDesign,
         "aurora"
       );
@@ -218,10 +247,15 @@ describe("saved custom title compatibility", () => {
       assert.equal(sanitized.name, "그대로");
       assert.equal(sanitized.customTitleKo, "원문");
     }
+
+    assertRendererIdentity(await renderDesign("future-design"), {
+      layoutFamily: LEGACY_RENDER_SIGNALS.aurora.family,
+      theme: { background: LEGACY_RENDER_SIGNALS.aurora.background },
+    });
   });
 
   it("keeps new and reset custom-title defaults at aurora", () => {
-    assert.equal(normalizeCustomTitleDesignId(undefined), "aurora");
+    assert.equal(catalogApi.normalizeCustomTitleDesignId(undefined), "aurora");
     assert.equal(
       buildResetSlideDraft(savedSlide("midnight-gate")).customTitleDesign,
       "aurora"
