@@ -24,6 +24,11 @@ import {
   withTransientFiles,
   WORKSPACE_INIT_FAILED_MESSAGE,
 } from "@lib/save-state.js";
+import {
+  createDuplicateSlideName,
+  hasOwnedSlideAsset,
+  insertSlideAfter,
+} from "@lib/slide-duplicate.js";
 
 const testamentSelect = document.getElementById("testament");
 const bookSelect = document.getElementById("book");
@@ -810,6 +815,7 @@ const addSlideDropdown = document.getElementById("addSlideDropdown");
 const addSlideAfterBtn = document.getElementById("addSlideAfterBtn");
 const addSlideBeforeBtn = document.getElementById("addSlideBeforeBtn");
 const addSlideEndBtn = document.getElementById("addSlideEndBtn");
+const duplicateSlideBtn = document.getElementById("duplicateSlideBtn");
 const editorSaveBtn = document.getElementById("editorSaveBtn");
 const editorResetBtn = document.getElementById("editorResetBtn");
 const editorCancelBtn = document.getElementById("editorCancelBtn");
@@ -921,6 +927,7 @@ let templateSaving = false;
 // Main slide reorder persists immediately, so its request counts as a save in
 // flight: nothing may delete, reset or reorder again until it settles.
 let reorderSaving = false;
+let duplicateSaving = false;
 // Depth > 0 means a guarded transition is already running, so nested helpers
 // must not raise a second unsaved-changes popup.
 let guardedTransitionDepth = 0;
@@ -1121,6 +1128,7 @@ function refreshSaveState() {
     slideSaving,
     templateSaving,
     reorderSaving,
+    duplicateSaving,
   });
   if (editorSaveBtn) {
     editorSaveBtn.disabled = state.slideDisabled;
@@ -1146,6 +1154,9 @@ function refreshSaveState() {
       templateSaveBtn.removeAttribute("title");
       templateSaveBtn.removeAttribute("aria-describedby");
     }
+  }
+  if (duplicateSlideBtn) {
+    duplicateSlideBtn.disabled = !draft || isSaveBusy(getSaveState());
   }
 }
 
@@ -1183,6 +1194,7 @@ function getSaveState() {
     slideSaving,
     templateSaving,
     reorderSaving,
+    duplicateSaving,
   };
 }
 
@@ -2341,6 +2353,84 @@ async function saveActiveTemplateToServer({ silent = false } = {}) {
 
 async function persistCurrentWorkspace(nextSlides = slides) {
   return saveSlidesToServer(nextSlides);
+}
+
+async function duplicateCurrentSlide() {
+  if (!currentSlideId || blockedBySaveInProgress()) {
+    return false;
+  }
+
+  return guardTransition(async () => {
+    const sourceId = currentSlideId;
+    const draft = collectCurrentSlideDraft();
+    if (!sourceId || !draft) {
+      return;
+    }
+
+    if (
+      draft.pendingFile ||
+      draft.pendingBackgroundFile ||
+      draft.pendingScriptureImage
+    ) {
+      alert("선택한 파일을 먼저 저장한 뒤 복제해 주세요.");
+      return;
+    }
+
+    duplicateSaving = true;
+    refreshSaveState();
+    const restoreDuplicateLabel = showSaveButtonProgress(
+      duplicateSlideBtn,
+      "복제 중..."
+    );
+
+    try {
+      let duplicate;
+      if (hasOwnedSlideAsset(draft)) {
+        const response = await fetch("/api/slides/clone", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ slide: buildSerializableSlide(draft) }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(payload.error || "슬라이드 복제에 실패했습니다.");
+        }
+        duplicate = cloneSlide(payload);
+      } else {
+        duplicate = cloneSlide(draft, { regenerateId: true });
+      }
+
+      duplicate.name = createDuplicateSlideName(
+        draft.name,
+        slides.map((slide) => slide.name)
+      );
+      const nextSlides = insertSlideAfter(slides, sourceId, duplicate);
+
+      if (isTemplateMode()) {
+        slides = nextSlides;
+        markTemplateDirty();
+      } else if (isSlideUnsaved(draft)) {
+        slides = nextSlides;
+        syncWorkingSlidesToState();
+      } else {
+        const persisted = await persistCurrentWorkspace(nextSlides);
+        if (!persisted) {
+          throw new Error("슬라이드 복제본을 저장하지 못했습니다.");
+        }
+        slides = nextSlides;
+      }
+
+      applySlideSelection(duplicate.id);
+      showToast(`슬라이드를 복제했습니다: ${duplicate.name}`);
+    } catch (error) {
+      console.error("Failed to duplicate slide", error);
+      alert(error.message || "슬라이드 복제 중 오류가 발생했습니다.");
+    } finally {
+      restoreDuplicateLabel();
+      duplicateSaving = false;
+      refreshSaveState();
+    }
+  });
 }
 
 async function loadSlidesFromServer() {
@@ -5784,6 +5874,7 @@ addSlideEndBtn.addEventListener("click", () => {
   closeAddSlideDropdown();
   createSlide("end");
 });
+duplicateSlideBtn.addEventListener("click", duplicateCurrentSlide);
 
 editorSaveBtn.addEventListener("click", () => saveCurrentSlide());
 editorResetBtn.addEventListener("click", resetCurrentSlide);

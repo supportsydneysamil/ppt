@@ -32,6 +32,10 @@ describe("save busy guard for destructive actions", () => {
     );
   });
 
+  it("counts a pending slide duplicate as busy", () => {
+    assert.equal(isSaveBusy({ duplicateSaving: true }), true);
+  });
+
   it("names the Korean block reason only while a save is in flight", () => {
     assert.equal(getBusyBlockMessage({ slideSaving: true }), SAVE_BUSY_MESSAGE);
     assert.equal(
@@ -53,6 +57,18 @@ describe("save busy guard for destructive actions", () => {
       slideDirty: true,
       templateDirty: true,
       reorderSaving: true,
+    });
+    assert.equal(state.slideDisabled, true);
+    assert.equal(state.templateDisabled, true);
+  });
+
+  it("disables both save buttons while a duplicate is persisting", () => {
+    const state = deriveSaveButtonState({
+      hasSlide: true,
+      hasTemplate: true,
+      slideDirty: true,
+      templateDirty: true,
+      duplicateSaving: true,
     });
     assert.equal(state.slideDisabled, true);
     assert.equal(state.templateDisabled, true);
