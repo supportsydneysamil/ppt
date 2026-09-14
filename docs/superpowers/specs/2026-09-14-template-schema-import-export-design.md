@@ -37,11 +37,36 @@ PPTX 결과물이 아니라 템플릿 정의(슬라이드 타입, 텍스트, 테
 ```
 
 - `kind`는 반드시 `samil-template-schema`
-- `version`은 정수 `1`만 받는다. 그 외는 거절한다
+- `version`은 필수 양의 정수다. 호환 규칙은 아래 「스키마 버전」을 따른다
 - `template.id`, `createdAt`, `slideCount`는 넣지 않는다. Import 때 서버가 새로 만든다
 - 슬라이드 `id`도 스키마에 넣지 않는다. `POST /api/templates`가 지금처럼 복제하면서 새 id를 부여한다
 
 잘못된 파일이면 저장하지 않는다. 부분 Import는 없다.
+
+## 스키마 버전
+
+파일의 `version`이 호환성 계약이다. 슬라이드 필드가 나중에 바뀌어도, 앱은 이 숫자만 보고 읽을 수 있는지 판단한다.
+
+상수 (한 모듈에서 export):
+
+| 이름 | 지금 값 | 역할 |
+|---|---|---|
+| `TEMPLATE_SCHEMA_KIND` | `"samil-template-schema"` | 파일 종류 |
+| `TEMPLATE_SCHEMA_VERSION` | `1` | Export가 쓰는 현재 버전 |
+| `TEMPLATE_SCHEMA_MIN_VERSION` | `1` | 이 앱이 아직 읽는 가장 오래된 버전 |
+| `TEMPLATE_SCHEMA_MAX_VERSION` | `1` | 이 앱이 아는 가장 새 버전 |
+
+규칙:
+
+1. **Export**는 항상 `version: TEMPLATE_SCHEMA_VERSION`을 쓴다.
+2. **Import**는 `version`이 없거나 정수가 아니면 거절한다.
+3. `version < MIN`이면 거절한다. 너무 옛 형식이라 이 앱이 더 이상 읽지 않는다.
+4. `version > MAX`이면 거절한다. 더 새 앱이 만든 파일이므로, “앱을 업데이트한 뒤 다시 가져와 주세요”라고 알린다. 슬라이드를 추측해서 넣지 않는다.
+5. `MIN ≤ version ≤ MAX`이면 `migrateTemplateSchema(doc)`가 `version`부터 현재까지 한 단계씩 올린 뒤 슬라이드를 검증한다. 지금 지원 버전이 1뿐이라 마이그레이션은 그대로 통과하는 identity다.
+
+필드가 늘어나기만 하고 옛 파일이 그대로 의미가 있으면 **버전을 올리지 않는다.** `sanitizeSlideForTemplate`이 없는 키는 기본값으로 채우고, envelope의 모르는 키는 무시한다. 그래서 같은 `version: 1` 파일을 새 앱이 읽어도 된다.
+
+이름 변경, 의미 변경, 필수 필드 추가처럼 옛 파일을 그대로 두면 잘못 해석되면 **버전을 1 올리고** `migrateTemplateSchema`에 `N → N+1` 분기를 추가한다. MIN/MAX도 그때 같이 조정한다. 이번 구현에는 분기 본문을 넣지 않는다. 버전 숫자와 identity 마이그레이션만 둔다.
 
 ## 이식 가능한 슬라이드 필드
 
@@ -90,7 +115,7 @@ Export와 Import 모두 복원 불가 슬라이드 **이름 목록**을 사용�
 ## 데이터 흐름
 
 1. Export: 갤러리 캐시의 해당 템플릿을 `toPortableTemplateSchema(template)`로 변환한다. 복원 불가 목록이 있으면 확인한다. 확인되면 JSON을 브라우저에서 다운로드한다. 서버에 쓰지 않는다.
-2. Import: 파일을 읽고 `parseTemplateSchema(text)`가 envelope과 슬라이드 배열을 검증한다. 실패면 에러만 보여 준다.
+2. Import: 파일을 읽고 `parseTemplateSchema(text)`가 `kind`·`version`·마이그레이션·슬라이드 배열을 검증한다. 실패면 에러만 보여 준다.
 3. 통과하면 기존 `POST /api/templates`에 `{ name, slides }`를 보낸다. 슬라이드는 이식 형태로, 로컬 경로가 없는 상태다.
 4. 성공 응답의 템플릿을 갤러리 캐시에 push하고 카드를 다시 그린다. 복원 불가 목록이 있으면 그다음 알린다.
 
@@ -103,7 +128,10 @@ Export와 Import 모두 복원 불가 슬라이드 **이름 목록**을 사용�
 | 상황 | 동작 |
 |---|---|
 | JSON 파싱 실패 | 가져오지 않고 오류 알림 |
-| `kind`/`version` 불일치 | 가져오지 않고 오류 알림 |
+| `kind` 불일치 | 가져오지 않고 오류 알림 |
+| `version` 없음·비정수 | 가져오지 않고 오류 알림 |
+| `version`이 MAX보다 큼 | 가져오지 않고, 앱 업데이트 안내 |
+| `version`이 MIN보다 작음 | 가져오지 않고, 너무 옛 형식이라고 안내 |
 | `template.name` 없음·슬라이드 없음 | 가져오지 않고 오류 알림 |
 | `POST /api/templates` 실패 | 갤러리를 바꾸지 않고 오류 알림 |
 | Export 대상 템플릿이 캐시에 없음 | 다운로드하지 않음 |
@@ -112,7 +140,10 @@ Export와 Import 모두 복원 불가 슬라이드 **이름 목록**을 사용�
 
 - 로컬 `serverFilePath`/`thumbnail`/`adBgImagePath`가 있는 템플릿을 이식 JSON으로 바꾸면 그 필드가 비고, 타이틀 필드·찬송가 번호·`originalUrl`은 남는다
 - 복원 불가 슬라이드 이름 목록이 올린 PPT와 파일 배경을 포함하고, URL만 있는 찬송가는 포함하지 않는다
-- `kind`가 다르거나 version이 1이 아니면 parse가 실패한다
+- `kind`가 다르면 parse가 실패한다
+- `version`이 2이면(현재 MAX가 1) parse가 실패하고, 앱 업데이트 안내 코드를 담는다
+- `version`이 빠진 파일은 parse가 실패한다
+- Export JSON의 `version`은 항상 `TEMPLATE_SCHEMA_VERSION`(1)이다
 - 같은 이름을 두 번 Import하면 갤러리에 템플릿이 두 개가 된다 (라우트 테스트 또는 함수+기존 create 경로)
 
 브라우저 E2E는 이 범위에 넣지 않는다. 순수 함수와 기존 템플릿 생성 API면 충분하다.
