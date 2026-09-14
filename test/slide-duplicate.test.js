@@ -8,10 +8,31 @@ import {
   insertSlideAfter,
 } from "../lib/slide-duplicate.js";
 
-const html = await fs.readFile(
-  new URL("../public/index.html", import.meta.url),
-  "utf8"
-);
+const [html, app] = await Promise.all([
+  fs.readFile(new URL("../public/index.html", import.meta.url), "utf8"),
+  fs.readFile(new URL("../public/app.js", import.meta.url), "utf8"),
+]);
+
+// Reads one top-level function body out of app.js so a guard can be asserted
+// against the function that owns it rather than the whole file.
+function functionBody(source, name) {
+  const start = source.indexOf(`function ${name}(`);
+  assert.notEqual(start, -1, `${name} is missing`);
+  const bodyStart = source.indexOf("{", start);
+  let depth = 0;
+
+  for (let index = bodyStart; index < source.length; index += 1) {
+    if (source[index] === "{") depth += 1;
+    if (source[index] === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return source.slice(bodyStart, index + 1);
+      }
+    }
+  }
+
+  throw new Error(`${name} body is unbalanced`);
+}
 
 describe("current-slide duplicate helpers", () => {
   it("creates the first available Korean copy name", () => {
@@ -71,6 +92,33 @@ describe("current-slide duplicate helpers", () => {
         },
       }),
       false
+    );
+  });
+});
+
+// A duplicate that awaits the server from inside a guarded transition leaves
+// guardedTransitionDepth above zero, and every nested guardTransition caller
+// then runs its mutation immediately instead of being refused. The staged
+// duplicate list is assigned after those awaits, so whatever the nested
+// mutation added to `slides` is silently dropped.
+describe("slide list mutations while a duplicate is in flight", () => {
+  it("refuses to add a slide while a save or duplicate owns the list", () => {
+    const body = functionBody(app, "createSlide");
+
+    assert.match(body, /blockedBySaveInProgress\(\)/);
+    assert.ok(
+      body.indexOf("blockedBySaveInProgress()") < body.indexOf("guardTransition("),
+      "the busy check has to run before the guarded transition"
+    );
+  });
+
+  it("keeps duplicate network work out of a nested guarded transition", () => {
+    const body = functionBody(app, "duplicateCurrentSlide");
+
+    assert.match(body, /ensureNoPendingChanges\(\)/);
+    assert.ok(
+      !body.includes("guardTransition("),
+      "awaiting the server inside the guard lets nested mutations through"
     );
   });
 });

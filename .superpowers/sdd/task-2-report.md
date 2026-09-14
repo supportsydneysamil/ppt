@@ -258,3 +258,107 @@ files.
   separate API/Task 1 contract change and was intentionally kept out of this
   UI task.
 - The known macOS `resolveUploadsChildPath` baseline failure remains unchanged.
+
+## Review fix: nested-guard mutation loss during duplication
+
+### Blocking issue
+
+Review found that the duplicate awaited the server from inside
+`guardTransition`, so `guardedTransitionDepth` stayed above zero for the whole
+request. Nested `guardTransition` callers therefore ran their mutation
+immediately instead of being refused, and `createSlide` had no
+`blockedBySaveInProgress` pre-check. Clicking `추가` while `duplicateSaving`
+was true pushed a slide onto `slides`, and the staged duplicate list assigned
+after the await silently dropped that added slide.
+
+### RED
+
+Command:
+
+```text
+node --test test/slide-duplicate.test.js
+```
+
+Expected failures (new suite
+`slide list mutations while a duplicate is in flight`):
+
+```text
+not ok 1 - refuses to add a slide while a save or duplicate owns the list
+The input did not match the regular expression /blockedBySaveInProgress\(\)/.
+Input:
+'{\n  return guardTransition(async () => {\n    appendNewSlide();\n  });\n}'
+
+not ok 2 - keeps duplicate network work out of a nested guarded transition
+The input did not match the regular expression /ensureNoPendingChanges\(\)/.
+
+tests 7
+pass 5
+fail 2
+```
+
+### Fix
+
+- `createSlide` now calls `blockedBySaveInProgress()` before entering
+  `guardTransition`.
+- `duplicateCurrentSlide` settles pending work through the existing
+  `ensureNoPendingChanges()` preflight and then performs the clone,
+  persistence, and activation outside the guard, so the awaits run at
+  `guardedTransitionDepth === 0`.
+- A busy re-check runs after the guard resolves, matching the existing
+  confirm/prompt yield-point pattern.
+- Draft re-collection, the never-saved-source exit, transient-file rejection,
+  rollback behavior, and selection semantics are unchanged.
+
+The guard architecture itself was not refactored; only the duplicate's own
+call placement and the missing `createSlide` pre-check changed.
+
+### Binding requirement check
+
+With the awaits at depth zero, `runGuardedTransition` refuses every guarded
+entry point while `isSaveBusy` is true, so no mutation can slip through:
+
+- `createSlide`: explicit pre-check, plus the top-level guard.
+- `cancelEdit`, `selectSlide`, `setPptTab`, `openTemplateWorkspace`,
+  `closeTemplateWorkspace`, `switchView`: refused by the top-level guard.
+- `deleteCurrentSlide`, `deleteSelectedSlides`, `moveSlideToIndex`,
+  `resetCurrentSlide`: existing `blockedBySaveInProgress` checks.
+- `saveCurrentSlide`, `saveActiveTemplateToServer`: existing `isSaveBusy`
+  checks.
+
+### GREEN
+
+```text
+node --test test/slide-duplicate.test.js test/save-state-guards.test.js
+ok 1 - refuses to add a slide while a save or duplicate owns the list
+ok 2 - keeps duplicate network work out of a nested guarded transition
+tests 26
+pass 26
+fail 0
+```
+
+Build after the production change:
+
+```text
+npm run build
+✓ 1886 modules transformed.
+✓ built in 191ms
+```
+
+The pre-existing non-fatal `INEFFECTIVE_DYNAMIC_IMPORT` warning is unchanged.
+IDE diagnostics reported no linter errors.
+
+### Files changed in this fix
+
+- `public/app.js` — `createSlide` busy pre-check; duplicate work moved out of
+  the nested guarded transition.
+- `test/slide-duplicate.test.js` — focused regression suite for the blocked
+  mutation and the guard placement.
+
+### Concerns after the fix
+
+- The orphan-upload concern above still stands and is intentionally left
+  open: no cleanup API was added in this fix.
+- The duplicate regression tests assert against `public/app.js` source
+  structure, following the existing `custom-title-subtitle-ui.test.js`
+  precedent, because the workflow is DOM-coupled. They would need updating if
+  the functions are renamed.
