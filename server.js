@@ -10,13 +10,21 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import {
   cloneCustomSlideAssets,
-  collectCustomSlideImageSrcs,
   createCustomSlideRenderOptions,
   isSupportedCustomImageUpload,
   resolveUploadsChildPath,
   validateUploadedImageBytes,
 } from "./lib/custom-slide-assets.js";
 import { sanitizeSlideForTemplate } from "./lib/slide-record.js";
+import { createDuplicateSlideName } from "./lib/slide-duplicate.js";
+import {
+  applyTemplateSlideOrder,
+  collectOrphanedAssets,
+  collectSlideAssetPaths,
+  insertTemplateSlide,
+  removeTemplateSlides,
+  replaceTemplateSlide,
+} from "./lib/template-store.js";
 import { appendCustomSlide } from "./lib/custom-slide-pptx.js";
 import { appendCustomTitleSlide } from "./lib/custom-title-slide.js";
 import { convertLegacyPptToPptx } from "./lib/legacy-ppt.js";
@@ -182,14 +190,7 @@ async function cloneSlideWithAssets(slide) {
   return cloned;
 }
 
-async function deleteSlideAsset(slide) {
-  const assetPaths = [
-    slide?.serverFilePath,
-    slide?.thumbnail,
-    slide?.adBgImagePath,
-    ...collectCustomSlideImageSrcs(slide),
-  ].filter(Boolean);
-
+async function deleteAssetPaths(assetPaths) {
   const uniqueResolvedPaths = [...new Set(assetPaths)]
     .map(resolveUploadedFilePath)
     .filter(Boolean);
@@ -203,6 +204,10 @@ async function deleteSlideAsset(slide) {
       }
     })
   );
+}
+
+async function deleteSlideAsset(slide) {
+  await deleteAssetPaths(collectSlideAssetPaths(slide));
 }
 
 /**
@@ -636,40 +641,169 @@ app.post("/api/templates", async (req, res) => {
   }
 });
 
-app.put("/api/templates/:id", async (req, res) => {
+// --- Template writes, one scope per endpoint --------------------------------
+// A slide endpoint takes no order and no name, and a structural endpoint takes
+// no slide content. The boundary between the two kinds of edit is the shape of
+// these routes, not a convention the client is trusted to follow.
+
+// The mutation itself is pure; loading, writing and collecting the uploads the
+// change orphaned all happen here so every endpoint below stays declarative.
+async function applyTemplateMutation(templateId, mutate) {
+  const templates = await readTemplates();
+  const index = templates.findIndex((template) => template.id === templateId);
+  if (index === -1) {
+    return { ok: false, status: 404, error: "Template not found" };
+  }
+
+  const previous = templates[index];
+  const result = await mutate(previous);
+  if (!result.ok) {
+    return result;
+  }
+
+  templates[index] = result.template;
+  await writeTemplates(templates);
+  await deleteAssetPaths(
+    collectOrphanedAssets(previous.slides || [], result.template.slides || [])
+  );
+  return result;
+}
+
+function respondTemplateMutation(res, result) {
+  if (!result.ok) {
+    return res.status(result.status).json({ error: result.error });
+  }
+  return res.json({
+    success: true,
+    template: result.template,
+    ...(result.slide ? { slide: result.slide } : {}),
+  });
+}
+
+// Slide level: the content of one slide that the template already holds.
+app.put("/api/templates/:id/slides/:slideId", async (req, res) => {
   try {
-    const { id } = req.params;
-    const templates = await readTemplates();
-    const templateIndex = templates.findIndex((template) => template.id === id);
-
-    if (templateIndex === -1) {
-      return res.status(404).json({ error: "Template not found" });
-    }
-
-    const name = sanitizeTemplateName(req.body?.name || templates[templateIndex].name);
-    const rawSlides = Array.isArray(req.body?.slides) ? req.body.slides : [];
-    const nextSlides = rawSlides.map(sanitizeSlideForTemplate);
-    const previousSlides = Array.isArray(templates[templateIndex].slides)
-      ? templates[templateIndex].slides
-      : [];
-    const nextIds = new Set(nextSlides.map((slide) => slide.id));
-    const removedSlides = previousSlides.filter((slide) => !nextIds.has(slide.id));
-
-    await Promise.all(removedSlides.map(deleteSlideAsset));
-
-    const nextTemplate = {
-      ...templates[templateIndex],
-      name,
-      slideCount: nextSlides.length,
-      slides: nextSlides,
-    };
-
-    templates[templateIndex] = nextTemplate;
-    await writeTemplates(templates);
-    res.json({ success: true, template: nextTemplate });
+    respondTemplateMutation(
+      res,
+      await applyTemplateMutation(req.params.id, (template) =>
+        replaceTemplateSlide(template, req.params.slideId, req.body?.slide)
+      )
+    );
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to update template" });
+    res.status(500).json({ error: "Failed to save slide" });
+  }
+});
+
+// Slide level: the first save of a slide the template does not hold yet.
+app.post("/api/templates/:id/slides", async (req, res) => {
+  try {
+    respondTemplateMutation(
+      res,
+      await applyTemplateMutation(req.params.id, (template) =>
+        insertTemplateSlide(template, req.body?.slide, req.body?.index)
+      )
+    );
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to add slide" });
+  }
+});
+
+// Template level: membership.
+app.post("/api/templates/:id/slides/bulk-delete", async (req, res) => {
+  try {
+    respondTemplateMutation(
+      res,
+      await applyTemplateMutation(req.params.id, (template) =>
+        removeTemplateSlides(template, req.body?.ids)
+      )
+    );
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to delete selected slides" });
+  }
+});
+
+app.delete("/api/templates/:id/slides/:slideId", async (req, res) => {
+  try {
+    respondTemplateMutation(
+      res,
+      await applyTemplateMutation(req.params.id, (template) =>
+        removeTemplateSlides(template, [req.params.slideId])
+      )
+    );
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to delete slide" });
+  }
+});
+
+// Template level: membership again, but the copy has to get its own files, so
+// cloning and inserting are one request. Splitting them would leave the cloned
+// uploads behind whenever the insert never arrived.
+app.post("/api/templates/:id/slides/:slideId/duplicate", async (req, res) => {
+  try {
+    respondTemplateMutation(
+      res,
+      await applyTemplateMutation(req.params.id, async (template) => {
+        const slides = template.slides || [];
+        const sourceIndex = slides.findIndex(
+          (entry) => entry.id === req.params.slideId
+        );
+        if (sourceIndex === -1) {
+          return { ok: false, status: 404, error: "템플릿에 없는 슬라이드입니다." };
+        }
+
+        const duplicate = await cloneSlideWithAssets(slides[sourceIndex]);
+        duplicate.name = createDuplicateSlideName(
+          slides[sourceIndex].name,
+          slides.map((entry) => entry.name)
+        );
+
+        const inserted = insertTemplateSlide(
+          template,
+          duplicate,
+          sourceIndex + 1
+        );
+        return inserted.ok ? { ...inserted, slide: duplicate } : inserted;
+      })
+    );
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to duplicate slide" });
+  }
+});
+
+// Template level: order only. Rejected unless the payload is a permutation of
+// the ids already stored.
+app.put("/api/templates/:id/slide-order", async (req, res) => {
+  try {
+    respondTemplateMutation(
+      res,
+      await applyTemplateMutation(req.params.id, (template) =>
+        applyTemplateSlideOrder(template, req.body?.slideIds)
+      )
+    );
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to reorder slides" });
+  }
+});
+
+// Template level: name only.
+app.patch("/api/templates/:id", async (req, res) => {
+  try {
+    respondTemplateMutation(
+      res,
+      await applyTemplateMutation(req.params.id, (template) => ({
+        ok: true,
+        template: { ...template, name: sanitizeTemplateName(req.body?.name) },
+      }))
+    );
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to rename template" });
   }
 });
 

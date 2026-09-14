@@ -6,21 +6,18 @@ import {
   deriveSaveButtonState,
   getBooksUnavailableMessage,
   getBusyBlockMessage,
-  getUnsavedChangesMessage,
   isDiscardComplete,
   isSaveBusy,
   isSlideUnsaved,
   isSnapshotDirty,
-  isTemplateDirty,
   planDiscard,
   planReorder,
   REORDER_FAILURE_MESSAGE,
   runGuardedTransition,
   selectTransientPreviewFiles,
-  shouldRecaptureSlideBaseline,
   shouldWarnBeforeUnload,
-  TEMPLATE_SAVE_BLOCKED_HINT,
   toFileMetadata,
+  UNSAVED_CHANGES_MESSAGE,
   withTransientFiles,
   WORKSPACE_INIT_FAILED_MESSAGE,
 } from "@lib/save-state.js";
@@ -765,8 +762,6 @@ async function handleExportToPptGenerator(event) {
     applyViewChange("ppt");
     pptTab = "slides";
     activeTemplateId = null;
-    hasPendingTemplateChanges = false;
-    templateBaselineSnapshot = null;
     loadWorkspaceSlides(mainSlides);
     renderPptScreen();
     applySlideSelection(responsePayload.slide.id);
@@ -805,7 +800,6 @@ const bulkActionDropdown = document.getElementById("bulkActionDropdown");
 const bulkDeleteBtn = document.getElementById("bulkDeleteBtn");
 const bulkTemplateBtn = document.getElementById("bulkTemplateBtn");
 const bulkDownloadBtn = document.getElementById("bulkDownloadBtn");
-const templateSaveBtn = document.getElementById("templateSaveBtn");
 const templateDeleteBtn = document.getElementById("templateDeleteBtn");
 const slideEditor = document.getElementById("slideEditor");
 const emptyEditorState = document.getElementById("emptyEditorState");
@@ -893,7 +887,6 @@ const customTitleDesignSelect = document.getElementById("customTitleDesign");
 const customTitleKoInput = document.getElementById("customTitleKo");
 const customTitleEnInput = document.getElementById("customTitleEn");
 const customTitleSubtitleInput = document.getElementById("customTitleSubtitle");
-const templateSaveHint = document.getElementById("templateSaveHint");
 const unsavedChangesModal = document.getElementById("unsavedChangesModal");
 const unsavedChangesCard = document.getElementById("unsavedChangesCard");
 const unsavedChangesMessage = document.getElementById("unsavedChangesMessage");
@@ -912,8 +905,6 @@ let templates = [];
 // templates tab, so isTemplateMode() stays a simple truthiness check.
 let pptTab = "slides";
 let activeTemplateId = null;
-let hasPendingTemplateChanges = false;
-let templateBaselineSnapshot = null;
 let currentSlideId = null;
 let slideBaselineSnapshot = null;
 let slideRuntimeDraft = {};
@@ -923,13 +914,12 @@ let slideDirty = false;
 // the snapshot state rather than folded into it.
 let customEditorDirty = false;
 let slideSaving = false;
-let templateSaving = false;
-// Main slide reorder persists immediately, so its request counts as a save in
-// flight: nothing may delete, reset or reorder again until it settles.
-let reorderSaving = false;
-let duplicateSaving = false;
+// Structure commands - reorder, add, delete, duplicate, rename - persist the
+// moment they are given, so a request in flight counts as a save in flight:
+// nothing may delete, reset or reorder again until it settles.
+let structureSaving = false;
 // Claimed for the whole duplicate request, including the preflight that runs
-// before duplicateSaving is set. It is deliberately kept out of the shared
+// before structureSaving is set. It is deliberately kept out of the shared
 // busy state: isSaveBusy would make the preflight refuse its own guard.
 let duplicateInProgress = false;
 // Depth > 0 means a guarded transition is already running, so nested helpers
@@ -975,60 +965,91 @@ function getActiveTemplate() {
   return templates.find((template) => template.id === activeTemplateId) || null;
 }
 
+// Every template write answers with the stored template, so the cache, the
+// working slide list and the gallery are all rebuilt from that one response
+// rather than patched locally. The server copy is the only truth.
+function applyTemplateFromServer(nextTemplate) {
+  const template = cloneTemplate(nextTemplate);
+  templates = templates.map((entry) =>
+    entry.id === template.id ? template : entry
+  );
+  if (activeTemplateId === template.id) {
+    slides = template.slides.map((slide) => cloneSlide(slide));
+  }
+  return template;
+}
+
+// One shape for every template request, so each command below reads as a
+// single call and surfaces the server's own reason when it fails.
+async function requestTemplateWrite(templateId, route, { method, body } = {}) {
+  const resp = await fetch(
+    `/api/templates/${encodeURIComponent(templateId)}${route}`,
+    {
+      method,
+      ...(body
+        ? {
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          }
+        : {}),
+    }
+  );
+
+  const payload = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    throw new Error(payload.error || "템플릿을 저장하지 못했습니다.");
+  }
+  return payload;
+}
+
+// Template level: membership. A slide that was never saved exists only in the
+// browser, so it is dropped locally instead of being sent to the server.
+async function removeTemplateSlideIds(ids) {
+  const persistedIds = ids.filter((id) => {
+    const slide = slides.find((entry) => entry.id === id);
+    return slide && !isSlideUnsaved(slide);
+  });
+
+  if (persistedIds.length === 0) {
+    slides = slides.filter((slide) => !ids.includes(slide.id));
+    return;
+  }
+
+  structureSaving = true;
+  refreshSaveState();
+  try {
+    const payload =
+      persistedIds.length === 1
+        ? await requestTemplateWrite(
+            activeTemplateId,
+            `/slides/${encodeURIComponent(persistedIds[0])}`,
+            { method: "DELETE" }
+          )
+        : await requestTemplateWrite(activeTemplateId, "/slides/bulk-delete", {
+            method: "POST",
+            body: { ids: persistedIds },
+          });
+    applyTemplateFromServer(payload.template);
+    showToast(
+      persistedIds.length > 1
+        ? `${persistedIds.length}개 슬라이드를 삭제했습니다`
+        : "슬라이드를 삭제했습니다"
+    );
+  } finally {
+    structureSaving = false;
+    refreshSaveState();
+  }
+}
+
+// Only the main slide list is mirrored here. A template's cached copy is
+// replaced from server responses alone, so a local list that still holds a
+// never-saved slide can never be written into it.
 function syncWorkingSlidesToState() {
   if (isTemplateMode()) {
-    const templateIndex = templates.findIndex((template) => template.id === activeTemplateId);
-    if (templateIndex !== -1) {
-      templates[templateIndex] = {
-        ...templates[templateIndex],
-        slides: slides.map((slide) => cloneSlide(slide)),
-        slideCount: slides.length,
-      };
-    }
     return;
   }
 
   mainSlides = slides.map((slide) => cloneSlide(slide));
-}
-
-function markTemplateDirty() {
-  if (!isTemplateMode()) {
-    return;
-  }
-  syncWorkingSlidesToState();
-  refreshTemplateDirtyState();
-}
-
-function collectActiveTemplateDraft() {
-  const template = getActiveTemplate();
-  return template
-    ? {
-        id: template.id,
-        name: template.name,
-        slides: slides.map(buildSerializableSlide),
-      }
-    : null;
-}
-
-function captureTemplateBaseline(template = getActiveTemplate(), templateSlides = slides) {
-  const draft = template
-    ? {
-        id: template.id,
-        name: template.name,
-        slides: templateSlides.map(buildSerializableSlide),
-      }
-    : null;
-  templateBaselineSnapshot = draft ? createSnapshot(draft) : null;
-}
-
-function refreshTemplateDirtyState() {
-  const draft = collectActiveTemplateDraft();
-  hasPendingTemplateChanges = Boolean(
-    draft &&
-      templateBaselineSnapshot &&
-      isTemplateDirty(draft, templateBaselineSnapshot)
-  );
-  updateTemplateManagementUi();
 }
 
 function collectCurrentSlideDraft() {
@@ -1126,38 +1147,15 @@ function refreshSaveState() {
 
   const state = deriveSaveButtonState({
     hasSlide: Boolean(draft),
-    hasTemplate: Boolean(getActiveTemplate()),
     slideDirty,
-    templateDirty: hasPendingTemplateChanges,
     slideSaving,
-    templateSaving,
-    reorderSaving,
-    duplicateSaving,
+    structureSaving,
   });
   if (editorSaveBtn) {
     editorSaveBtn.disabled = state.slideDisabled;
     // Unsaved work is easy to miss on the canvas, where there is no form to
     // look at, so the button carries a dot as well as its enabled state.
     editorSaveBtn.classList.toggle("is-dirty", Boolean(slideDirty));
-  }
-  if (templateSaveBtn) {
-    templateSaveBtn.disabled = state.templateDisabled;
-    // The two-stage flow is the one disabled reason a user cannot guess, so
-    // it is spelled out next to the button and as its description.
-    const explainStaging = state.templateDisabledReason === "slide-dirty";
-    if (templateSaveHint) {
-      templateSaveHint.hidden = !explainStaging;
-      templateSaveHint.textContent = explainStaging
-        ? TEMPLATE_SAVE_BLOCKED_HINT
-        : "";
-    }
-    if (explainStaging) {
-      templateSaveBtn.title = TEMPLATE_SAVE_BLOCKED_HINT;
-      templateSaveBtn.setAttribute("aria-describedby", "templateSaveHint");
-    } else {
-      templateSaveBtn.removeAttribute("title");
-      templateSaveBtn.removeAttribute("aria-describedby");
-    }
   }
   if (duplicateSlideBtn) {
     duplicateSlideBtn.disabled =
@@ -1193,14 +1191,7 @@ function showToast(message) {
 }
 
 function getSaveState() {
-  return {
-    slideDirty,
-    templateDirty: hasPendingTemplateChanges,
-    slideSaving,
-    templateSaving,
-    reorderSaving,
-    duplicateSaving,
-  };
+  return { slideDirty, slideSaving, structureSaving };
 }
 
 // The one gate in front of every destructive or reordering action. A save in
@@ -1266,7 +1257,7 @@ function closeUnsavedChangesDialog() {
 
 // Escape, the backdrop and "계속 편집" are the same answer. The dialog stays
 // open between rounds so a failed save can be retried in place.
-function showUnsavedChangesDialog(scopes) {
+function showUnsavedChangesDialog() {
   // A second request must never take over the resolver of a popup that is
   // already waiting for an answer.
   if (unsavedDialogResolver) {
@@ -1274,7 +1265,7 @@ function showUnsavedChangesDialog(scopes) {
     return Promise.resolve("cancel");
   }
 
-  unsavedChangesMessage.textContent = getUnsavedChangesMessage(scopes);
+  unsavedChangesMessage.textContent = UNSAVED_CHANGES_MESSAGE;
   setUnsavedDialogBusy(false);
 
   return new Promise((resolve) => {
@@ -1306,45 +1297,20 @@ function showUnsavedChangesDialog(scopes) {
   });
 }
 
-// Restores the exact saved baselines: a never-saved slide disappears, an
-// edited slide falls back to its stored model, and template edits are replaced
-// by the server copy. Returns false when nothing was discarded.
+// Restores the saved baseline: a never-saved slide disappears and an edited
+// slide falls back to its stored model. Structure needs nothing here, because
+// every structural command was already written when it was given.
 async function discardPendingChanges() {
   const current = slides.find((slide) => slide.id === currentSlideId);
   const plan = planDiscard({
     slideDirty,
     slideUnsaved: isSlideUnsaved(current),
-    templateMode: isTemplateMode(),
-    templateDirty: hasPendingTemplateChanges,
   });
-  const templateId = activeTemplateId;
-
-  // Refetch before touching anything: without the server copy there is no
-  // baseline to discard onto, and the draft has to survive untouched.
-  if (plan.restoringTemplate && !(await loadTemplatesFromServer())) {
-    alert(
-      "서버에서 템플릿을 다시 불러오지 못했습니다. 변경사항을 되돌리지 않았습니다."
-    );
-    return false;
-  }
-
-  // Pinned straight after the refetch and before any local mutation, so the
-  // slide branch below cannot overwrite the entry that was just fetched.
-  const restoredTemplate = plan.restoringTemplate
-    ? templates.find((template) => template.id === templateId) || null
-    : null;
 
   if (plan.dropSlide) {
     slides = slides.filter((slide) => slide.id !== currentSlideId);
     resetEditorSelection();
-    // Only meaningful when no server restore follows: the restore replaces the
-    // whole working copy, so syncing the local list there would clobber it.
-    if (plan.syncLocalSlides) {
-      syncWorkingSlidesToState();
-      if (isTemplateMode()) {
-        refreshTemplateDirtyState();
-      }
-    }
+    syncWorkingSlidesToState();
     renderSlideList();
   } else if (plan.repopulateSlide && current) {
     slideRuntimeDraft = {};
@@ -1354,33 +1320,16 @@ async function discardPendingChanges() {
     updateButtonsState(current);
   }
 
-  if (plan.restoringTemplate) {
-    activeTemplateId = restoredTemplate ? templateId : null;
-    loadWorkspaceSlides(restoredTemplate ? restoredTemplate.slides || [] : []);
-    captureTemplateBaseline();
-    refreshTemplateDirtyState();
-    renderTemplateGallery();
-    if (!restoredTemplate) {
-      // The refetch says the template is gone, so the workspace it was
-      // rendering has to give way to the gallery.
-      alert("템플릿이 서버에서 삭제되어 목록으로 이동합니다.");
-      renderPptScreen();
-    }
-  }
-
   refreshSaveState();
   // Only a verified-clean workspace may let the transition through.
   return isDiscardComplete(getSaveState());
 }
 
-// Runs one scope of the save sequence and guarantees the user sees why a
-// failure happened, without repeating a reason the save already reported.
-async function saveScopeForGuard(scope) {
+// Guarantees the user sees why a save failed, without repeating a reason the
+// save already reported.
+async function saveDraftForGuard() {
   saveFailureReported = false;
-  const saved =
-    scope === "slide"
-      ? await saveCurrentSlide({ silent: true })
-      : await saveActiveTemplateToServer({ silent: true });
+  const saved = await saveCurrentSlide({ silent: true });
 
   if (!saved && !saveFailureReported) {
     alert("저장에 실패했습니다. 잠시 후 다시 시도해 주세요.");
@@ -1423,7 +1372,7 @@ async function guardTransition(transition) {
     return await runGuardedTransition({
       getState: getSaveState,
       showDialog: showUnsavedChangesDialog,
-      saveScope: saveScopeForGuard,
+      save: saveDraftForGuard,
       discard: async () => {
         // The refetch it may run cannot be abandoned midway, so the dialog is
         // marked busy for the whole restore.
@@ -1523,8 +1472,6 @@ function renderPptScreen() {
 // discarded everything, so leaving only has to drop the template context.
 function clearActiveWorkspace() {
   activeTemplateId = null;
-  hasPendingTemplateChanges = false;
-  templateBaselineSnapshot = null;
 }
 
 function setPptTab(tab) {
@@ -1559,8 +1506,6 @@ function openTemplateWorkspace(templateId) {
   return guardTransition(async () => {
     clearActiveWorkspace();
 
-    // The cache may have been refetched while discarding edits, so look the
-    // template up again.
     const template = templates.find((entry) => entry.id === templateId);
     if (!template) {
       renderTemplateGallery();
@@ -1571,8 +1516,6 @@ function openTemplateWorkspace(templateId) {
     pptTab = "templates";
     activeTemplateId = templateId;
     loadWorkspaceSlides(template.slides || []);
-    captureTemplateBaseline();
-    refreshTemplateDirtyState();
     renderPptScreen();
   });
 }
@@ -2286,78 +2229,16 @@ async function saveSlidesToServer(nextSlides = slides) {
   }
 }
 
-async function saveActiveTemplateToServer({ silent = false } = {}) {
-  // An in-flight save owns the baselines. Returning before the flag is set is
-  // what stops a second call from clearing the running save's busy state.
-  if (isSaveBusy(getSaveState())) {
-    console.warn("Save already in progress; ignoring duplicate template save");
-    return false;
-  }
-
-  const activeTemplate = getActiveTemplate();
-  if (!activeTemplate) {
-    reportSaveFailure("저장할 템플릿이 없습니다.");
-    return false;
-  }
-  if (!hasPendingTemplateChanges) {
-    return true;
-  }
-
-  templateSaving = true;
-  refreshSaveState();
-  const restoreTemplateLabel = showSaveButtonProgress(
-    templateSaveBtn,
-    "저장 중..."
-  );
-  try {
-    const resp = await fetch(`/api/templates/${encodeURIComponent(activeTemplate.id)}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: activeTemplate.name,
-        slides: slides.map(buildSerializableSlide),
-      }),
-    });
-
-    const payload = await resp.json().catch(() => ({}));
-    if (!resp.ok) {
-      throw new Error(payload.error || "템플릿 저장에 실패했습니다.");
-    }
-
-    const nextTemplate = cloneTemplate(payload.template);
-    templates = templates.map((template) =>
-      template.id === nextTemplate.id ? nextTemplate : template
-    );
-    const recaptureSlideBaseline = shouldRecaptureSlideBaseline({
-      slideDirty,
-      currentSlideId,
-      storedSlideIds: nextTemplate.slides.map((slide) => slide.id),
-    });
-    slides = nextTemplate.slides.map((slide) => cloneSlide(slide));
-    captureTemplateBaseline(nextTemplate, nextTemplate.slides);
-    if (recaptureSlideBaseline) {
-      slideBaselineSnapshot = createSnapshot(collectCurrentSlideDraft());
-    }
-    refreshTemplateDirtyState();
-    renderSlideList();
-    renderTemplateGallery();
-    if (!silent) {
-      showToast("템플릿이 저장되었습니다");
-    }
-    return true;
-  } catch (e) {
-    console.error("Failed to save template", e);
-    reportSaveFailure(e.message || "템플릿 저장에 실패했습니다.");
-    return false;
-  } finally {
-    restoreTemplateLabel();
-    templateSaving = false;
-    refreshSaveState();
-  }
-}
-
 async function persistCurrentWorkspace(nextSlides = slides) {
   return saveSlidesToServer(nextSlides);
+}
+
+// Reached only once the copy is actually in the list, so a clone that never
+// landed is never selected or announced as a success.
+function announceDuplicate(duplicate) {
+  applySlideSelection(duplicate.id);
+  showToast(`슬라이드를 복제했습니다: ${duplicate.name}`);
+  return true;
 }
 
 // Pending changes are settled first and the clone itself runs outside the
@@ -2368,7 +2249,7 @@ async function duplicateCurrentSlide() {
     return false;
   }
 
-  // Claimed before the first await: duplicateSaving is only set once the
+  // Claimed before the first await: structureSaving is only set once the
   // preflight is done, so without this two rapid clicks would both clear the
   // checks above and stage a list from the same starting point.
   duplicateInProgress = true;
@@ -2400,12 +2281,26 @@ async function duplicateCurrentSlide() {
       return false;
     }
 
-    duplicateSaving = true;
+    structureSaving = true;
     refreshSaveState();
     restoreDuplicateLabel = showSaveButtonProgress(
       duplicateSlideBtn,
       "복제 중..."
     );
+
+    // Template level: the copy needs its own files, so cloning and inserting
+    // are one request. Splitting them would leave the cloned uploads behind
+    // whenever the insert never landed.
+    if (isTemplateMode()) {
+      const payload = await requestTemplateWrite(
+        activeTemplateId,
+        `/slides/${encodeURIComponent(sourceId)}/duplicate`,
+        { method: "POST" }
+      );
+      applyTemplateFromServer(payload.template);
+      renderSlideList();
+      return announceDuplicate(cloneSlide(payload.slide));
+    }
 
     let duplicate;
     if (hasOwnedSlideAsset(draft)) {
@@ -2434,10 +2329,7 @@ async function duplicateCurrentSlide() {
       return false;
     }
 
-    if (isTemplateMode()) {
-      slides = nextSlides;
-      markTemplateDirty();
-    } else if (isSlideUnsaved(draft)) {
+    if (isSlideUnsaved(draft)) {
       slides = nextSlides;
       syncWorkingSlidesToState();
     } else {
@@ -2448,16 +2340,14 @@ async function duplicateCurrentSlide() {
       slides = nextSlides;
     }
 
-    applySlideSelection(duplicate.id);
-    showToast(`슬라이드를 복제했습니다: ${duplicate.name}`);
-    return true;
+    return announceDuplicate(duplicate);
   } catch (error) {
     console.error("Failed to duplicate slide", error);
     alert(error.message || "슬라이드 복제 중 오류가 발생했습니다.");
     return false;
   } finally {
     restoreDuplicateLabel();
-    duplicateSaving = false;
+    structureSaving = false;
     duplicateInProgress = false;
     refreshSaveState();
   }
@@ -2501,14 +2391,10 @@ async function loadTemplatesFromServer() {
 
 async function loadPptDataFromServer() {
   await Promise.all([loadSlidesFromServer(), loadTemplatesFromServer()]);
-  hasPendingTemplateChanges = false;
-  templateBaselineSnapshot = null;
 
   const activeTemplate = getActiveTemplate();
   if (activeTemplate) {
     loadWorkspaceSlides(activeTemplate.slides || []);
-    captureTemplateBaseline();
-    refreshTemplateDirtyState();
   } else {
     activeTemplateId = null;
     loadWorkspaceSlides(mainSlides);
@@ -2646,14 +2532,36 @@ async function moveSlideToIndex(slideId, targetIndex) {
   slides = applyReorder(slides, plan.fromIndex, plan.toIndex);
   renderSlideList();
 
+  // Template level: the order, and nothing else. Reordering is a command, not
+  // a draft, so it is written straight away and rolled back if refused.
   if (isTemplateMode()) {
-    markTemplateDirty();
-    return true;
+    structureSaving = true;
+    refreshSaveState();
+    try {
+      const payload = await requestTemplateWrite(
+        activeTemplateId,
+        "/slide-order",
+        { method: "PUT", body: { slideIds: slides.map((slide) => slide.id) } }
+      );
+      applyTemplateFromServer(payload.template);
+      renderSlideList();
+      showToast("순서를 저장했습니다");
+      return true;
+    } catch (error) {
+      console.error("Failed to reorder template slides", error);
+      slides = previousSlides;
+      renderSlideList();
+      alert(REORDER_FAILURE_MESSAGE);
+      return false;
+    } finally {
+      structureSaving = false;
+      refreshSaveState();
+    }
   }
 
   // mainSlides is only advanced by a successful POST, so nothing mirrors the
   // new order until the server has it.
-  reorderSaving = true;
+  structureSaving = true;
   refreshSaveState();
   let persisted = false;
   try {
@@ -2661,7 +2569,7 @@ async function moveSlideToIndex(slideId, targetIndex) {
   } finally {
     // Both outcomes leave the busy flag and the buttons converged here, so a
     // dirty draft gets its save button back either way.
-    reorderSaving = false;
+    structureSaving = false;
     refreshSaveState();
   }
 
@@ -4813,29 +4721,45 @@ async function commitSlideCandidate(candidate) {
   const index = slides.findIndex((slide) => slide.id === candidate.id);
   if (index === -1) return false;
 
+  // A slide that has never been saved is not part of the template on the
+  // server yet, which is what decides between creating and replacing it.
+  const isFirstSave = isSlideUnsaved(slides[index]);
   candidate.saved = true;
+
+  if (isTemplateMode()) {
+    // Slide level: one slide, addressed by its id. The request carries no
+    // order and no template name, so saving content cannot move, drop or
+    // rename anything else.
+    const payload = await requestTemplateWrite(
+      activeTemplateId,
+      isFirstSave ? "/slides" : `/slides/${encodeURIComponent(candidate.id)}`,
+      {
+        method: isFirstSave ? "POST" : "PUT",
+        body: {
+          slide: buildSerializableSlide(candidate),
+          ...(isFirstSave ? { index } : {}),
+        },
+      }
+    );
+    applyTemplateFromServer(payload.template);
+    return true;
+  }
+
   const nextSlides = slides.map((slide, i) =>
     i === index ? cloneSlide(candidate) : cloneSlide(slide)
   );
-
-  if (!isTemplateMode()) {
-    const resp = await fetch("/api/slides", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(nextSlides.map(buildSerializableSlide)),
-    });
-    if (!resp.ok) {
-      const payload = await resp.json().catch(() => ({}));
-      throw new Error(payload.error || "슬라이드 저장에 실패했습니다.");
-    }
+  const resp = await fetch("/api/slides", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(nextSlides.map(buildSerializableSlide)),
+  });
+  if (!resp.ok) {
+    const payload = await resp.json().catch(() => ({}));
+    throw new Error(payload.error || "슬라이드 저장에 실패했습니다.");
   }
 
   slides = nextSlides;
-  if (isTemplateMode()) {
-    markTemplateDirty();
-  } else {
-    mainSlides = nextSlides.map(cloneSlide);
-  }
+  mainSlides = nextSlides.map(cloneSlide);
   return true;
 }
 
@@ -5232,11 +5156,7 @@ async function saveCurrentSlide({ silent = false } = {}) {
     refreshSaveState();
     renderSlideList();
     if (!silent) {
-      showToast(
-        isTemplateMode()
-          ? "슬라이드 변경사항이 반영되었습니다 · 템플릿 저장 필요"
-          : "슬라이드가 저장되었습니다"
-      );
+      showToast("슬라이드가 저장되었습니다");
     }
     return true;
   } catch (e) {
@@ -5619,14 +5539,13 @@ async function deleteSelectedSlides() {
 
   try {
     if (isTemplateMode()) {
-      slides = slides.filter((slide) => !selectedIds.includes(slide.id));
+      await removeTemplateSlideIds(selectedIds);
       selectedSlideIds.clear();
 
       if (currentSlideId && selectedIds.includes(currentSlideId)) {
         resetEditorSelection();
       }
 
-      markTemplateDirty();
       renderSlideList();
       return;
     }
@@ -5731,8 +5650,6 @@ async function deleteTemplateById(templateId) {
     templates = templates.filter((entry) => entry.id !== template.id);
     const wasOpen = activeTemplateId === template.id;
     activeTemplateId = null;
-    hasPendingTemplateChanges = false;
-    templateBaselineSnapshot = null;
 
     if (wasOpen) {
       loadWorkspaceSlides([]);
@@ -5763,14 +5680,14 @@ function promptTemplateName(currentName) {
   return trimmedName;
 }
 
-function renameActiveTemplate() {
+// Template level: the name, and nothing else. Like every other structural
+// command it is written as soon as it is given.
+async function renameActiveTemplate() {
   const activeTemplate = getActiveTemplate();
   if (!activeTemplate) {
     return;
   }
 
-  // A rename accepted here would be overwritten by the in-flight save, which
-  // is sending the name it captured before the prompt.
   if (blockedBySaveInProgress()) {
     return;
   }
@@ -5780,12 +5697,28 @@ function renameActiveTemplate() {
     return;
   }
 
-  templates = templates.map((template) =>
-    template.id === activeTemplate.id
-      ? { ...template, name: trimmedName }
-      : template
-  );
-  refreshTemplateDirtyState();
+  // The prompt is a yield point, so a save may have started behind it.
+  if (blockedBySaveInProgress()) {
+    return;
+  }
+
+  structureSaving = true;
+  refreshSaveState();
+  try {
+    const payload = await requestTemplateWrite(activeTemplate.id, "", {
+      method: "PATCH",
+      body: { name: trimmedName },
+    });
+    applyTemplateFromServer(payload.template);
+    renderTemplateGallery();
+    updateTemplateManagementUi();
+    showToast("템플릿 이름을 변경했습니다");
+  } catch (err) {
+    alert(err.message || "템플릿 이름 변경 중 오류가 발생했습니다.");
+  } finally {
+    structureSaving = false;
+    refreshSaveState();
+  }
 }
 
 // Renaming from the gallery has no "저장" button to fall back on, so persist
@@ -5811,26 +5744,14 @@ async function renameTemplateById(templateId) {
   }
 
   try {
-    const resp = await fetch(`/api/templates/${encodeURIComponent(template.id)}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: trimmedName,
-        slides: (template.slides || []).map(buildSerializableSlide),
-      }),
+    const payload = await requestTemplateWrite(template.id, "", {
+      method: "PATCH",
+      body: { name: trimmedName },
     });
-
-    const payload = await resp.json().catch(() => ({}));
-    if (!resp.ok) {
-      throw new Error(payload.error || "템플릿 이름 변경에 실패했습니다.");
-    }
-
-    const nextTemplate = cloneTemplate(payload.template);
-    templates = templates.map((entry) =>
-      entry.id === nextTemplate.id ? nextTemplate : entry
-    );
+    applyTemplateFromServer(payload.template);
     renderTemplateGallery();
     updateTemplateManagementUi();
+    showToast("템플릿 이름을 변경했습니다");
   } catch (err) {
     alert(err.message || "템플릿 이름 변경 중 오류가 발생했습니다.");
   }
@@ -5928,8 +5849,7 @@ async function deleteCurrentSlide() {
   // Call API
   try {
     if (isTemplateMode()) {
-      slides = slides.filter((slide) => slide.id !== currentSlideId);
-      markTemplateDirty();
+      await removeTemplateSlideIds([currentSlideId]);
       resetEditorSelection();
       renderSlideList();
       return;
@@ -5955,9 +5875,6 @@ function cancelEdit() {
     if (isSlideUnsaved(slide)) {
       slides = slides.filter((s) => s.id !== currentSlideId);
       syncWorkingSlidesToState();
-      if (isTemplateMode()) {
-        refreshTemplateDirtyState();
-      }
     }
     // resetEditorSelection() detaches the custom canvas and refreshes the
     // buttons, so closing the editor needs nothing else here.
@@ -6016,7 +5933,6 @@ document.addEventListener("keydown", (e) => {
 bulkDeleteBtn.addEventListener("click", () => { closeBulkDropdown(); deleteSelectedSlides(); });
 bulkTemplateBtn.addEventListener("click", () => { closeBulkDropdown(); createTemplateFromSelection(); });
 bulkDownloadBtn.addEventListener("click", () => { closeBulkDropdown(); downloadSelectedSlidesBundle(); });
-templateSaveBtn.addEventListener("click", () => saveActiveTemplateToServer());
 templateDeleteBtn.addEventListener("click", deleteActiveTemplate);
 
 [

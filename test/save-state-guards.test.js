@@ -9,115 +9,43 @@ import {
   getBusyBlockMessage,
   isSaveBusy,
   isSnapshotDirty,
-  isTemplateDirty,
   planReorder,
   projectSnapshotSource,
   REORDER_FAILURE_MESSAGE,
   SAVE_BUSY_MESSAGE,
-  TEMPLATE_SAVE_BLOCKED_HINT,
   toFileMetadata,
   WORKSPACE_INIT_FAILED_MESSAGE,
 } from "../lib/save-state.js";
 
 describe("save busy guard for destructive actions", () => {
-  it("counts a pending reorder persistence as busy", () => {
-    assert.equal(isSaveBusy({ reorderSaving: true }), true);
+  it("counts a structural command in flight as busy", () => {
+    assert.equal(isSaveBusy({ structureSaving: true }), true);
     assert.equal(
-      isSaveBusy({
-        slideSaving: false,
-        templateSaving: false,
-        reorderSaving: false,
-      }),
+      isSaveBusy({ slideSaving: false, structureSaving: false }),
       false
     );
   });
 
-  it("counts a pending slide duplicate as busy", () => {
-    assert.equal(isSaveBusy({ duplicateSaving: true }), true);
-  });
-
-  it("names the Korean block reason only while a save is in flight", () => {
+  it("names the Korean block reason only while a write is in flight", () => {
     assert.equal(getBusyBlockMessage({ slideSaving: true }), SAVE_BUSY_MESSAGE);
     assert.equal(
-      getBusyBlockMessage({ templateSaving: true }),
-      SAVE_BUSY_MESSAGE
-    );
-    assert.equal(
-      getBusyBlockMessage({ reorderSaving: true }),
+      getBusyBlockMessage({ structureSaving: true }),
       SAVE_BUSY_MESSAGE
     );
     assert.equal(getBusyBlockMessage({}), null);
     assert.match(SAVE_BUSY_MESSAGE, /저장이 진행 중입니다/);
   });
 
-  it("disables both save buttons while a reorder is persisting", () => {
-    const state = deriveSaveButtonState({
-      hasSlide: true,
-      hasTemplate: true,
-      slideDirty: true,
-      templateDirty: true,
-      reorderSaving: true,
-    });
-    assert.equal(state.slideDisabled, true);
-    assert.equal(state.templateDisabled, true);
-  });
-
-  it("disables both save buttons while a duplicate is persisting", () => {
-    const state = deriveSaveButtonState({
-      hasSlide: true,
-      hasTemplate: true,
-      slideDirty: true,
-      templateDirty: true,
-      duplicateSaving: true,
-    });
-    assert.equal(state.slideDisabled, true);
-    assert.equal(state.templateDisabled, true);
-  });
-});
-
-describe("template save affordance", () => {
-  it("explains that the dirty slide has to be staged first", () => {
-    const state = deriveSaveButtonState({
-      hasSlide: true,
-      hasTemplate: true,
-      slideDirty: true,
-      templateDirty: true,
-    });
-    assert.equal(state.templateDisabled, true);
-    assert.equal(state.templateDisabledReason, "slide-dirty");
-    assert.match(TEMPLATE_SAVE_BLOCKED_HINT, /슬라이드/);
-  });
-
-  it("reports no reason when the template button is usable", () => {
-    const state = deriveSaveButtonState({
-      hasSlide: true,
-      hasTemplate: true,
-      slideDirty: false,
-      templateDirty: true,
-    });
-    assert.equal(state.templateDisabled, false);
-    assert.equal(state.templateDisabledReason, null);
-  });
-
-  it("reports busy and missing scopes separately from the staging reason", () => {
+  // Reorder, duplicate, delete and rename all reach the server on their own,
+  // so any of them holds the editor's save button shut while it is running.
+  it("disables the editor save while a structural command persists", () => {
     assert.equal(
       deriveSaveButtonState({
         hasSlide: true,
-        hasTemplate: true,
-        slideDirty: false,
-        templateDirty: true,
-        templateSaving: true,
-      }).templateDisabledReason,
-      "busy"
-    );
-    assert.equal(
-      deriveSaveButtonState({
-        hasSlide: true,
-        hasTemplate: true,
-        slideDirty: false,
-        templateDirty: false,
-      }).templateDisabledReason,
-      "clean"
+        slideDirty: true,
+        structureSaving: true,
+      }).slideDisabled,
+      true
     );
   });
 });
@@ -209,9 +137,9 @@ describe("snapshot projection for heavy binary fields", () => {
     };
     const snapshot = createSnapshot(template);
     assert.equal(snapshot.length < 4096, true);
-    assert.equal(isTemplateDirty(template, snapshot), false);
+    assert.equal(isSnapshotDirty(template, snapshot), false);
     assert.equal(
-      isTemplateDirty(
+      isSnapshotDirty(
         { ...template, slides: [scriptureSlide(), scriptureSlide({ id: "s-2", customImageData: otherHugeImage })] },
         snapshot
       ),
