@@ -58,6 +58,7 @@ function createFakeEditorFactory({ holdLoad = false } = {}) {
     instances: 0,
     loads: [],
     markSavedCalls: 0,
+    resetCalls: 0,
     serializeCalls: 0,
     pendingLoads: [],
     onChange: null,
@@ -95,6 +96,7 @@ function createFakeEditorFactory({ holdLoad = false } = {}) {
         state.dirty = false;
       },
       async reset() {
+        state.resetCalls += 1;
         state.dirty = true;
       },
       async destroy() {
@@ -541,6 +543,21 @@ test("createCustomEditorSession", async (t) => {
     assert.equal(state.markSavedCalls, 1);
   });
 
+  await t.test("resets only the active slide through the editor", async () => {
+    const { createEditor, state } = createFakeEditorFactory();
+    const session = createCustomEditorSession({ root: {}, createEditor });
+
+    await session.showSlide("a", rectModel("a"));
+
+    assert.equal(await session.reset("b"), false);
+    assert.equal(state.resetCalls, 0);
+    assert.equal(state.dirty, false);
+
+    assert.equal(await session.reset("a"), true);
+    assert.equal(state.resetCalls, 1);
+    assert.equal(state.dirty, true);
+  });
+
   await t.test("serializes nothing before the editor exists", () => {
     const { createEditor } = createFakeEditorFactory();
     const session = createCustomEditorSession({ root: {}, createEditor });
@@ -571,6 +588,10 @@ test("createCustomEditorSession", async (t) => {
     await flush();
 
     assert.equal(session.activeSlideId, null);
+    assert.equal(session.isLoading("a"), true);
+    assert.equal(session.isLoading("b"), false);
+    assert.equal(await session.reset("a"), false);
+    assert.equal(state.resetCalls, 0);
     assert.equal(session.serialize("a"), null);
     session.markSaved("a");
     assert.equal(state.markSavedCalls, 0);
@@ -579,6 +600,7 @@ test("createCustomEditorSession", async (t) => {
     await pending;
 
     assert.equal(session.activeSlideId, "a");
+    assert.equal(session.isLoading("a"), false);
     assert.ok(session.serialize("a"));
   });
 
