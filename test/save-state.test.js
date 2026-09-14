@@ -703,6 +703,7 @@ describe("buildResetSlideDraft", () => {
       hymnKorTitle: "내 영혼아",
       hymnEngTitle: "Blessed Assurance",
       includeTitle: true,
+      titleThemeId: "marquee",
       originalUrl: "https://example.com/hymn.ppt",
       serverFilePath: "/uploads/hymn.ppt",
       fileName: "hymn.ppt",
@@ -716,6 +717,7 @@ describe("buildResetSlideDraft", () => {
     assert.equal(reset.hymnKorTitle, "");
     assert.equal(reset.hymnEngTitle, "");
     assert.equal(reset.includeTitle, false);
+    assert.equal(reset.titleThemeId, "original");
     assert.deepEqual(
       {
         originalUrl: reset.originalUrl,
@@ -747,6 +749,7 @@ describe("buildResetSlideDraft", () => {
       enVersion: "kjv",
       themeId: "light",
       includeTitle: false,
+      titleThemeId: "ivory",
       titleSlideType: "설교",
       scriptureSignature: "sig",
       customImageData: "data:image/png;base64,abc",
@@ -766,6 +769,7 @@ describe("buildResetSlideDraft", () => {
     assert.equal(reset.enVersion, "web");
     assert.equal(reset.themeId, "dark");
     assert.equal(reset.includeTitle, true);
+    assert.equal(reset.titleThemeId, "original");
     assert.equal(reset.titleSlideType, "말씀");
     assert.equal(reset.scriptureSignature, "");
     assert.deepEqual(

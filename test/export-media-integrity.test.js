@@ -13,6 +13,10 @@ import {
   appendCustomTitleSlide,
   CUSTOM_TITLE_DESIGNS,
 } from "../lib/custom-title-slide.js";
+import {
+  appendThemedCoverTitleSlide,
+  COVER_TITLE_THEMES,
+} from "../lib/cover-title-slide.js";
 import { appendTitleSlide, TITLE_DESIGNS } from "../lib/title-slide.js";
 import { mergePptxBuffers } from "../lib/merge-pptx.js";
 
@@ -101,6 +105,30 @@ describe("bundled slide export media integrity", () => {
             churchName: "시드니 삼일교회",
             serviceDate: "2026-09-14",
             titleSubtitle: "주일 예배",
+          })
+        )
+      );
+    }
+
+    const merged = await mergePptxBuffers(decks);
+    assert.deepEqual(mediaMismatches(merged), []);
+  });
+
+  it("keeps every themed cover's pictures readable after the merge", async () => {
+    const decks = [];
+    for (const titleThemeId of COVER_TITLE_THEMES.filter(
+      (themeId) => themeId !== "original"
+    )) {
+      decks.push(
+        await generatedDeck((pptx) =>
+          appendThemedCoverTitleSlide(pptx, {
+            titleThemeId,
+            kind: "hymn",
+            data: {
+              hymnNumber: 1,
+              hymnKorTitle: "찬양하라",
+              hymnEngTitle: "Praise Him",
+            },
           })
         )
       );

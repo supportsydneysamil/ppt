@@ -756,6 +756,14 @@ body {
   grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
 }
 
+.cover-theme-grid {
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+}
+
+.cover-theme-grid[hidden] {
+  display: none;
+}
+
 .theme-option-card {
   border: 1px solid var(--border);
   background: var(--panel);
@@ -951,6 +959,42 @@ body {
   bottom: 20%;
   width: 44%;
   background: rgba(242, 193, 91, 0.85);
+}
+
+.title-preview-original {
+  background: url("/assets/hymn-title-bg.png") center / cover no-repeat;
+  color: #fff;
+  font-family: Batang, "Fraunces", Georgia, serif;
+  text-shadow: 1px 1px 5px rgba(0, 0, 0, 0.65);
+}
+
+.title-preview-original > span {
+  letter-spacing: 0.34em;
+  padding-left: 0.34em;
+  transform: translateY(-10%);
+}
+
+.title-preview-original::before {
+  top: auto;
+  bottom: 0;
+  width: 100%;
+  height: 23%;
+  background: url("/assets/hymn-title-band.png") center / cover no-repeat;
+}
+
+.title-preview-original::after {
+  top: 56%;
+  bottom: auto;
+  width: 24%;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.title-preview-original-scripture {
+  background: #101114 url("/assets/scriptures/title-top.png") center / cover no-repeat;
+}
+
+.title-preview-original-scripture::before {
+  background: url("/assets/scriptures/title-bottom.png") center / cover no-repeat;
 }
 
 /* Custom title thumbnails: one rule under the headline, like the renderers. */
