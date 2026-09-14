@@ -4,6 +4,7 @@ import { DOMParser } from "@xmldom/xmldom";
 import AdmZip from "adm-zip";
 import PptxGenJS from "pptxgenjs";
 
+import * as titleSlideApi from "../lib/title-slide.js";
 import {
   appendTitleSlide,
   TITLE_DESIGNS,
@@ -208,5 +209,40 @@ describe("appendTitleSlide", () => {
       });
       assert.ok(objectNames(xml).includes(marker), titleDesign);
     }
+  });
+
+  it("falls back to chapel when an accepted extra design has no renderer", async () => {
+    assert.equal(
+      typeof titleSlideApi.appendTitleSlideWithExtraRenderer,
+      "function"
+    );
+    const pptx = new PptxGenJS();
+    pptx.layout = "LAYOUT_WIDE";
+    let calls = 0;
+    titleSlideApi.appendTitleSlideWithExtraRenderer(
+      pptx,
+      {
+        titleDesign: "advent",
+        churchName: "A",
+        serviceDate: "2026-09-13",
+      },
+      () => {
+        calls += 1;
+        return false;
+      }
+    );
+    const buffer = await pptx.write({ outputType: "nodebuffer" });
+    const zip = new AdmZip(buffer);
+    const xml = zip.readAsText("ppt/slides/slide1.xml");
+    assert.equal(calls, 1);
+    assert.match(xml, /주일예배/);
+    assert.equal(objectNames(xml).some((name) => name.startsWith("title-")), false);
+    assert.equal(
+      zip
+        .getEntries()
+        .filter((entry) => /^ppt\/slides\/slide\d+\.xml$/.test(entry.entryName))
+        .length,
+      1
+    );
   });
 });

@@ -45,6 +45,25 @@ function solidColor(shape) {
     ?.getAttribute("val");
 }
 
+function rotation(shape) {
+  const transform = shape.getElementsByTagName("a:xfrm")[0];
+  return Number(transform.getAttribute("rot") || 0) / 60000;
+}
+
+function shapeWithText(slideXml, text) {
+  return Array.from(parse(slideXml).getElementsByTagName("p:sp")).find(
+    (shape) =>
+      Array.from(shape.getElementsByTagName("a:t")).some(
+        (node) => node.textContent === text
+      )
+  );
+}
+
+function fontSize(shape) {
+  const run = shape.getElementsByTagName("a:rPr")[0];
+  return run ? Number(run.getAttribute("sz")) / 100 : 0;
+}
+
 async function render(slide) {
   const pptx = new PptxGenJS();
   pptx.layout = "LAYOUT_WIDE";
@@ -115,6 +134,13 @@ describe("seasonal worship title designs", () => {
       7,
       "seven rays"
     );
+    const rays = Array.from({ length: 7 }, (_, index) =>
+      objectByName(xml, `title-motif:ray-${index}`)
+    );
+    const rayGeometry = rays.map(geometry);
+    assert.ok(Math.min(...rayGeometry.map(({ x }) => x)) < 4.6);
+    assert.ok(Math.max(...rayGeometry.map(({ x, w }) => x + w)) > 8.7);
+    assert.ok(new Set(rays.map(rotation)).size >= 5, "rays form a visible fan");
     assert.deepEqual(geometry(objectByName(xml, "title-rule:horizon")), {
       x: 1.1,
       y: 6.05,
@@ -137,6 +163,21 @@ describe("seasonal worship title designs", () => {
       w: 5.39,
       h: 5.31,
     });
+  });
+
+  it("keeps a long editable Easter title inside the inner arch", async () => {
+    const titleKo = "부활의소망을기뻐하는온가족예배";
+    const xml = await render({
+      ...content,
+      titleDesign: "easter-stained",
+      titleKo,
+    });
+    const title = shapeWithText(xml, titleKo);
+    assert.ok(title);
+    const { x, w } = geometry(title);
+    assert.ok(x >= 4.2);
+    assert.ok(x + w <= 9.13);
+    assert.ok(fontSize(title) <= 27);
   });
 
   it("uses the specified burgundy spine and large star", async () => {
