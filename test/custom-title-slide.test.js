@@ -9,6 +9,7 @@ import {
   CUSTOM_TITLE_DESIGNS,
 } from "../lib/custom-title-slide.js";
 import * as customTitleText from "../lib/custom-title-text.js";
+import { decodePng, pixelAt } from "./helpers/png-decode.js";
 
 async function renderArchive(slide) {
   const pptx = new PptxGenJS();
@@ -71,16 +72,22 @@ function textMetrics(shape) {
   };
 }
 
-function haloSvg(zip) {
-  const entry = zip
-    .getEntries()
-    .find(
-      ({ entryName }) =>
-        entryName.startsWith("ppt/media/") &&
-        entryName.endsWith(".svg") &&
-        zip.readAsText(entryName).includes('id="subtitle-halo"')
-    );
-  return entry ? zip.readAsText(entry.entryName) : "";
+/** The decoded picture the halo shape actually points at. */
+function haloRaster(zip, slideXml) {
+  const halo = pictureByName(slideXml, "custom-title:subtitle-halo");
+  const embed = halo.getElementsByTagName("a:blip")[0].getAttribute("r:embed");
+  const rels = zip.readAsText("ppt/slides/_rels/slide1.xml.rels");
+  const target = new RegExp(`Id="${embed}"[^>]*Target="([^"]+)"`).exec(rels)?.[1];
+  assert.ok(target, `halo relationship ${embed} must resolve`);
+  return decodePng(zip.getEntry(`ppt/${target.replace(/^\.\.\//, "")}`).getData());
+}
+
+function rgb(hex) {
+  return [
+    Number.parseInt(hex.slice(0, 2), 16),
+    Number.parseInt(hex.slice(2, 4), 16),
+    Number.parseInt(hex.slice(4, 6), 16),
+  ];
 }
 
 describe("subtitleFontSize", () => {
@@ -97,10 +104,10 @@ describe("subtitleFontSize", () => {
 describe("appendCustomTitleSlide", () => {
   it("renders one theme-tinted lower halo and shifts the title stack", async () => {
     const themes = {
-      aurora: { color: "C4B2FF", opacity: "0.15" },
-      monolith: { color: "FFFFFF", opacity: "0.10" },
-      ivory: { color: "C2A87A", opacity: "0.16" },
-      marquee: { color: "D9B376", opacity: "0.12" },
+      aurora: { color: "C4B2FF", opacity: 0.15 },
+      monolith: { color: "FFFFFF", opacity: 0.1 },
+      ivory: { color: "C2A87A", opacity: 0.16 },
+      marquee: { color: "D9B376", opacity: 0.12 },
     };
 
     for (const customTitleDesign of CUSTOM_TITLE_DESIGNS) {
@@ -143,15 +150,21 @@ describe("appendCustomTitleSlide", () => {
         `${customTitleDesign} title stack must move up`
       );
 
-      const svg = haloSvg(zip);
-      assert.match(
-        svg,
-        new RegExp(`stop-color="#${themes[customTitleDesign].color}"`)
+      // The glow is brightest dead centre and has faded out entirely by the
+      // corners, which sit outside the gradient's radius.
+      const raster = haloRaster(zip, slideXml);
+      const centre = pixelAt(raster, raster.width >> 1, raster.height >> 1);
+      assert.deepEqual(
+        centre.slice(0, 3),
+        rgb(themes[customTitleDesign].color),
+        `${customTitleDesign} halo must be tinted with its theme colour`
       );
-      assert.match(
-        svg,
-        new RegExp(`stop-opacity="${themes[customTitleDesign].opacity}"`)
+      assert.equal(
+        centre[3],
+        Math.round(themes[customTitleDesign].opacity * 255),
+        `${customTitleDesign} halo must use its theme opacity`
       );
+      assert.equal(pixelAt(raster, 0, 0)[3], 0);
       assert.doesNotMatch(
         slideXml,
         /custom-title:subtitle-(panel|accent|dot|diamond)/

@@ -5,7 +5,6 @@ import { fileURLToPath } from "url";
 import PptxGenJS from "pptxgenjs";
 import multer from "multer";
 import AdmZip from "adm-zip";
-import https from "https";
 import http from "http";
 import { exec } from "child_process";
 import { promisify } from "util";
@@ -22,6 +21,7 @@ import { appendCustomSlide } from "./lib/custom-slide-pptx.js";
 import { appendCustomTitleSlide } from "./lib/custom-title-slide.js";
 import { convertLegacyPptToPptx } from "./lib/legacy-ppt.js";
 import { mergePptxBuffers } from "./lib/merge-pptx.js";
+import { fetchRemoteImage, sniffImageMimeType } from "./lib/remote-image.js";
 import { appendTitleSlide } from "./lib/title-slide.js";
 
 const execAsync = promisify(exec);
@@ -205,7 +205,46 @@ async function deleteSlideAsset(slide) {
   );
 }
 
-async function appendSimpleSlide(pptx, slideData) {
+/**
+ * The background picture for a simple/ad slide, or null when there is none to
+ * use. A background that cannot be read is reported and skipped rather than
+ * embedded blindly: bytes that are not an image become a slide PowerPoint
+ * refuses to display, and one bad URL should not fail a whole bundle.
+ */
+async function adBackgroundDataUri(slideData, onWarning) {
+  try {
+    if (slideData.adBgSource === "file" && slideData.adBgImagePath) {
+      const imageBuffer = await fs.readFile(
+        path.join(__dirname, slideData.adBgImagePath)
+      );
+      const mimeType = sniffImageMimeType(imageBuffer);
+      if (!mimeType) {
+        throw new Error(`배경 이미지 형식을 알 수 없습니다: ${slideData.adBgImagePath}`);
+      }
+      return `data:${mimeType};base64,${imageBuffer.toString("base64")}`;
+    }
+    if (slideData.adBgSource === "url" && slideData.adBgImageUrl) {
+      return await fetchRemoteImage(slideData.adBgImageUrl);
+    }
+  } catch (err) {
+    console.warn("Slide background skipped:", err.message);
+    onWarning?.(err.message);
+  }
+  return null;
+}
+
+function addBackgroundDimmer(pptx, slide, slideData) {
+  slide.addShape(pptx.ShapeType.rect, {
+    x: 0,
+    y: 0,
+    w: "100%",
+    h: "100%",
+    fill: { color: "000000", transparency: 100 - (slideData.adBgOpacity ?? 30) },
+    line: { color: "000000", transparency: 100 },
+  });
+}
+
+async function appendSimpleSlide(pptx, slideData, onWarning) {
   const slide = pptx.addSlide();
   const bgColor = slideData.bg === "white" ? "FFFFFF" : "000000";
   const textColor = slideData.bg === "white" ? "000000" : "FFFFFF";
@@ -213,34 +252,12 @@ async function appendSimpleSlide(pptx, slideData) {
   const safeFontSize = Number.parseInt(slideData.fontSize, 10) || 24;
   const safeAlign = slideData.align || "center";
 
-  if (slideData.adBgSource === "file" && slideData.adBgImagePath) {
-    const imagePath = path.join(__dirname, slideData.adBgImagePath);
-    const imageBuffer = await fs.readFile(imagePath);
-    const imageData = imageBuffer.toString("base64");
-    const ext = path.extname(slideData.adBgImagePath).toLowerCase();
-    const mimeType = ext === ".png" ? "image/png" : "image/jpeg";
-    slide.addImage({ data: `data:${mimeType};base64,${imageData}`, x: 0, y: 0, w: "100%", h: "100%" });
-  } else if (slideData.adBgSource === "url" && slideData.adBgImageUrl) {
-    const imageData = await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error("URL fetch timeout")), 10000);
-      const protocol = slideData.adBgImageUrl.startsWith("https") ? https : http;
-      protocol.get(slideData.adBgImageUrl, (response) => {
-        const chunks = [];
-        response.on("data", (chunk) => chunks.push(chunk));
-        response.on("end", () => { clearTimeout(timeout); resolve(Buffer.concat(chunks).toString("base64")); });
-      }).on("error", (error) => { clearTimeout(timeout); reject(error); });
-    });
-    slide.addImage({ data: `data:image/jpeg;base64,${imageData}`, x: 0, y: 0, w: "100%", h: "100%" });
+  const background = await adBackgroundDataUri(slideData, onWarning);
+  if (background) {
+    slide.addImage({ data: background, x: 0, y: 0, w: "100%", h: "100%" });
+    addBackgroundDimmer(pptx, slide, slideData);
   } else {
     slide.background = { color: bgColor };
-  }
-
-  if (slideData.adBgSource === "file" || slideData.adBgSource === "url") {
-    slide.addShape(pptx.ShapeType.rect, {
-      x: 0, y: 0, w: "100%", h: "100%",
-      fill: { color: "000000", transparency: 100 - (slideData.adBgOpacity ?? 30) },
-      line: { color: "000000", transparency: 100 },
-    });
   }
 
   slide.addText(slideData.content || "", {
@@ -257,69 +274,19 @@ async function appendSimpleSlide(pptx, slideData) {
   });
 }
 
-async function appendAdSlide(pptx, slideData) {
+async function appendAdSlide(pptx, slideData, onWarning) {
   const slide = pptx.addSlide();
   const bgColor = slideData.bg === "white" ? "FFFFFF" : "000000";
   const textColor = slideData.bg === "white" ? "000000" : "FFFFFF";
 
-  if (slideData.adBgSource === "file" && slideData.adBgImagePath) {
-    const imagePath = path.join(__dirname, slideData.adBgImagePath);
-    const imageBuffer = await fs.readFile(imagePath);
-    const imageData = imageBuffer.toString("base64");
-    const ext = path.extname(slideData.adBgImagePath).toLowerCase();
-    const mimeType = ext === ".png" ? "image/png" : "image/jpeg";
-    slide.addImage({
-      data: `data:${mimeType};base64,${imageData}`,
-      x: 0,
-      y: 0,
-      w: "100%",
-      h: "100%",
-    });
-  } else if (slideData.adBgSource === "url" && slideData.adBgImageUrl) {
-    const imageData = await new Promise((resolve, reject) => {
-      const timeout = setTimeout(
-        () => reject(new Error("URL fetch timeout")),
-        10000
-      );
-      const protocol = slideData.adBgImageUrl.startsWith("https") ? https : http;
-
-      protocol
-        .get(slideData.adBgImageUrl, (response) => {
-          const chunks = [];
-          response.on("data", (chunk) => chunks.push(chunk));
-          response.on("end", () => {
-            clearTimeout(timeout);
-            resolve(Buffer.concat(chunks).toString("base64"));
-          });
-        })
-        .on("error", (error) => {
-          clearTimeout(timeout);
-          reject(error);
-        });
-    });
-
-    slide.addImage({
-      data: `data:image/jpeg;base64,${imageData}`,
-      x: 0,
-      y: 0,
-      w: "100%",
-      h: "100%",
-    });
+  const background = await adBackgroundDataUri(slideData, onWarning);
+  if (background) {
+    slide.addImage({ data: background, x: 0, y: 0, w: "100%", h: "100%" });
   } else {
     slide.background = { color: bgColor };
   }
 
-  slide.addShape(pptx.ShapeType.rect, {
-    x: 0,
-    y: 0,
-    w: "100%",
-    h: "100%",
-    fill: {
-      color: "000000",
-      transparency: 100 - (slideData.adBgOpacity ?? 30),
-    },
-    line: { color: "000000", transparency: 100 },
-  });
+  addBackgroundDimmer(pptx, slide, slideData);
 
   const hasTitle = !!slideData.adTitle;
   if (hasTitle) {
@@ -476,15 +443,19 @@ async function buffersForSlide(slideData, warnings) {
     return buffers;
   }
 
+  // A skipped background is counted alongside skipped custom-slide pictures, so
+  // the download still happens and the client reports how much was left out.
+  const onWarning = (message) => warnings?.push({ message, elementId: null });
+
   if (slideData.type === "ad") {
     buffers.push(
-      await writeGeneratedDeck((pptx) => appendAdSlide(pptx, slideData))
+      await writeGeneratedDeck((pptx) => appendAdSlide(pptx, slideData, onWarning))
     );
     return buffers;
   }
 
   buffers.push(
-    await writeGeneratedDeck((pptx) => appendSimpleSlide(pptx, slideData))
+    await writeGeneratedDeck((pptx) => appendSimpleSlide(pptx, slideData, onWarning))
   );
   return buffers;
 }
