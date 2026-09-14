@@ -40,9 +40,9 @@ describe("Custom title subtitle editor wiring", () => {
     );
   });
 
-  it("renders the approved lower signature panel with the shared size rule", () => {
+  it("renders the approved symbol-free soft halo with the shared size rule", () => {
     assert.match(app, /api\.subtitleFontSize\(text\)/);
-    assert.match(app, /function addCustomTitleSubtitlePanel\(/);
+    assert.match(app, /function addCustomTitleSubtitleHalo\(/);
     assert.match(
       app,
       /font-size:\$\{pt\(customTitleSubtitleSize\(subtitle\)\)\}px/
@@ -53,7 +53,12 @@ describe("Custom title subtitle editor wiring", () => {
     );
     assert.match(app, /bottom:\$\{inch\(0\.55\)\}px/);
     assert.match(app, /height:\$\{inch\(0\.85\)\}px/);
-    assert.match(app, /background:\$\{theme\.subtitlePanelFill\};border:none;/);
-    assert.doesNotMatch(app, /subtitlePanelDouble/);
+    assert.match(app, /background:\$\{theme\.subtitleHalo\};border:none;/);
+    assert.match(app, /rgba\(196,178,255,0\.15\)/);
+    assert.match(app, /rgba\(255,255,255,0\.10\)/);
+    assert.match(app, /rgba\(194,168,122,0\.16\)/);
+    assert.match(app, /rgba\(217,179,118,0\.12\)/);
+    assert.doesNotMatch(app, /subtitlePanel/);
+    assert.doesNotMatch(app, /subtitleHaloAccent/);
   });
 });

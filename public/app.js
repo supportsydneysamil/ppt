@@ -3958,8 +3958,9 @@ const CUSTOM_TITLE_THEMES = {
     enColor: "#C4B2FF",
     enWeight: 700,
     enTracking: 0.42,
-    subtitlePanelFill: "rgba(23,14,51,0.78)",
-    subtitlePanelText: "#FFFFFF",
+    subtitleHalo:
+      "radial-gradient(ellipse at center, rgba(196,178,255,0.15), rgba(196,178,255,0) 68%)",
+    subtitleText: "#FFFFFF",
   },
   monolith: {
     background:
@@ -3978,10 +3979,9 @@ const CUSTOM_TITLE_THEMES = {
     enWeight: 400,
     enTracking: 0.5,
     hairline: "#2C2E33",
-    subtitlePanelFill: "#111216",
-    subtitlePanelText: "#EEE9DC",
-    subtitlePanelAccent: "#67645C",
-    subtitlePanelAccentType: "line",
+    subtitleHalo:
+      "radial-gradient(ellipse at center, rgba(255,255,255,0.10), rgba(255,255,255,0) 68%)",
+    subtitleText: "#EEE9DC",
   },
   ivory: {
     background: "#FAF6EF",
@@ -3999,10 +3999,9 @@ const CUSTOM_TITLE_THEMES = {
     enTracking: 0.45,
     frame: "#C2A87A",
     frameWeight: 0.021,
-    subtitlePanelFill: "#F2EADC",
-    subtitlePanelText: "#5F4B2C",
-    subtitlePanelAccent: "#C2A87A",
-    subtitlePanelAccentType: "dots",
+    subtitleHalo:
+      "radial-gradient(ellipse at center, rgba(194,168,122,0.16), rgba(194,168,122,0) 68%)",
+    subtitleText: "#5F4B2C",
   },
   marquee: {
     background: "#2A0F16",
@@ -4021,10 +4020,9 @@ const CUSTOM_TITLE_THEMES = {
     frame: "#D9B376",
     frameWeight: 0.024,
     diamonds: true,
-    subtitlePanelFill: "#34131C",
-    subtitlePanelText: "#F7EBDA",
-    subtitlePanelAccent: "#D9B376",
-    subtitlePanelAccentType: "diamonds",
+    subtitleHalo:
+      "radial-gradient(ellipse at center, rgba(217,179,118,0.12), rgba(217,179,118,0) 68%)",
+    subtitleText: "#F7EBDA",
   },
 };
 
@@ -4082,66 +4080,23 @@ function addCustomTitleFrame(container, theme, unit) {
   );
 }
 
-function addCustomTitleSubtitlePanel(container, subtitle, theme, unit) {
+function addCustomTitleSubtitleHalo(container, subtitle, theme, unit) {
   const { inch, pt } = unit;
-  const panel = titlePreviewNode(
+  const halo = titlePreviewNode(
     `position:absolute;left:8%;right:8%;bottom:${inch(0.55)}px;` +
       `height:${inch(0.85)}px;display:flex;align-items:center;justify-content:center;` +
-      `box-sizing:border-box;background:${theme.subtitlePanelFill};border:none;z-index:2;`
+      `box-sizing:border-box;background:${theme.subtitleHalo};border:none;z-index:2;`
   );
 
-  if (theme.subtitlePanelAccentType === "line") {
-    panel.appendChild(
-      titlePreviewNode(
-        `position:absolute;top:${inch(0.04)}px;left:50%;width:${inch(1.1)}px;` +
-          `height:1px;transform:translateX(-50%);background:${theme.subtitlePanelAccent};`
-      )
-    );
-  }
-
-  if (theme.subtitlePanelAccentType === "dots") {
-    const size = inch(0.06);
-    [
-      `left:${inch(0.35)}px;`,
-      `right:${inch(0.35)}px;`,
-    ].forEach((position) => {
-      panel.appendChild(
-        titlePreviewNode(
-          `position:absolute;${position}top:calc(50% - ${size / 2}px);` +
-            `width:${size}px;height:${size}px;border-radius:50%;` +
-            `background:${theme.subtitlePanelAccent};`
-        )
-      );
-    });
-  }
-
-  if (theme.subtitlePanelAccentType === "diamonds") {
-    const size = inch(0.14);
-    panel.appendChild(
-      customTitleDiamond(
-        `left:${-size / 2}px;top:calc(50% - ${size / 2}px);`,
-        size,
-        theme.subtitlePanelAccent
-      )
-    );
-    panel.appendChild(
-      customTitleDiamond(
-        `right:${-size / 2}px;top:calc(50% - ${size / 2}px);`,
-        size,
-        theme.subtitlePanelAccent
-      )
-    );
-  }
-
-  panel.appendChild(
+  halo.appendChild(
     titlePreviewNode(
       `position:relative;font-family:${TITLE_SANS};font-weight:700;` +
         `font-size:${pt(customTitleSubtitleSize(subtitle))}px;line-height:1.2;` +
-        `color:${theme.subtitlePanelText};white-space:nowrap;letter-spacing:0.08em;`,
+        `color:${theme.subtitleText};white-space:nowrap;letter-spacing:0.08em;`,
       subtitle
     )
   );
-  container.appendChild(panel);
+  container.appendChild(halo);
 }
 
 function buildCustomTitleSlidePreview(data, previewWidth) {
@@ -4227,7 +4182,7 @@ function buildCustomTitleSlidePreview(data, previewWidth) {
 
   container.appendChild(stack);
   if (subtitle) {
-    addCustomTitleSubtitlePanel(container, subtitle, theme, unit);
+    addCustomTitleSubtitleHalo(container, subtitle, theme, unit);
   }
   return container;
 }
