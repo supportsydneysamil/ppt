@@ -4,6 +4,8 @@ import { describe, it } from "node:test";
 import {
   formatServiceDateEn,
   formatServiceDateKo,
+  normalizeDateMode,
+  resolveServiceDate,
   suggestSeasonLabel,
   upcomingSundays,
 } from "../lib/title-slide-date.js";
@@ -83,5 +85,31 @@ describe("suggestSeasonLabel", () => {
   it("returns an empty string for an ordinary Sunday", () => {
     assert.equal(suggestSeasonLabel("2026-09-13"), "");
     assert.equal(suggestSeasonLabel(""), "");
+  });
+});
+
+describe("normalizeDateMode", () => {
+  it("keeps known modes and falls back to custom", () => {
+    assert.equal(normalizeDateMode("today"), "today");
+    assert.equal(normalizeDateMode("next-sunday"), "next-sunday");
+    assert.equal(normalizeDateMode("custom"), "custom");
+    assert.equal(normalizeDateMode("nope"), "custom");
+    assert.equal(normalizeDateMode(undefined), "custom");
+  });
+});
+
+describe("resolveServiceDate", () => {
+  it("uses stored date for custom, or today when stored is empty", () => {
+    assert.equal(resolveServiceDate("custom", "2026-09-10", "2026-09-14"), "2026-09-10");
+    assert.equal(resolveServiceDate("custom", "", "2026-09-14"), "2026-09-14");
+  });
+
+  it("uses the provided today for today mode", () => {
+    assert.equal(resolveServiceDate("today", "2026-01-01", "2026-09-14"), "2026-09-14");
+  });
+
+  it("uses today when it is Sunday, otherwise the next Sunday", () => {
+    assert.equal(resolveServiceDate("next-sunday", "", "2026-09-13"), "2026-09-13");
+    assert.equal(resolveServiceDate("next-sunday", "", "2026-09-16"), "2026-09-20");
   });
 });
