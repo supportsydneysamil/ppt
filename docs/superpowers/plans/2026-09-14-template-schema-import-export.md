@@ -13,7 +13,7 @@
 - Envelope `kind` is exactly `samil-template-schema`.
 - Writer `version` is `1`. Reader accepts only integers in `[TEMPLATE_SCHEMA_MIN_VERSION, TEMPLATE_SCHEMA_MAX_VERSION]` (both currently `1`).
 - Always create a new template on import. Never overwrite by name or id.
-- Do not embed PPTX or image bytes. Strip `/uploads/` paths.
+- Do not embed PPTX or image bytes. Strip `/uploads/` paths and all `data:` URLs from every asset field. Leave `""` markers on stripped fields so export→parse still reports unrestorable slide names.
 - Do not add import/export HTTP routes. Use `POST /api/templates`.
 - Do not add Playwright coverage for this feature.
 - Implementation must occur in an isolated git worktree.
@@ -239,7 +239,16 @@ test("parseTemplateSchema accepts v1 and returns portable slides", () => {
   assert.equal(result.ok, true);
   assert.equal(result.schema.version, 1);
   assert.equal(result.schema.template.slides[0].serverFilePath, null);
-  assert.equal(result.schema.template.slides[0].customImageData, null);
+  assert.equal(result.schema.template.slides[0].customImageData, "");
+  assert.deepEqual(result.unrestorableNames, ["타이틀"]);
+});
+
+test("toPortableSlide strips data URLs and local upload paths from asset fields", () => {
+  // strips customImageData, adBgImageUrl, originalUrl, canvas src; keeps https adBgImageUrl
+});
+
+test("unrestorableSlideNames survives export JSON parse roundtrip", () => {
+  // export→JSON→parse returns unrestorableNames for stripped customImageData and adBgImageUrl
 });
 
 test("templateSchemaFilename sanitizes the name", () => {
@@ -297,8 +306,22 @@ export function templateSchemaErrorMessage(code) {
   }
 }
 
+export const STRIPPED_ASSET_MARKER = "";
+
 function isOwnedUploadPath(value) {
   return typeof value === "string" && value.startsWith("/uploads/");
+}
+
+function isDataUrl(value) {
+  return typeof value === "string" && value.startsWith("data:");
+}
+
+function isEmbeddedAsset(value) {
+  return isOwnedUploadPath(value) || isDataUrl(value);
+}
+
+function isStrippedAssetMarker(value) {
+  return value === STRIPPED_ASSET_MARKER;
 }
 
 function fail(code) {
@@ -314,7 +337,9 @@ function toPortableCustomSlide(customSlide) {
         if (element?.type !== "image") {
           return element;
         }
-        const src = isOwnedUploadPath(element.src) ? "" : element.src || "";
+        const src = isEmbeddedAsset(element.src)
+          ? STRIPPED_ASSET_MARKER
+          : element.src || "";
         return { ...element, src };
       })
     : [];
@@ -322,16 +347,31 @@ function toPortableCustomSlide(customSlide) {
 }
 
 export function toPortableSlide(slide) {
-  const portable = sanitizeSlideForTemplate(slide || {});
+  const source = slide || {};
+  const portable = sanitizeSlideForTemplate(source);
   delete portable.id;
   portable.serverFilePath = null;
   portable.thumbnail = null;
   portable.fileSaved = false;
   portable.adBgImagePath = null;
-  if (isOwnedUploadPath(portable.customImageData)) {
-    portable.customImageData = null;
+  if (isEmbeddedAsset(source.originalUrl)) {
+    portable.originalUrl = null;
   }
-  portable.customSlide = toPortableCustomSlide(portable.customSlide);
+  if (
+    isEmbeddedAsset(source.adBgImageUrl) ||
+    isStrippedAssetMarker(source.adBgImageUrl)
+  ) {
+    portable.adBgImageUrl = STRIPPED_ASSET_MARKER;
+  }
+  if (
+    isEmbeddedAsset(source.customImageData) ||
+    isStrippedAssetMarker(source.customImageData)
+  ) {
+    portable.customImageData = STRIPPED_ASSET_MARKER;
+  }
+  portable.customSlide = toPortableCustomSlide(
+    source.customSlide ?? portable.customSlide
+  );
   return portable;
 }
 
@@ -360,17 +400,24 @@ export function isUnrestorableSlide(slide) {
     (slide.sourceType === "upload" || isOwnedUploadPath(slide.serverFilePath));
   const fileAdBackground =
     slide.adBgSource === "file" || isOwnedUploadPath(slide.adBgImagePath);
-  const localCustomImage = isOwnedUploadPath(slide.customImageData);
+  const localAdUrlBackground =
+    slide.adBgSource === "url" &&
+    (isEmbeddedAsset(slide.adBgImageUrl) ||
+      isStrippedAssetMarker(slide.adBgImageUrl));
+  const localCustomImage =
+    isEmbeddedAsset(slide.customImageData) ||
+    isStrippedAssetMarker(slide.customImageData);
   const localCanvasImage = Boolean(
     slide.customSlide?.elements?.some(
       (element) =>
         element?.type === "image" &&
-        (isOwnedUploadPath(element.src) || element.src === "")
+        (isEmbeddedAsset(element.src) || isStrippedAssetMarker(element.src))
     )
   );
   return Boolean(
     localPptWithoutSource ||
       fileAdBackground ||
+      localAdUrlBackground ||
       localCustomImage ||
       localCanvasImage
   );

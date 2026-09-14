@@ -167,6 +167,86 @@ test("parseTemplateSchema rejects bad files and newer versions", () => {
   );
 });
 
+test("toPortableSlide strips data URLs and local upload paths from asset fields", () => {
+  const dataUrl = "data:image/png;base64,AAAA";
+  const doc = toPortableTemplateSchema({
+    name: "테스트",
+    slides: [
+      baseSlide({
+        name: "배경 데이터",
+        customImageData: dataUrl,
+      }),
+      baseSlide({
+        name: "광고 URL",
+        type: "ad",
+        adBgSource: "url",
+        adBgImageUrl: dataUrl,
+      }),
+      baseSlide({
+        name: "로컬 URL",
+        type: "ad",
+        adBgSource: "url",
+        adBgImageUrl: "/uploads/bg.png",
+      }),
+      baseSlide({
+        name: "광고 HTTPS",
+        type: "ad",
+        adBgSource: "url",
+        adBgImageUrl: "https://example.test/bg.jpg",
+      }),
+      baseSlide({
+        name: "찬송 로컬",
+        type: "hymn",
+        sourceType: "upload",
+        fileName: "hymn.ppt",
+        originalUrl: "/uploads/hymn.ppt",
+      }),
+      baseSlide({
+        name: "캔버스",
+        type: "custom",
+        customSlide: {
+          width: 1280,
+          height: 720,
+          background: "#ffffff",
+          elements: [{ id: "1", type: "image", src: dataUrl }],
+        },
+      }),
+    ],
+  });
+
+  const slides = doc.template.slides;
+  assert.equal(slides[0].customImageData, "");
+  assert.equal(slides[1].adBgImageUrl, "");
+  assert.equal(slides[2].adBgImageUrl, "");
+  assert.equal(slides[3].adBgImageUrl, "https://example.test/bg.jpg");
+  assert.equal(slides[4].originalUrl, null);
+  assert.equal(slides[5].customSlide.elements[0].src, "");
+});
+
+test("unrestorableSlideNames survives export JSON parse roundtrip", () => {
+  const template = {
+    name: "주일 예배",
+    slides: [
+      baseSlide({ name: "배경", customImageData: "/uploads/bg.png" }),
+      baseSlide({
+        name: "광고",
+        type: "ad",
+        adBgSource: "url",
+        adBgImageUrl: "/uploads/ad-bg.png",
+      }),
+      baseSlide({
+        name: "데이터",
+        customImageData: "data:image/png;base64,AAAA",
+      }),
+    ],
+  };
+  const exported = toPortableTemplateSchema(template);
+  const text = JSON.stringify(exported);
+  const result = parseTemplateSchema(text);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.unrestorableNames, ["배경", "광고", "데이터"]);
+});
+
 test("parseTemplateSchema accepts v1 and returns portable slides", () => {
   const text = JSON.stringify(
     toPortableTemplateSchema({
@@ -183,7 +263,8 @@ test("parseTemplateSchema accepts v1 and returns portable slides", () => {
   assert.equal(result.ok, true);
   assert.equal(result.schema.version, 1);
   assert.equal(result.schema.template.slides[0].serverFilePath, null);
-  assert.equal(result.schema.template.slides[0].customImageData, null);
+  assert.equal(result.schema.template.slides[0].customImageData, "");
+  assert.deepEqual(result.unrestorableNames, ["타이틀"]);
 });
 
 test("templateSchemaFilename sanitizes the name", () => {

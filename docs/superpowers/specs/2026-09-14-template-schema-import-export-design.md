@@ -85,7 +85,8 @@ PPTX 결과물이 아니라 템플릿 정의(슬라이드 타입, 텍스트, 테
 - `serverFilePath`, `thumbnail`, `fileSaved`
 - `adBgImagePath`
 - `fileName`은 원래 파일명 문자열로 남긴다. 바이트는 없다
-- `customImageData`가 `/uploads/` 경로이면 `null`. data URL이면 그대로 둔다
+- `/uploads/` 경로와 `data:` URL(이미지·PPT 바이트 포함)은 모든 자산 필드에서 제거한다. `customImageData`, `adBgImageUrl`, `originalUrl`, 커스텀 캔버스 이미지 `src` 등에 적용한다
+- 제거된 자산은 빈 문자열(`""`) 마커를 남겨 Export→Import 후에도 복원 불가 슬라이드 이름을 잃지 않는다. `originalUrl`은 `null`로 둔다
 
 복원 가능:
 
@@ -99,7 +100,8 @@ PPTX 결과물이 아니라 템플릿 정의(슬라이드 타입, 텍스트, 테
 - 직접 올린 PPT/PPTX (`sourceType`이 upload이거나 `serverFilePath`만 있고 `originalUrl`이 없음)
 - 광고 파일 배경
 - 커스텀 슬라이드의 로컬 업로드 이미지
-- 경로만 있는 사용자 배경 이미지
+- 경로만 있는 사용자 배경 이미지 (`customImageData`의 `/uploads/` 또는 `data:` URL)
+- `data:` URL로 넣은 광고 URL 배경·캔버스 이미지
 
 Export와 Import 모두 복원 불가 슬라이드 **이름 목록**을 사용자에게 보여 준다. Export는 확인 후에 다운로드하고, Import는 새 템플릿을 만든 뒤에 알려 준다. 확인을 거절하면 다운로드하지 않는다.
 
