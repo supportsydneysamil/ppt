@@ -1062,6 +1062,7 @@ function collectCurrentSlideDraft() {
 
   if (draft.type === "scripture") {
     Object.assign(draft, collectScriptureSlideFields());
+    draft.titleThemeId = draft.titleThemeId || "original";
     draft.sourceType = "upload";
   } else if (draft.type === "title") {
     Object.assign(draft, collectTitleSlideData());
@@ -1078,6 +1079,7 @@ function collectCurrentSlideDraft() {
   } else if (draft.type === "hymn") {
     draft.hymnNumber = hymnNumberInput.value;
     draft.includeTitle = hymnIncludeTitle.checked;
+    draft.titleThemeId = draft.titleThemeId || "original";
     draft.hymnKorTitle = hymnKorTitleInput.value.trim();
     draft.hymnEngTitle = hymnEngTitleInput.value.trim();
     draft.sourceType = "upload";
@@ -1940,6 +1942,7 @@ function buildScriptureSignature(slide) {
     koVersion: slide.koVersion,
     enVersion: slide.enVersion,
     themeId: slide.themeId,
+    titleThemeId: slide.titleThemeId || "original",
     includeTitle: !!slide.includeTitle,
     titleSlideType: slide.titleSlideType || "말씀",
     customImage: Boolean(slide.customImageData),
@@ -1962,6 +1965,7 @@ async function generateScriptureSlideFile(slideName, slide) {
     enVersion: slide.enVersion,
     lang: languages.join(","),
     themeId: slide.themeId,
+    titleThemeId: slide.titleThemeId || "original",
     includeTitleSlide: slide.includeTitle,
     titleSlideType: slide.titleSlideType || "말씀",
   };
@@ -3403,6 +3407,7 @@ function clearTransientSlideFileInputs() {
 // would needlessly drop the user's selection.
 function populateEditor(slide, { reloadCustomCanvas = true } = {}) {
   clearTransientSlideFileInputs();
+  slide.titleThemeId = slide.titleThemeId || "original";
   slideNameInput.value = slide.name;
   slideTypeSelect.value = slide.type;
 
@@ -4861,6 +4866,7 @@ async function saveCurrentSlide({ silent = false } = {}) {
       }
       slide.sourceType = 'upload';
       slide.includeTitle = hymnIncludeTitle.checked;
+      slide.titleThemeId = slide.titleThemeId || 'original';
       slide.hymnKorTitle = hymnKorTitleInput.value.trim();
       slide.hymnEngTitle = hymnEngTitleInput.value.trim();
       slide.saved = true;
@@ -4869,6 +4875,7 @@ async function saveCurrentSlide({ silent = false } = {}) {
       if (!(await applyScriptureSlideSettings(slide))) {
         return false;
       }
+      slide.titleThemeId = slide.titleThemeId || 'original';
 
       const generated = await ensureScriptureSlideFile(
         slide,
@@ -5497,6 +5504,7 @@ function buildSerializableSlide(slide) {
     koVersion: slide.koVersion,
     enVersion: slide.enVersion,
     themeId: slide.themeId,
+    titleThemeId: slide.titleThemeId || "original",
     customImageData: slide.customImageData,
     scriptureSignature: slide.scriptureSignature,
     // Deep copy so clones and templates never share a canvas model.
