@@ -88,7 +88,7 @@ async function render(slide) {
 
 describe("buildTitleContent", () => {
   it("knows all picker designs plus hidden thanksgiving", () => {
-    assert.equal(TITLE_DESIGNS.length, 28);
+    assert.equal(TITLE_DESIGNS.length, 51);
     assert.equal(TITLE_DESIGNS.includes("thanksgiving"), true);
     assert.equal(TITLE_DESIGNS.includes("lent-ashes"), true);
     assert.equal(TITLE_DESIGNS.includes("chapel"), true);
@@ -370,9 +370,6 @@ describe("appendTitleSlide", () => {
       "christmas-evergreen": "title-motif:tree-0",
       thanksgiving: "title-motif:wheat-left",
       advent: "title-motif:candle",
-      "midnight-slab": "title-rule:spine",
-      "slate-split": "title-rule:split",
-      "deep-fog": "title-rule:underline",
     };
 
     for (const [titleDesign, marker] of Object.entries(markers)) {

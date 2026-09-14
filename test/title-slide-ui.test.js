@@ -183,23 +183,16 @@ describe("Sunday worship title editor", () => {
       "Thanksgiving",
       "Advent",
     ];
-    const dark = [
-      "MidnightSlab",
-      "SlateSplit",
-      "DeepFog",
-    ];
 
     for (const name of seasonal) {
       const builder = functionSource(`build${name}Preview`);
       assert.match(builder, /titlePreviewMotif\(/, `${name} needs a motif`);
     }
-    for (const name of dark) {
-      const builder = functionSource(`build${name}Preview`);
-      assert.match(builder, /titlePreviewRule\(/, `${name} needs layout rules`);
-      assert.doesNotMatch(
-        builder,
-        /titlePreviewMotif\(/,
-        `${name} must remain symbol-free`
+    for (const name of ["MidnightSlab", "SlateSplit", "DeepFog"]) {
+      assert.equal(
+        app.includes(`function build${name}Preview(`),
+        false,
+        `${name} now renders through the shared catalog families`
       );
     }
   });
@@ -210,9 +203,39 @@ describe("Sunday worship title editor", () => {
     assert.match(preview, /layoutFamily:\s*family/);
     assert.match(preview, /titleKoFontSize/);
     assert.match(preview, /titleEnFontSize/);
-    assert.match(preview, /lent-veil/);
-    assert.match(preview, /palm-procession/);
-    assert.match(preview, /new-year-blessing/);
+
+    const motif = functionSource("buildCatalogFamilyMotif");
+    assert.match(motif, /lent-veil/);
+    assert.match(motif, /palm-procession/);
+    assert.match(motif, /new-year-blessing/);
+  });
+
+  it("shares one geometry module between the preview and the PPTX renderer", () => {
+    assert.match(main, /window\.TitleSlideLayout\s*=/);
+    const preview = functionSource("buildCatalogFamilyPreview");
+    assert.match(preview, /window\.TitleSlideLayout/);
+    assert.match(preview, /layout\.titleSlideStack\(/);
+    assert.match(preview, /layout\.titleSlideComposition\(/);
+    assert.doesNotMatch(preview, /koY/);
+  });
+
+  it("draws the three premium color layouts from shared geometry", () => {
+    const decoration = functionSource("buildCatalogFamilyDecoration");
+    for (const geometry of ["GALLERY_RAIL", "PORTAL", "EDITORIAL_INDEX"]) {
+      assert.match(decoration, new RegExp(geometry));
+    }
+    for (const family of [
+      "gallery-rail",
+      "portal-offset",
+      "editorial-index",
+    ]) {
+      assert.match(decoration, new RegExp(family));
+    }
+
+    const preview = functionSource("buildCatalogFamilyPreview");
+    assert.match(preview, /["']rail["']/);
+    assert.match(preview, /["']portal["']/);
+    assert.match(preview, /["']index["']/);
   });
 
   it("keeps the season suggestion limited to subtitle copy", () => {

@@ -248,45 +248,24 @@ describe("seasonal worship title designs", () => {
 });
 
 describe("dark worship title designs", () => {
-  const ruleNames = {
-    "midnight-slab": "title-rule:spine",
-    "slate-split": "title-rule:split",
-    "deep-fog": "title-rule:underline",
-  };
-
-  for (const [titleDesign, ruleName] of Object.entries(ruleNames)) {
-    it(`renders ${titleDesign} with rules but no motifs`, async () => {
+  it("draws the retired dark ids through the catalog renderer", async () => {
+    for (const titleDesign of ["midnight-slab", "slate-split", "deep-fog"]) {
       const xml = await render({ ...content, titleDesign });
       assert.match(xml, /주일예배/);
       assert.equal(objectNames(xml, "title-motif:").length, 0);
-      assert.ok(objectNames(xml, "title-rule:").includes(ruleName));
-    });
-  }
-
-  it("uses the specified midnight spine geometry", async () => {
-    const xml = await render({ ...content, titleDesign: "midnight-slab" });
-    assert.deepEqual(geometry(objectByName(xml, "title-rule:spine")), {
-      x: 1.45,
-      y: 1.2,
-      w: 0,
-      h: 5.1,
-    });
+      assert.ok(objectNames(xml, "title-text:").length > 0, titleDesign);
+    }
   });
 
-  it("uses the specified slate panel and split geometry", async () => {
-    const xml = await render({ ...content, titleDesign: "slate-split" });
-    assert.deepEqual(geometry(objectByName(xml, "title-rule:panel")), {
-      x: 0,
-      y: 0,
-      w: 4.93,
-      h: 7.5,
-    });
-    assert.deepEqual(geometry(objectByName(xml, "title-rule:split")), {
-      x: 4.93,
-      y: 0,
-      w: 0,
-      h: 7.5,
-    });
+  it("leaves midnight-slab as type on an open background", async () => {
+    const xml = await render({ ...content, titleDesign: "midnight-slab" });
+    assert.deepEqual(
+      objectNames(xml, "title-rule:").filter(
+        (name) => name !== "title-rule:en-divider"
+      ),
+      [],
+      "no frame, band, or panel"
+    );
   });
 
   it("omits independently hidden title lines and dates", async () => {
@@ -303,4 +282,48 @@ describe("dark worship title designs", () => {
     assert.doesNotMatch(xml, /2026년/);
     assert.doesNotMatch(xml, /SEPTEMBER/);
   });
+});
+
+describe("premium color title designs", () => {
+  const rules = {
+    "black-reserve": "title-rule:gallery-rail",
+    "cobalt-portal": "title-rule:portal-offset",
+    "terracotta-edition": "title-rule:editorial-index",
+  };
+
+  for (const [titleDesign, expectedRule] of Object.entries(rules)) {
+    it(`renders balanced named structure for ${titleDesign}`, async () => {
+      const xml = await render({
+        ...content,
+        titleDesign,
+        titleSubtitle: "성령강림 후 제16주",
+      });
+      assert.ok(objectNames(xml, "").includes(expectedRule));
+      for (const kind of ["church", "ko", "subtitle", "en", "date"]) {
+        assert.ok(
+          objectNames(xml, "").includes(`title-text:${kind}`),
+          `${titleDesign}:${kind}`
+        );
+      }
+    });
+
+    it(`collapses optional copy for ${titleDesign}`, async () => {
+      const xml = await render({
+        titleDesign,
+        titleKo: "주일예배",
+        titleSubtitle: "",
+        titleEn: "",
+        churchName: "",
+        showDate: false,
+      });
+      assert.ok(objectNames(xml, "").includes("title-text:ko"));
+      for (const kind of ["church", "subtitle", "en", "date"]) {
+        assert.equal(
+          objectNames(xml, "").includes(`title-text:${kind}`),
+          false,
+          `${titleDesign}:${kind}`
+        );
+      }
+    });
+  }
 });

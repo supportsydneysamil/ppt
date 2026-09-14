@@ -58,7 +58,7 @@ describe("catalog-driven custom title design picker", () => {
         "맥추감사절",
         "송구영신",
         "신년",
-        "기타 (고급)",
+        "기타",
       ]
     );
     assert.ok(

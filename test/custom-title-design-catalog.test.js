@@ -24,7 +24,7 @@ const EXPECTED_CATEGORIES = [
   { id: "barley-harvest", name: "맥추감사절", count: 3 },
   { id: "year-end", name: "송구영신", count: 3 },
   { id: "new-year", name: "신년", count: 3 },
-  { id: "premium", name: "기타 (고급)", count: 4 },
+  { id: "premium", name: "기타", count: 4 },
 ];
 
 // The approved Korean names, in the order each category must present them.

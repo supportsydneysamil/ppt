@@ -4644,198 +4644,288 @@ function buildAdventPreview(container, content, unit) {
   }
 }
 
-function buildMidnightSlabPreview(container, content, unit) {
-  const { inch, pt } = unit;
-  container.style.background = "linear-gradient(145deg,#08090B,#181C23)";
-  container.appendChild(titlePreviewRule(
-    `position:absolute;left:${inch(1.45)}px;top:${inch(1.2)}px;width:1px;height:${inch(5.1)}px;background:#9AA3AE;`
-  ));
-  const right = (text, top, size, color, font = TITLE_SANS) => {
-    if (!text) return;
-    container.appendChild(titlePreviewNode(
-      `position:absolute;left:${inch(4.6)}px;top:${inch(top)}px;width:${inch(7.8)}px;text-align:right;` +
-        `font-family:${font};font-weight:700;font-size:${pt(size)}px;color:${color};`,
-      text
-    ));
-  };
-  right(content.church, 1.2, 17, "#9AA3AE");
-  right(content.ko, 2.16, titleKoFontSize(content.ko, 52), "#F2F4F7");
-  right(content.en, 3.52, titleEnFontSize(content.en, 17), "#C5CBD3", TITLE_LATIN);
-  right(content.subtitle, 4.12, 18, "#9AA3AE");
-  right(content.koDate, 5.78, 18, "#9AA3AE");
-}
-
-function buildSlateSplitPreview(container, content, unit) {
-  const { inch, pt } = unit;
-  container.style.background = "linear-gradient(90deg,#1C2431 0 37%,#0D1117 37%)";
-  container.appendChild(titlePreviewRule(
-    `position:absolute;left:${inch(4.93)}px;top:0;width:1px;height:100%;background:#748094;`
-  ));
-  const left = (text, top, size, color, font = TITLE_SANS) => {
-    if (!text) return;
-    container.appendChild(titlePreviewNode(
-      `position:absolute;left:${inch(.68)}px;top:${inch(top)}px;width:${inch(3.56)}px;` +
-        `font-family:${font};font-weight:700;font-size:${pt(size)}px;color:${color};`,
-      text
-    ));
-  };
-  left(content.church, 1, 18, "#DCE2EA");
-  left(content.en, 2.62, titleEnFontSize(content.en, 18), "#AEB8C6", TITLE_LATIN);
-  left(content.subtitle, 3.58, 17, "#AEB8C6");
-  left(content.koDate, 5.95, 17, "#8F9AAA");
-  if (content.ko) {
-    container.appendChild(titlePreviewNode(
-      `position:absolute;left:${inch(5.55)}px;top:${inch(2.7)}px;width:${inch(7.2)}px;` +
-        `font-family:${TITLE_SANS};font-weight:700;font-size:${pt(titleKoFontSize(content.ko, 50))}px;color:#F2F4F7;`,
-      content.ko
-    ));
-  }
-}
-
-function buildDeepFogPreview(container, content, unit) {
-  const { inch, pt } = unit;
-  container.style.background =
-    "radial-gradient(ellipse at 66% 34%,rgba(167,175,186,.28),rgba(13,17,23,0) 64%),#0D1117";
-  const left = (text, top, size, color, font = TITLE_SANS) => {
-    if (!text) return;
-    container.appendChild(titlePreviewNode(
-      `position:absolute;left:${inch(1.15)}px;top:${inch(top)}px;width:${inch(11.03)}px;` +
-        `font-family:${font};font-weight:700;font-size:${pt(size)}px;color:${color};`,
-      text
-    ));
-  };
-  left(content.subtitle, 3.72, 17, "#AAB2BD");
-  left(content.en, 4.18, titleEnFontSize(content.en, 17), "#B8C0CA", TITLE_LATIN);
-  left(content.ko, 4.72, titleKoFontSize(content.ko, 46), "#F2F4F7");
-  container.appendChild(titlePreviewRule(
-    `position:absolute;left:${inch(1.15)}px;top:${inch(5.88)}px;width:${inch(3.4)}px;height:1px;background:#98A2AE;`
-  ));
-  left(content.church, 6.22, 17, "#AAB2BD");
-  if (content.koDate) {
-    container.appendChild(titlePreviewNode(
-      `position:absolute;right:${inch(1.15)}px;top:${inch(6.22)}px;width:${inch(5.5)}px;text-align:right;` +
-        `font-family:${TITLE_SANS};font-size:${pt(17)}px;color:#AAB2BD;`,
-      content.koDate
-    ));
-  }
-}
-
-function buildCatalogFamilyPreview(container, content, unit, design) {
-  const { inch, pt } = unit;
+function buildCatalogFamilyDecoration(container, unit, design, layout) {
+  const { inch } = unit;
   const { theme, layoutFamily: family } = design;
   const color = (hex) => `#${hex}`;
-  container.style.background = design.asset
-    ? `linear-gradient(rgba(0,0,0,.32),rgba(0,0,0,.32)),url("/${design.asset.path}") center/cover`
-    : `linear-gradient(145deg,${color(theme.background)},${color(theme.backgroundAccent)})`;
-
   const addRule = (css) => container.appendChild(titlePreviewRule(css));
-  if (family === "centered-rule") {
+  const {
+    ARCH,
+    BANNER,
+    COLUMN,
+    CORNER,
+    EDITORIAL_INDEX,
+    FRAME,
+    GALLERY_RAIL,
+    HORIZON_Y,
+    PORTAL,
+    SIDE_BAND,
+    VEIL_PANEL,
+  } = layout;
+
+  if (family === "double-frame") {
     addRule(
-      `position:absolute;left:${inch(3.4)}px;top:${inch(1.15)}px;width:${inch(6.5)}px;height:1px;background:${color(theme.rule)};`
+      `position:absolute;inset:${inch(FRAME.outer)}px;border:1px solid ${color(theme.rule)};`
     );
-  } else if (family === "double-frame") {
     addRule(
-      `position:absolute;inset:${inch(0.38)}px;border:1px solid ${color(theme.rule)};`
-    );
-    addRule(
-      `position:absolute;inset:${inch(0.52)}px;border:1px solid ${color(theme.rule)};opacity:.6;`
+      `position:absolute;inset:${inch(FRAME.inner)}px;border:1px solid ${color(theme.rule)};opacity:.6;`
     );
   } else if (family === "side-band") {
     addRule(
-      `position:absolute;left:0;top:0;width:${inch(0.42)}px;height:100%;background:${color(theme.accent)};`
+      `position:absolute;left:0;top:0;width:${inch(SIDE_BAND.w)}px;height:100%;background:${color(theme.accent)};`
     );
   } else if (family === "horizon-split") {
     addRule(
-      `position:absolute;left:0;right:0;top:${inch(5.55)}px;bottom:0;background:${color(theme.backgroundAccent)};opacity:.82;`
-    );
-  } else if (family === "emblem-crest") {
-    addRule(
-      `position:absolute;left:${inch(5.4)}px;top:${inch(1.05)}px;width:${inch(2.5)}px;height:1px;background:${color(theme.rule)};`
+      `position:absolute;left:0;right:0;top:${inch(HORIZON_Y)}px;bottom:0;background:${color(theme.backgroundAccent)};opacity:.82;border-top:1px solid ${color(theme.rule)};`
     );
   } else if (family === "veil-panel") {
     addRule(
-      `position:absolute;left:${inch(2.4)}px;top:0;width:${inch(8.5)}px;height:100%;background:${color(theme.background)};opacity:.7;`
+      `position:absolute;left:${inch(VEIL_PANEL.x)}px;top:0;width:${inch(VEIL_PANEL.w)}px;height:100%;` +
+        `background:${color(theme.background)};opacity:.72;`
     );
   } else if (family === "corner-mark") {
+    [
+      ["left", "top"],
+      ["right", "top"],
+      ["left", "bottom"],
+      ["right", "bottom"],
+    ].forEach(([horizontal, vertical]) =>
+      addRule(
+        `position:absolute;${horizontal}:${inch(CORNER.inset)}px;${vertical}:${inch(CORNER.inset)}px;` +
+          `width:${inch(CORNER.arm)}px;height:${inch(CORNER.drop)}px;` +
+          `border-${horizontal}:1px solid ${color(theme.rule)};border-${vertical}:1px solid ${color(theme.rule)};`
+      )
+    );
+  } else if (family === "banner-block") {
     addRule(
-      `position:absolute;left:${inch(0.55)}px;top:${inch(0.55)}px;width:${inch(1.15)}px;height:${inch(0.75)}px;border-left:1px solid ${color(theme.rule)};border-top:1px solid ${color(theme.rule)};`
+      `position:absolute;left:${inch(BANNER.x)}px;top:${inch(BANNER.y)}px;width:${inch(BANNER.w)}px;height:${inch(BANNER.h)}px;` +
+        `background:${color(theme.backgroundAccent)};opacity:.8;border:1px solid ${color(theme.rule)};`
+    );
+  } else if (family === "column-split") {
+    addRule(
+      `position:absolute;left:0;top:0;width:${inch(COLUMN.w)}px;height:100%;` +
+        `background:${color(theme.backgroundAccent)};opacity:.88;border-right:1px solid ${color(theme.rule)};`
+    );
+  } else if (family === "arch-window") {
+    [0, ARCH.inset].forEach((inset, index) =>
+      addRule(
+        `position:absolute;left:${inch(ARCH.x + inset)}px;top:${inch(ARCH.y + inset)}px;` +
+          `width:${inch(ARCH.w - inset * 2)}px;height:${inch(ARCH.h - inset * 2)}px;` +
+          `border:1px solid ${color(theme.rule)};border-radius:${inch(2.9)}px ${inch(2.9)}px 0 0;` +
+          `opacity:${index === 0 ? 0.82 : 0.55};`
+      )
+    );
+  } else if (family === "gallery-rail") {
+    addRule(
+      `position:absolute;left:${inch(GALLERY_RAIL.x)}px;top:${inch(GALLERY_RAIL.y)}px;` +
+        `width:${inch(GALLERY_RAIL.w)}px;height:1px;background:${color(theme.rule)};`
     );
     addRule(
-      `position:absolute;right:${inch(0.55)}px;bottom:${inch(0.55)}px;width:${inch(1.15)}px;height:${inch(0.75)}px;border-right:1px solid ${color(theme.rule)};border-bottom:1px solid ${color(theme.rule)};`
+      `position:absolute;left:${inch(GALLERY_RAIL.x + GALLERY_RAIL.w - GALLERY_RAIL.dot / 2)}px;` +
+        `top:${inch(GALLERY_RAIL.y - GALLERY_RAIL.dot / 2)}px;width:${inch(GALLERY_RAIL.dot)}px;` +
+        `height:${inch(GALLERY_RAIL.dot)}px;border-radius:50%;background:${color(theme.accent)};`
+    );
+  } else if (family === "portal-offset") {
+    addRule(
+      `position:absolute;left:${inch(PORTAL.left.x)}px;top:${inch(PORTAL.left.y)}px;` +
+        `width:${inch(PORTAL.left.w)}px;height:${inch(PORTAL.left.h)}px;` +
+        `background:${color(theme.backgroundAccent)};opacity:.66;`
+    );
+    addRule(
+      `position:absolute;left:${inch(PORTAL.right.x)}px;top:${inch(PORTAL.right.y)}px;` +
+        `width:${inch(PORTAL.right.w)}px;height:${inch(PORTAL.right.h)}px;` +
+        `background:${color(theme.accent)};opacity:.28;`
+    );
+  } else if (family === "editorial-index") {
+    addRule(
+      `position:absolute;left:0;top:0;width:${inch(EDITORIAL_INDEX.w)}px;height:100%;` +
+        `background:${color(theme.backgroundAccent)};opacity:.94;`
+    );
+    addRule(
+      `position:absolute;left:${inch(EDITORIAL_INDEX.dividerX)}px;top:${inch(EDITORIAL_INDEX.dividerY)}px;` +
+        `width:1px;height:${inch(EDITORIAL_INDEX.dividerH)}px;background:${color(theme.rule)};`
     );
   }
+}
 
+function buildCatalogFamilyMotif(container, unit, design) {
+  const { inch } = unit;
+  const color = `#${design.theme.accent}`;
   if (design.id === "lent-veil") {
     container.appendChild(
       titlePreviewMotif(
-        `position:absolute;left:${inch(0.55)}px;top:${inch(0.9)}px;width:${inch(0.22)}px;height:${inch(5.4)}px;border-radius:${inch(0.08)}px;background:${color(theme.accent)};`
+        `position:absolute;left:${inch(1.18)}px;top:${inch(1.6)}px;width:${inch(0.22)}px;height:${inch(4.3)}px;border-radius:${inch(0.08)}px;background:${color};`
       )
     );
   } else if (design.id === "palm-procession") {
     container.appendChild(
       titlePreviewMotif(
-        `position:absolute;right:${inch(0.68)}px;top:${inch(0.55)}px;width:${inch(1.1)}px;height:${inch(1.1)}px;background:${color(theme.accent)};opacity:.8;clip-path:polygon(0 0,100% 50%,0 100%,28% 50%);transform:rotate(28deg);`
+        `position:absolute;left:${inch(11.45)}px;top:${inch(0.62)}px;width:${inch(1.1)}px;height:${inch(1.1)}px;background:${color};opacity:.8;clip-path:polygon(0 0,100% 50%,0 100%,28% 50%);transform:rotate(28deg);`
       )
     );
   } else if (design.id === "new-year-blessing") {
     container.appendChild(
       titlePreviewMotif(
-        `position:absolute;left:${inch(6.45)}px;top:${inch(0.42)}px;width:${inch(0.42)}px;height:${inch(0.42)}px;background:${color(theme.accent)};transform:rotate(45deg);`
+        `position:absolute;left:${inch(6.45)}px;top:${inch(0.42)}px;width:${inch(0.42)}px;height:${inch(0.42)}px;background:${color};transform:rotate(45deg);`
       )
     );
   }
+}
 
-  const left = family === "side-band";
-  const panel = family === "veil-panel";
-  const x = left ? 0.95 : panel ? 2.7 : 1;
-  const w = left ? 11.2 : panel ? 7.9 : 11.33;
-  const align = left ? "left" : "center";
-  const koY = family === "horizon-split" ? 1.85 : 2.25;
-  const text = (value, y, size, textColor, font = TITLE_SANS) => {
+function buildCatalogFamilyPreview(container, content, unit, design) {
+  const layout = window.TitleSlideLayout;
+  const { inch, pt } = unit;
+  const { theme, layoutFamily: family } = design;
+  const color = (hex) => `#${hex}`;
+  // Matches the veil the PPTX renderer lays over a photo: the theme background
+  // at 62% for dark designs, 48% for light ones.
+  const veil = `${color(theme.background)}${theme.mood === "dark" ? "9E" : "7A"}`;
+  container.style.background = design.asset
+    ? `linear-gradient(${veil},${veil}),url("/${design.asset.path}") center/cover`
+    : `linear-gradient(145deg,${color(theme.background)},${color(theme.backgroundAccent)})`;
+  if (!layout) return;
+
+  const box = layout.titleSlideComposition(family);
+  if (!box) return;
+
+  buildCatalogFamilyDecoration(container, unit, design, layout);
+  buildCatalogFamilyMotif(container, unit, design);
+
+  const tracking = layout.titleSlideTracking(family);
+  const addRule = (css) => container.appendChild(titlePreviewRule(css));
+  const text = (value, block, options) => {
     if (!value) return;
+    const {
+      x = box.x,
+      w = box.w,
+      align = box.align,
+      size,
+      font,
+      color: ink,
+      spacing = 0,
+    } = options;
     container.appendChild(
       titlePreviewNode(
-        `position:absolute;left:${inch(x)}px;top:${inch(y)}px;width:${inch(w)}px;text-align:${align};` +
-          `font-family:${font};font-weight:700;font-size:${pt(size)}px;color:${textColor};`,
+        `position:absolute;left:${inch(x)}px;top:${inch(block.y)}px;width:${inch(w)}px;text-align:${align};` +
+          `font-family:${font || TITLE_SANS};font-weight:700;font-size:${pt(size)}px;color:${ink};` +
+          `letter-spacing:${pt(spacing)}px;`,
         value
       )
     );
   };
+  const church = (block, options) =>
+    text(content.church, block, {
+      size: 17,
+      color: color(theme.muted),
+      spacing: tracking.church,
+      ...options,
+    });
+  const date = (block, options) =>
+    text(content.koDate, block, {
+      size: 15,
+      color: color(theme.muted),
+      spacing: tracking.date,
+      ...options,
+    });
 
-  text(
-    content.church,
-    family === "horizon-split" ? 5.82 : 0.72,
-    17,
-    color(theme.muted)
-  );
-  text(
-    content.ko,
-    koY,
-    titleKoFontSize(content.ko, 72, w),
-    color(theme.title),
-    theme.titleFont === "serif" ? TITLE_SERIF : TITLE_SANS
-  );
-  text(content.subtitle, koY + 1.32, 20, color(theme.muted));
-  if (content.en) {
-    const ruleWidth = left ? 1.6 : 2.7;
-    const ruleLeft = left ? x : x + (w - ruleWidth) / 2;
-    addRule(
-      `position:absolute;left:${inch(ruleLeft)}px;top:${inch(koY + 1.9)}px;width:${inch(ruleWidth)}px;height:1px;background:${color(theme.rule)};`
-    );
-    text(
-      content.en,
-      koY + 2.03,
-      titleEnFontSize(content.en, 16, w),
-      color(theme.accent),
-      TITLE_LATIN
-    );
+  const koSize = titleKoFontSize(content.ko, 72, box.w);
+  const dividerWidth = box.align === "left" ? 1.6 : 2.7;
+  const dividerX =
+    box.align === "left" ? box.x : box.x + (box.w - dividerWidth) / 2;
+  const center = box.x + box.w / 2;
+  const mark = layout.titleSlideMark(family);
+
+  const draw = {
+    "bracket-top": (block) =>
+      addRule(
+        `position:absolute;left:${inch(box.x)}px;top:${inch(block.y)}px;width:${inch(box.w)}px;height:1px;background:${color(theme.rule)};`
+      ),
+    "bracket-bottom": (block) => draw["bracket-top"](block),
+    church,
+    mark: (block) => {
+      if (family === "centered-rule") {
+        addRule(
+          `position:absolute;left:${inch(center - mark.w / 2)}px;top:${inch(block.y)}px;width:${inch(mark.w)}px;height:1px;background:${color(theme.rule)};`
+        );
+        return;
+      }
+      container.appendChild(
+        titlePreviewRule(
+          `position:absolute;left:${inch(center - block.h / 2)}px;top:${inch(block.y)}px;width:${inch(block.h)}px;height:${inch(block.h)}px;background:${color(theme.accent)};transform:rotate(45deg);`
+        )
+      );
+      [-mark.gemGap - mark.w, mark.gemGap].forEach((offset) =>
+        addRule(
+          `position:absolute;left:${inch(center + offset)}px;top:${inch(block.y + block.h / 2)}px;width:${inch(mark.w)}px;height:1px;background:${color(theme.rule)};`
+        )
+      );
+    },
+    ko: (block) =>
+      text(content.ko, block, {
+        size: koSize,
+        color: color(theme.title),
+        font: theme.titleFont === "serif" ? TITLE_SERIF : TITLE_SANS,
+        spacing: tracking.ko,
+      }),
+    subtitle: (block) =>
+      text(content.subtitle, block, { size: 20, color: color(theme.muted) }),
+    "en-divider": (block) =>
+      addRule(
+        `position:absolute;left:${inch(dividerX)}px;top:${inch(block.y)}px;width:${inch(dividerWidth)}px;height:1px;background:${color(theme.rule)};`
+      ),
+    en: (block) =>
+      text(content.en, block, {
+        size: titleEnFontSize(content.en, 16, box.w),
+        color: color(theme.accent),
+        font: TITLE_LATIN,
+        spacing: tracking.en,
+      }),
+    date,
+  };
+
+  const stack = layout.titleSlideStack(family, content, koSize);
+  stack.forEach((block) => draw[block.kind](block));
+
+  if (
+    ["band", "banner", "edges", "rail", "portal", "index"].includes(box.zone)
+  ) {
+    layout.titleSlideZoneStack(family, content).forEach((block) => {
+      const slot = {
+        x: block.x ?? box.x,
+        w: block.w ?? box.w,
+        align: block.align ?? "center",
+        ...(block.fontSize ? { size: block.fontSize } : {}),
+      };
+      if (block.kind === "church") church(block, slot);
+      else date(block, slot);
+    });
+  } else if (box.zone === "footer") {
+    const half = box.w / 2;
+    if (content.church || content.koDate) {
+      addRule(
+        `position:absolute;left:${inch(box.x)}px;top:${inch(layout.FOOTER.ruleY)}px;width:${inch(box.w)}px;height:1px;background:${color(theme.rule)};`
+      );
+    }
+    church({ y: layout.FOOTER.textY }, { w: half, align: "left" });
+    date({ y: layout.FOOTER.textY }, {
+      x: box.x + half,
+      w: half,
+      align: "right",
+    });
+  } else if (box.zone === "column") {
+    const column = {
+      x: layout.COLUMN.pad,
+      w: layout.COLUMN.w - layout.COLUMN.pad * 2,
+      align: "left",
+    };
+    church({ y: 1.2 }, column);
+    if (content.church) {
+      addRule(
+        `position:absolute;left:${inch(column.x)}px;top:${inch(1.72)}px;width:${inch(layout.COLUMN.markWidth)}px;height:1px;background:${color(theme.rule)};`
+      );
+    }
+    date({ y: 5.9 }, column);
   }
-  text(
-    content.koDate,
-    family === "horizon-split" ? 6.55 : 6.62,
-    15,
-    color(theme.muted)
-  );
 }
 
 function buildTitleSlidePreview(data, previewWidth) {
@@ -4876,9 +4966,6 @@ function buildTitleSlidePreview(data, previewWidth) {
     "christmas-evergreen": buildChristmasEvergreenPreview,
     thanksgiving: buildThanksgivingPreview,
     advent: buildAdventPreview,
-    "midnight-slab": buildMidnightSlabPreview,
-    "slate-split": buildSlateSplitPreview,
-    "deep-fog": buildDeepFogPreview,
   };
   const builder = builders[design];
   if (builder) {
