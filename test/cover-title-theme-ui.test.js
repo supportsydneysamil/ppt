@@ -339,6 +339,7 @@ describe("cover title theme picker UI", () => {
     const { buildThemedHymnTitleSlidePreview: buildThemed } = await import(
       "../public/custom-title-preview.js"
     );
+    const catalogApi = await import("../lib/custom-title-design-catalog.js");
     const buildHymnSubtitle = (data) =>
       buildCoverTitleContent("hymn", data).subtitle;
     const original = compileFunction(
@@ -350,26 +351,33 @@ describe("cover title theme picker UI", () => {
     assert.equal(originalNode.children[1].textContent, "1. 찬양하라\n(Praise Him)");
 
     for (const themeId of ["aurora", "monolith", "ivory", "marquee"]) {
-      let themedNode;
-      assert.doesNotThrow(() => {
-        themedNode = buildThemed(
-          themeId,
-          1,
-          "  찬양하라  ",
-          "  Praise Him  ",
-          640,
-          { document, catalogApi: null }
+      for (const api of [null, catalogApi]) {
+        let themedNode;
+        assert.doesNotThrow(() => {
+          themedNode = buildThemed(
+            themeId,
+            1,
+            "  찬양하라  ",
+            "  Praise Him  ",
+            640,
+            { document, catalogApi: api }
+          );
+        });
+        assert.equal(themedNode.dataset.customTitleDesign, themeId);
+        assert.equal(
+          themedNode.querySelectorAll("[data-custom-title-family-motif]").length,
+          0,
+          `${themeId} hymn/scripture cover must keep the legacy frame only`
         );
-      });
-      assert.equal(themedNode.dataset.customTitleDesign, themeId);
-      assert.equal(
-        themedNode.querySelector("[data-custom-title-subtitle]").textContent,
-        "1. 찬양하라\n(Praise Him)"
-      );
-      assert.equal(themedNode.style.width, "100%");
-      assert.equal(themedNode.style.aspectRatio, "16 / 9");
-      assert.equal(themedNode.style.marginBottom, "8px");
-      assert.equal(themedNode.style.borderRadius, "4px");
+        assert.equal(
+          themedNode.querySelector("[data-custom-title-subtitle]").textContent,
+          "1. 찬양하라\n(Praise Him)"
+        );
+        assert.equal(themedNode.style.width, "100%");
+        assert.equal(themedNode.style.aspectRatio, "16 / 9");
+        assert.equal(themedNode.style.marginBottom, "8px");
+        assert.equal(themedNode.style.borderRadius, "4px");
+      }
     }
   });
 });

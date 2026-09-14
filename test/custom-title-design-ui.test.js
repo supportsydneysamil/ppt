@@ -281,6 +281,40 @@ describe("catalog-driven custom title design picker", () => {
     }
   });
 
+  it("keeps aurora, monolith, ivory, and marquee free of catalog family motifs", async () => {
+    const document = createDocument();
+    const { buildCustomTitleSlidePreview } = await loadPreviewModule();
+    const catalogDesign = buildCustomTitleSlidePreview(
+      { customTitleDesign: "silent-linen", customTitleKo: "예배" },
+      400,
+      { document, catalogApi }
+    );
+    assert.ok(
+      catalogDesign.querySelector("[data-custom-title-family-motif]"),
+      "a new catalog design still draws its family motif"
+    );
+
+    for (const designId of ["aurora", "monolith", "ivory", "marquee"]) {
+      for (const api of [catalogApi, null]) {
+        const preview = buildCustomTitleSlidePreview(
+          {
+            customTitleDesign: designId,
+            customTitleKo: "타이틀",
+            customTitleEn: "TITLE",
+          },
+          400,
+          { document, catalogApi: api }
+        );
+        assert.equal(preview.dataset.customTitleDesign, designId);
+        assert.equal(
+          preview.querySelectorAll("[data-custom-title-family-motif]").length,
+          0,
+          `${designId} must not add a catalog family motif`
+        );
+      }
+    }
+  });
+
   it("falls back safely when normalized catalog lookup returns no design", async () => {
     const document = createDocument();
     const { buildCustomTitleSlidePreview } = await loadPreviewModule();
