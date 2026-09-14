@@ -3448,6 +3448,8 @@ function populateEditor(slide, { reloadCustomCanvas = true } = {}) {
     const dateMode = api ? api.normalizeDateMode(slide.dateMode) : "custom";
     setSelectedDateMode(dateMode);
     titleShowDate.checked = slide.showDate !== false;
+    // Pass the canonical slide record: automatic modes mutate serviceDate so
+    // every export and serialization path reads the same refreshed value.
     titleServiceDateInput.value = api
       ? api.syncAutomaticServiceDate(slide, api.todayIsoDate())
       : slide.serviceDate || defaultServiceDate();
@@ -4304,8 +4306,7 @@ function buildTitleSlidePreview(data, previewWidth) {
   const design = normalizeTitleDesign(data.titleDesign);
   const dateApi = titleDateApi();
   const serviceDate = dateApi
-    ? dateApi.resolveServiceDate(
-        "custom",
+    ? dateApi.previewServiceDate(
         data.serviceDate,
         dateApi.todayIsoDate()
       )

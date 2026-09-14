@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import { describe, it } from "node:test";
 
+import * as titleSlideDate from "../lib/title-slide-date.js";
+
 const [html, css, app, main, server] = await Promise.all([
   fs.readFile(new URL("../public/index.html", import.meta.url), "utf8"),
   fs.readFile(new URL("../public/styles.css", import.meta.url), "utf8"),
@@ -56,8 +58,10 @@ describe("Sunday worship title editor", () => {
   });
 
   it("provides title, date visibility, mode, and free date controls", () => {
+    assert.match(html, /<label[^>]+for="titleChurchName"/);
     assert.match(html, /<label[^>]+for="titleKo"/);
     assert.match(html, /<label[^>]+for="titleEn"/);
+    assert.match(html, /<label[^>]+for="titleSubtitle"/);
     assert.match(html, /<label[^>]+for="titleServiceDate"/);
     assert.match(html, /id="titleShowDate"/);
     assert.match(html, /id="titleDateModeLabel"/);
@@ -150,13 +154,29 @@ describe("Sunday worship title editor", () => {
       populate,
       /api\.syncAutomaticServiceDate\(slide,\s*api\.todayIsoDate\(\)\)/
     );
+    assert.match(populate, /canonical slide record/);
   });
 
-  it("uses browser today for a blank preview date", () => {
+  it("uses browser today only for blank preview dates", () => {
+    assert.equal(typeof titleSlideDate.previewServiceDate, "function");
+    const today = "2026-09-14";
+    assert.equal(
+      titleSlideDate.formatServiceDateKo(
+        titleSlideDate.previewServiceDate("", today)
+      ),
+      "2026년 9월 14일 주일"
+    );
+    assert.equal(
+      titleSlideDate.formatServiceDateKo(
+        titleSlideDate.previewServiceDate("nope", today)
+      ),
+      ""
+    );
+
     const preview = functionSource("buildTitleSlidePreview");
     assert.match(
       preview,
-      /dateApi\.resolveServiceDate\(\s*"custom",\s*data\.serviceDate,\s*dateApi\.todayIsoDate\(\)\s*\)/
+      /dateApi\.previewServiceDate\(\s*data\.serviceDate,\s*dateApi\.todayIsoDate\(\)\s*\)/
     );
     assert.match(preview, /formatTitleDateKo\(serviceDate\)/);
     assert.match(preview, /formatTitleDateEn\(serviceDate\)/);
