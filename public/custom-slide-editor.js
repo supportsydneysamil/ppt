@@ -5,7 +5,7 @@ import {
   normalizeCustomSlide,
 } from "./custom-slide-model.js";
 import { createCustomSlideHistory } from "./custom-slide-history.js";
-import { computePosition, flip, offset, shift } from "@floating-ui/dom";
+import { autoUpdate, computePosition, flip, offset, shift } from "@floating-ui/dom";
 
 export const SLIDE_WIDTH = 1280;
 export const SLIDE_HEIGHT = 720;
@@ -1104,6 +1104,10 @@ export async function createCustomSlideEditor(root, options = {}) {
   let canvasEngaged = false;
   let destroyed = false;
   let resizeObserver = null;
+  // Unsubscribes the floating text toolbar from canvas movement, and re-runs
+  // its placement for the transforms fabric handles without touching the DOM.
+  let stopToolbarTracking = null;
+  let positionToolbar = null;
   // Every render claims a generation; older generations must not touch the canvas.
   let renderToken = 0;
   let renderQueue = Promise.resolve();
@@ -1883,6 +1887,12 @@ export async function createCustomSlideEditor(root, options = {}) {
     menu.style.top = `${event.offsetY}px`;
   }
 
+  function stopContextToolbarTracking() {
+    stopToolbarTracking?.();
+    stopToolbarTracking = null;
+    positionToolbar = null;
+  }
+
   function refreshContextToolbar() {
     const toolbar = root.querySelector("[data-editor-ui='context-toolbar']");
     if (!toolbar) {
@@ -1891,35 +1901,51 @@ export async function createCustomSlideEditor(root, options = {}) {
     const objects = selectedFabricObjects(canvas);
     const text = objects.find((object) => object.elementType === "text");
     toolbar.hidden = !text;
+    stopContextToolbarTracking();
     if (!text || !canvas.lowerCanvasEl) {
       return;
     }
-    const box = objectBox(text);
-    const canvasRect = canvas.lowerCanvasEl.getBoundingClientRect();
-    const scaleX = canvasRect.width / SLIDE_WIDTH;
-    const scaleY = canvasRect.height / SLIDE_HEIGHT;
-    const virtualEl = {
+    // The toolbar sits outside the scrolling stage, so it is placed against the
+    // viewport. Both the rect and the offsets have to be read fresh on every
+    // update, otherwise the toolbar keeps the screen spot it was first given.
+    const reference = {
+      contextElement: canvas.lowerCanvasEl,
       getBoundingClientRect() {
+        const box = objectBox(text);
+        const canvasRect = canvas.lowerCanvasEl.getBoundingClientRect();
+        const scaleX = canvasRect.width / SLIDE_WIDTH;
+        const scaleY = canvasRect.height / SLIDE_HEIGHT;
+        const left = canvasRect.left + box.x * scaleX;
+        const top = canvasRect.top + box.y * scaleY;
+        const width = box.width * scaleX;
+        const height = box.height * scaleY;
         return {
-          x: canvasRect.left + box.x * scaleX,
-          y: canvasRect.top + box.y * scaleY,
-          left: canvasRect.left + box.x * scaleX,
-          top: canvasRect.top + box.y * scaleY,
-          width: box.width * scaleX,
-          height: box.height * scaleY,
-          right: canvasRect.left + (box.x + box.width) * scaleX,
-          bottom: canvasRect.top + (box.y + box.height) * scaleY,
+          x: left,
+          y: top,
+          left,
+          top,
+          width,
+          height,
+          right: left + width,
+          bottom: top + height,
         };
       },
     };
-    computePosition(virtualEl, toolbar, {
-      placement: "top",
-      middleware: [offset(8), flip(), shift({ padding: 8 })],
-    }).then(({ x, y }) => {
-      toolbar.style.position = "fixed";
-      toolbar.style.left = `${x}px`;
-      toolbar.style.top = `${y}px`;
-    });
+    positionToolbar = () => {
+      computePosition(reference, toolbar, {
+        strategy: "fixed",
+        placement: "top",
+        middleware: [offset(8), flip(), shift({ padding: 8 })],
+      }).then(({ x, y }) => {
+        if (destroyed) {
+          return;
+        }
+        toolbar.style.position = "fixed";
+        toolbar.style.left = `${x}px`;
+        toolbar.style.top = `${y}px`;
+      });
+    };
+    stopToolbarTracking = autoUpdate(reference, toolbar, () => positionToolbar?.());
   }
 
   function refreshLayerList() {
@@ -2506,21 +2532,26 @@ export async function createCustomSlideEditor(root, options = {}) {
     }, { passive: false });
   }
 
+  // Fabric transforms the object without touching the DOM, so nothing else
+  // tells the floating toolbar that the text moved out from under it.
   canvas.on("object:moving", ({ target }) => {
     if (!isActiveSelection(target)) {
       applySnapping(target);
     }
     enforceBounds(target);
+    positionToolbar?.();
   });
   canvas.on("object:scaling", ({ target }) => {
     if (!isActiveSelection(target)) {
       limitScaling(target);
     }
     enforceBounds(target);
+    positionToolbar?.();
   });
   canvas.on("object:rotating", ({ target }) => {
     limitScaling(target);
     enforceBounds(target);
+    positionToolbar?.();
   });
   canvas.on("object:modified", ({ target }) => {
     clearGuides();
@@ -2628,6 +2659,7 @@ export async function createCustomSlideEditor(root, options = {}) {
       }
       resizeObserver?.disconnect();
       resizeObserver = null;
+      stopContextToolbarTracking();
       for (const removeListener of listeners) {
         removeListener();
       }

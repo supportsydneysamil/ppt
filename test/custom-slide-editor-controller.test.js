@@ -173,6 +173,197 @@ async function settle(times = 6) {
   }
 }
 
+// The floating text toolbar ships with the React chrome, so the plain
+// index.html markup the controller tests boot from has to grow one.
+function addContextToolbar(ctx) {
+  const toolbar = ctx.document.createElement("div");
+  toolbar.className = "custom-editor-context-toolbar";
+  toolbar.dataset.editorUi = "context-toolbar";
+  toolbar.hidden = true;
+  ctx.root.append(toolbar);
+  return toolbar;
+}
+
+/** jsdom does no layout, so the canvas has to report a rect of its own. */
+function stubCanvasRect(ctx, rect) {
+  const current = { ...rect };
+  Object.defineProperty(ctx.canvas.lowerCanvasEl, "getBoundingClientRect", {
+    configurable: true,
+    value: () => ({
+      x: current.left,
+      y: current.top,
+      left: current.left,
+      top: current.top,
+      width: current.width,
+      height: current.height,
+      right: current.left + current.width,
+      bottom: current.top + current.height,
+      toJSON() {},
+    }),
+  });
+  return current;
+}
+
+/**
+ * jsdom keeps every rect at zero, so a scrolled page has to be spelled out:
+ * a browser reports `documentElement` shifted up by the scroll offset, and
+ * that offset is what separates page coordinates from viewport coordinates.
+ */
+function scrollPageTo(ctx, y) {
+  Object.defineProperty(ctx.window, "scrollY", { value: y, configurable: true });
+  Object.defineProperty(ctx.window, "pageYOffset", { value: y, configurable: true });
+  Object.defineProperty(ctx.document.documentElement, "getBoundingClientRect", {
+    configurable: true,
+    value: () => ({
+      x: 0,
+      y: -y,
+      left: 0,
+      top: -y,
+      width: 0,
+      height: 0,
+      right: 0,
+      bottom: -y,
+      toJSON() {},
+    }),
+  });
+}
+
+// @floating-ui/dom refuses to treat anything as a DOM node until the globals
+// below exist, which jsdom under node does not provide by itself.
+const FLOATING_UI_GLOBALS = [
+  "Node",
+  "Element",
+  "HTMLElement",
+  "ShadowRoot",
+  "getComputedStyle",
+  "DOMRect",
+];
+
+function withGlobalWindow(t, view) {
+  const saved = new Map();
+  for (const name of ["window", ...FLOATING_UI_GLOBALS]) {
+    saved.set(name, name in globalThis ? globalThis[name] : undefined);
+    globalThis[name] = name === "window" ? view : view[name];
+  }
+  t.after(() => {
+    for (const [name, previous] of saved) {
+      if (previous === undefined) {
+        delete globalThis[name];
+      } else {
+        globalThis[name] = previous;
+      }
+    }
+  });
+}
+
+test("the floating text toolbar is placed in viewport coordinates", async (t) => {
+  const ctx = await createEditor();
+  withGlobalWindow(t, ctx.window);
+  const toolbar = addContextToolbar(ctx);
+  stubCanvasRect(ctx, { left: 40, top: 120, width: 640, height: 360 });
+  await ctx.editor.load(textSlide());
+  const [textbox] = ctx.canvas.getObjects();
+
+  select(ctx, textbox);
+  await settle();
+  assert.equal(toolbar.hidden, false, "selecting text must reveal the toolbar");
+  const unscrolled = { left: toolbar.style.left, top: toolbar.style.top };
+  assert.notEqual(unscrolled.top, "", "the toolbar must be positioned");
+
+  // The canvas has not moved on screen, so neither may the toolbar: the offsets
+  // are consumed as `position: fixed`, which is relative to the viewport.
+  scrollPageTo(ctx, 900);
+  select(ctx, textbox);
+  await settle();
+
+  assert.equal(ctx.window.getComputedStyle(toolbar).position, "fixed");
+  assert.deepEqual(
+    { left: toolbar.style.left, top: toolbar.style.top },
+    unscrolled,
+    "page scroll must not offset a viewport-positioned toolbar"
+  );
+
+  await ctx.editor.destroy();
+});
+
+test("the floating text toolbar follows the canvas while it stays open", async (t) => {
+  const ctx = await createEditor();
+  withGlobalWindow(t, ctx.window);
+  const toolbar = addContextToolbar(ctx);
+  const rect = stubCanvasRect(ctx, { left: 40, top: 400, width: 640, height: 360 });
+  await ctx.editor.load(textSlide());
+  const [textbox] = ctx.canvas.getObjects();
+
+  select(ctx, textbox);
+  await settle();
+  const before = Number.parseFloat(toolbar.style.top);
+
+  // Scrolling the page moves the canvas up; nothing re-selects the text, so the
+  // toolbar has to reposition itself.
+  rect.top -= 250;
+  scrollPageTo(ctx, 250);
+  ctx.window.dispatchEvent(new ctx.window.Event("scroll"));
+  await settle();
+
+  assert.equal(
+    Number.parseFloat(toolbar.style.top),
+    before - 250,
+    "the toolbar must track the canvas across a scroll"
+  );
+
+  await ctx.editor.destroy();
+});
+
+test("the floating text toolbar follows the text while it is manipulated", async (t) => {
+  const ctx = await createEditor();
+  withGlobalWindow(t, ctx.window);
+  const toolbar = addContextToolbar(ctx);
+  // The stage renders the 720-unit slide 360px tall, so it is at half scale.
+  stubCanvasRect(ctx, { left: 40, top: 120, width: 640, height: 360 });
+  await ctx.editor.load(textSlide());
+  const [textbox] = ctx.canvas.getObjects();
+
+  select(ctx, textbox);
+  await settle();
+  const before = Number.parseFloat(toolbar.style.top);
+  const yBefore = ctx.editor.serialize().elements[0].y;
+
+  // Fabric reports a drag in progress long before it reports it finished.
+  textbox.set({ top: textbox.top + 200 });
+  ctx.canvas.fire("object:moving", { target: textbox });
+  await settle();
+
+  const yAfter = ctx.editor.serialize().elements[0].y;
+  assert.notEqual(yAfter, yBefore, "the drag must have moved the text");
+  assert.equal(
+    Number.parseFloat(toolbar.style.top),
+    before + (yAfter - yBefore) / 2,
+    "the toolbar must follow the text mid-drag"
+  );
+
+  await ctx.editor.destroy();
+});
+
+test("destroying the editor stops the floating toolbar from repositioning", async (t) => {
+  const ctx = await createEditor();
+  withGlobalWindow(t, ctx.window);
+  const toolbar = addContextToolbar(ctx);
+  const rect = stubCanvasRect(ctx, { left: 40, top: 400, width: 640, height: 360 });
+  await ctx.editor.load(textSlide());
+  const [textbox] = ctx.canvas.getObjects();
+
+  select(ctx, textbox);
+  await settle();
+  await ctx.editor.destroy();
+  const afterDestroy = toolbar.style.top;
+
+  rect.top -= 250;
+  ctx.window.dispatchEvent(new ctx.window.Event("scroll"));
+  await settle();
+
+  assert.equal(toolbar.style.top, afterDestroy, "a destroyed editor must not keep positioning");
+});
+
 test("load seeds a fresh history so a new slide cannot undo into the previous one", async () => {
   const ctx = await createEditor();
 

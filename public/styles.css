@@ -3005,7 +3005,8 @@ body[data-theme="light"] .rte-textarea {
 }
 
 .custom-editor-context-toolbar {
-  position: absolute;
+  /* Positioned against the viewport so the scrolling stage cannot clip it. */
+  position: fixed;
   z-index: 5;
   display: flex;
   gap: var(--sp-1);
