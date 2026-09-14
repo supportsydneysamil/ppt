@@ -35,7 +35,9 @@ import {
 } from "@lib/slide-duplicate.js";
 import { buildHymnSubtitle } from "@lib/cover-title-content.js";
 import {
+  TEMPLATE_SCHEMA_ERROR,
   parseTemplateSchema,
+  templateSchemaErrorMessage,
   templateSchemaFilename,
   toPortableTemplateSchema,
   unrestorableSlideNames,
@@ -6023,7 +6025,14 @@ function exportTemplateSchemaById(templateId) {
 }
 
 async function importTemplateSchemaFile(file) {
-  const text = await file.text();
+  let text;
+  try {
+    text = await file.text();
+  } catch {
+    alert(templateSchemaErrorMessage(TEMPLATE_SCHEMA_ERROR.INVALID_JSON));
+    return;
+  }
+
   const parsed = parseTemplateSchema(text);
   if (!parsed.ok) {
     alert(parsed.message);
@@ -6039,7 +6048,7 @@ async function importTemplateSchemaFile(file) {
         slides: parsed.schema.template.slides,
       }),
     });
-    const payload = await resp.json();
+    const payload = await resp.json().catch(() => ({}));
     if (!resp.ok) {
       throw new Error(payload.error || "템플릿 가져오기에 실패했습니다.");
     }

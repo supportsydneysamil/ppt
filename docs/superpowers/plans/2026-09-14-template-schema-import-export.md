@@ -13,7 +13,8 @@
 - Envelope `kind` is exactly `samil-template-schema`.
 - Writer `version` is `1`. Reader accepts only integers in `[TEMPLATE_SCHEMA_MIN_VERSION, TEMPLATE_SCHEMA_MAX_VERSION]` (both currently `1`).
 - Always create a new template on import. Never overwrite by name or id.
-- Do not embed PPTX or image bytes. Strip `/uploads/` paths and all `data:` URLs from every asset field. Leave `""` markers on stripped fields so export→parse still reports unrestorable slide names.
+- Do not embed PPTX or image bytes. Strip `/uploads/` paths and all `data:` URLs from every asset field, normalize those fields to safe null/empty canonical values, and record the loss with optional boolean `unrestorable: true`.
+- `sanitizeSlideForTemplate` preserves `unrestorable` as a Boolean so warnings survive `POST /api/templates` persistence and re-export. This optional field is backward-compatible in schema v1.
 - Do not add import/export HTTP routes. Use `POST /api/templates`.
 - Do not add Playwright coverage for this feature.
 - Implementation must occur in an isolated git worktree.
@@ -22,6 +23,7 @@
 
 - Create: `lib/template-schema.js` — constants, portable conversion, parse, migrate, error messages, download filename.
 - Create: `test/template-schema.test.js` — unit tests for the module.
+- Modify: `lib/slide-record.js` — preserve the optional `unrestorable` boolean at persistence boundaries.
 - Modify: `public/index.html` — gallery “스키마 가져오기” control and hidden file input.
 - Modify: `public/styles.css` — gallery toolbar.
 - Modify: `public/app.js` — card Export, gallery Import, confirm/toast.
@@ -48,6 +50,7 @@
   - `migrateTemplateSchema(doc) => doc` (identity while min=max=1)
   - `templateSchemaErrorMessage(code) => string`
   - `templateSchemaFilename(name) => string`
+  - Portable slide records may include `unrestorable: true`; missing/false remains valid v1.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -239,7 +242,8 @@ test("parseTemplateSchema accepts v1 and returns portable slides", () => {
   assert.equal(result.ok, true);
   assert.equal(result.schema.version, 1);
   assert.equal(result.schema.template.slides[0].serverFilePath, null);
-  assert.equal(result.schema.template.slides[0].customImageData, "");
+  assert.equal(result.schema.template.slides[0].customImageData, null);
+  assert.equal(result.schema.template.slides[0].unrestorable, true);
   assert.deepEqual(result.unrestorableNames, ["타이틀"]);
 });
 
@@ -249,6 +253,10 @@ test("toPortableSlide strips data URLs and local upload paths from asset fields"
 
 test("unrestorableSlideNames survives export JSON parse roundtrip", () => {
   // export→JSON→parse returns unrestorableNames for stripped customImageData and adBgImageUrl
+});
+
+test("unrestorable marker survives POST sanitization and re-export", () => {
+  // export→parse→sanitizeSlideForTemplate→re-export still returns the slide name
 });
 
 test("templateSchemaFilename sanitizes the name", () => {
@@ -306,8 +314,6 @@ export function templateSchemaErrorMessage(code) {
   }
 }
 
-export const STRIPPED_ASSET_MARKER = "";
-
 function isOwnedUploadPath(value) {
   return typeof value === "string" && value.startsWith("/uploads/");
 }
@@ -318,10 +324,6 @@ function isDataUrl(value) {
 
 function isEmbeddedAsset(value) {
   return isOwnedUploadPath(value) || isDataUrl(value);
-}
-
-function isStrippedAssetMarker(value) {
-  return value === STRIPPED_ASSET_MARKER;
 }
 
 function fail(code) {
@@ -338,7 +340,7 @@ function toPortableCustomSlide(customSlide) {
           return element;
         }
         const src = isEmbeddedAsset(element.src)
-          ? STRIPPED_ASSET_MARKER
+          ? ""
           : element.src || "";
         return { ...element, src };
       })
@@ -348,6 +350,9 @@ function toPortableCustomSlide(customSlide) {
 
 export function toPortableSlide(slide) {
   const source = slide || {};
+  const unrestorable = Boolean(
+    source.unrestorable || isUnrestorableSlide(source)
+  );
   const portable = sanitizeSlideForTemplate(source);
   delete portable.id;
   portable.serverFilePath = null;
@@ -357,21 +362,16 @@ export function toPortableSlide(slide) {
   if (isEmbeddedAsset(source.originalUrl)) {
     portable.originalUrl = null;
   }
-  if (
-    isEmbeddedAsset(source.adBgImageUrl) ||
-    isStrippedAssetMarker(source.adBgImageUrl)
-  ) {
-    portable.adBgImageUrl = STRIPPED_ASSET_MARKER;
+  if (isEmbeddedAsset(source.adBgImageUrl)) {
+    portable.adBgImageUrl = null;
   }
-  if (
-    isEmbeddedAsset(source.customImageData) ||
-    isStrippedAssetMarker(source.customImageData)
-  ) {
-    portable.customImageData = STRIPPED_ASSET_MARKER;
+  if (isEmbeddedAsset(source.customImageData)) {
+    portable.customImageData = null;
   }
   portable.customSlide = toPortableCustomSlide(
     source.customSlide ?? portable.customSlide
   );
+  portable.unrestorable = unrestorable;
   return portable;
 }
 
@@ -394,6 +394,9 @@ export function isUnrestorableSlide(slide) {
   if (!slide || typeof slide !== "object") {
     return false;
   }
+  if (slide.unrestorable) {
+    return true;
+  }
   const localPptWithoutSource =
     Boolean(slide.fileName) &&
     !slide.originalUrl &&
@@ -401,17 +404,12 @@ export function isUnrestorableSlide(slide) {
   const fileAdBackground =
     slide.adBgSource === "file" || isOwnedUploadPath(slide.adBgImagePath);
   const localAdUrlBackground =
-    slide.adBgSource === "url" &&
-    (isEmbeddedAsset(slide.adBgImageUrl) ||
-      isStrippedAssetMarker(slide.adBgImageUrl));
-  const localCustomImage =
-    isEmbeddedAsset(slide.customImageData) ||
-    isStrippedAssetMarker(slide.customImageData);
+    slide.adBgSource === "url" && isEmbeddedAsset(slide.adBgImageUrl);
+  const localCustomImage = isEmbeddedAsset(slide.customImageData);
   const localCanvasImage = Boolean(
     slide.customSlide?.elements?.some(
       (element) =>
-        element?.type === "image" &&
-        (isEmbeddedAsset(element.src) || isStrippedAssetMarker(element.src))
+        element?.type === "image" && isEmbeddedAsset(element.src)
     )
   );
   return Boolean(
@@ -500,7 +498,7 @@ export function templateSchemaFilename(name) {
 }
 ```
 
-Note: `isUnrestorableSlide` treats custom-canvas `image` elements with empty `src` as unrestorable so Import of an already-stripped schema still warns. Hymns with `originalUrl` are restorable even when `sourceType` is `upload`.
+Note: `isUnrestorableSlide` honors `unrestorable: true` and otherwise infers loss from local assets that have not yet been stripped. Empty asset values are canonical values, not metadata markers. Hymns with portable `originalUrl` values remain restorable even when `sourceType` is `upload`.
 
 - [ ] **Step 4: Run the tests and verify GREEN**
 
@@ -546,7 +544,7 @@ In `public/index.html`, change the gallery section to:
     <input
       id="templateSchemaFileInput"
       type="file"
-      accept=".json,application/json"
+      accept=".json,.samil-template.json"
       hidden
     />
     <button id="templateSchemaImportBtn" type="button" class="ghost small">
@@ -580,7 +578,9 @@ Add to the existing `@lib` imports:
 
 ```js
 import {
+  TEMPLATE_SCHEMA_ERROR,
   parseTemplateSchema,
+  templateSchemaErrorMessage,
   templateSchemaFilename,
   toPortableTemplateSchema,
   unrestorableSlideNames,
@@ -654,7 +654,14 @@ function exportTemplateSchemaById(templateId) {
 }
 
 async function importTemplateSchemaFile(file) {
-  const text = await file.text();
+  let text;
+  try {
+    text = await file.text();
+  } catch {
+    alert(templateSchemaErrorMessage(TEMPLATE_SCHEMA_ERROR.INVALID_JSON));
+    return;
+  }
+
   const parsed = parseTemplateSchema(text);
   if (!parsed.ok) {
     alert(parsed.message);
@@ -670,7 +677,7 @@ async function importTemplateSchemaFile(file) {
         slides: parsed.schema.template.slides,
       }),
     });
-    const payload = await resp.json();
+    const payload = await resp.json().catch(() => ({}));
     if (!resp.ok) {
       throw new Error(payload.error || "템플릿 가져오기에 실패했습니다.");
     }

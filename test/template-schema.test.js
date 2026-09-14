@@ -10,6 +10,7 @@ import {
   parseTemplateSchema,
   templateSchemaFilename,
 } from "../lib/template-schema.js";
+import { sanitizeSlideForTemplate } from "../lib/slide-record.js";
 
 function baseSlide(overrides = {}) {
   return {
@@ -78,15 +79,17 @@ test("toPortableTemplateSchema writes version 1 and drops local paths", () => {
 
   const [hymn, uploaded, ad] = doc.template.slides;
   assert.equal("id" in hymn, false);
-  assert.equal(hymn.serverFilePath, "");
+  assert.equal(hymn.serverFilePath, null);
   assert.equal(hymn.thumbnail, null);
   assert.equal(hymn.fileSaved, false);
   assert.equal(hymn.hymnNumber, "25");
   assert.equal(hymn.originalUrl, "https://example.test/nhymn25.ppt");
   assert.equal(hymn.fileName, "nhymn25.ppt");
-  assert.equal(uploaded.serverFilePath, "");
+  assert.equal(uploaded.serverFilePath, null);
+  assert.equal(uploaded.unrestorable, true);
   assert.equal(ad.adBgImagePath, null);
   assert.equal(ad.adTitle, "주보");
+  assert.equal(ad.unrestorable, true);
 });
 
 test("unrestorableSlideNames treats embedded originalUrl as unrestorable", () => {
@@ -254,12 +257,17 @@ test("toPortableSlide strips data URLs and local upload paths from asset fields"
   });
 
   const slides = doc.template.slides;
-  assert.equal(slides[0].customImageData, "");
-  assert.equal(slides[1].adBgImageUrl, "");
-  assert.equal(slides[2].adBgImageUrl, "");
+  assert.equal(slides[0].customImageData, null);
+  assert.equal(slides[1].adBgImageUrl, null);
+  assert.equal(slides[2].adBgImageUrl, null);
   assert.equal(slides[3].adBgImageUrl, "https://example.test/bg.jpg");
   assert.equal(slides[4].originalUrl, null);
   assert.equal(slides[5].customSlide.elements[0].src, "");
+  assert.equal(slides[0].unrestorable, true);
+  assert.equal(slides[1].unrestorable, true);
+  assert.equal(slides[2].unrestorable, true);
+  assert.equal(slides[4].unrestorable, true);
+  assert.equal(slides[5].unrestorable, true);
 });
 
 test("unrestorableSlideNames survives export JSON parse roundtrip", () => {
@@ -286,6 +294,37 @@ test("unrestorableSlideNames survives export JSON parse roundtrip", () => {
   assert.deepEqual(result.unrestorableNames, ["배경", "광고", "데이터"]);
 });
 
+test("unrestorable marker survives POST sanitization and re-export", () => {
+  const firstExport = toPortableTemplateSchema({
+    name: "주일 예배",
+    slides: [
+      baseSlide({
+        name: "로컬 배경",
+        customImageData: "/uploads/bg.png",
+      }),
+    ],
+  });
+  const parsed = parseTemplateSchema(JSON.stringify(firstExport));
+  assert.equal(parsed.ok, true);
+
+  const persistedSlide = sanitizeSlideForTemplate(
+    parsed.schema.template.slides[0]
+  );
+  assert.equal(persistedSlide.customImageData, null);
+  assert.equal(persistedSlide.unrestorable, true);
+
+  const reExported = toPortableTemplateSchema({
+    name: parsed.schema.template.name,
+    slides: [persistedSlide],
+  });
+  assert.equal(reExported.template.slides[0].customImageData, null);
+  assert.equal(reExported.template.slides[0].unrestorable, true);
+  assert.deepEqual(
+    unrestorableSlideNames(reExported.template.slides),
+    ["로컬 배경"]
+  );
+});
+
 test("parseTemplateSchema accepts v1 and returns portable slides", () => {
   const text = JSON.stringify(
     toPortableTemplateSchema({
@@ -301,8 +340,9 @@ test("parseTemplateSchema accepts v1 and returns portable slides", () => {
   const result = parseTemplateSchema(text);
   assert.equal(result.ok, true);
   assert.equal(result.schema.version, 1);
-  assert.equal(result.schema.template.slides[0].serverFilePath, "");
-  assert.equal(result.schema.template.slides[0].customImageData, "");
+  assert.equal(result.schema.template.slides[0].serverFilePath, null);
+  assert.equal(result.schema.template.slides[0].customImageData, null);
+  assert.equal(result.schema.template.slides[0].unrestorable, true);
   assert.deepEqual(result.unrestorableNames, ["타이틀"]);
 });
 
@@ -316,7 +356,8 @@ test("toPortableSlide strips case-insensitive DATA URLs", () => {
       }),
     ],
   });
-  assert.equal(doc.template.slides[0].customImageData, "");
+  assert.equal(doc.template.slides[0].customImageData, null);
+  assert.equal(doc.template.slides[0].unrestorable, true);
 });
 
 test("toPortableSlide keeps canonical customSlide and drops unknown payloads", () => {
@@ -354,6 +395,7 @@ test("toPortableSlide keeps canonical customSlide and drops unknown payloads", (
   assert.equal(slide.customSlide.background.color, "#ff0000");
   assert.equal("malicious" in slide.customSlide.elements[0], false);
   assert.equal(slide.customSlide.elements[0].src, "");
+  assert.equal(slide.unrestorable, true);
 
   const parsed = parseTemplateSchema(JSON.stringify(exported));
   assert.equal(parsed.ok, true);
@@ -361,6 +403,7 @@ test("toPortableSlide keeps canonical customSlide and drops unknown payloads", (
   assert.equal("evilPayload" in parsedSlide.customSlide, false);
   assert.equal("malicious" in parsedSlide.customSlide.elements[0], false);
   assert.equal(parsedSlide.customSlide.elements[0].src, "");
+  assert.equal(parsedSlide.unrestorable, true);
   assert.notEqual(
     JSON.stringify(parsedSlide.customSlide),
     embedded
@@ -382,13 +425,15 @@ test("unrestorableSlideNames survives export when only serverFilePath exists", (
     ],
   };
   const exported = toPortableTemplateSchema(template);
-  assert.equal(exported.template.slides[0].serverFilePath, "");
+  assert.equal(exported.template.slides[0].serverFilePath, null);
+  assert.equal(exported.template.slides[0].unrestorable, true);
   assert.equal(exported.template.slides[0].fileName, null);
 
   const result = parseTemplateSchema(JSON.stringify(exported));
   assert.equal(result.ok, true);
   assert.deepEqual(result.unrestorableNames, ["경로만"]);
-  assert.equal(result.schema.template.slides[0].serverFilePath, "");
+  assert.equal(result.schema.template.slides[0].serverFilePath, null);
+  assert.equal(result.schema.template.slides[0].unrestorable, true);
 });
 
 test("templateSchemaFilename sanitizes the name", () => {
