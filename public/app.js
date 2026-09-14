@@ -1730,6 +1730,12 @@ function cleanupPreviewResources() {
 
 // --- Event Listeners for Hymn Type ---
 slideTypeSelect.addEventListener('change', () => {
+  const current = slides.find((slide) => slide.id === currentSlideId);
+  restoreCoverThemePickers(
+    hymnTitleThemeGrid,
+    scriptureTitleThemeGrid,
+    current?.titleThemeId
+  );
   if (slideTypeSelect.value === 'title') {
     prepareTitleSlideFields();
   }
@@ -1741,11 +1747,10 @@ slideTypeSelect.addEventListener('change', () => {
     if (scriptureIncludeTitle) scriptureIncludeTitle.checked = true;
     setScriptureTitleSlideType("말씀");
     syncScriptureTitleTypeUi();
-    syncScriptureImageUI(slides.find((s) => s.id === currentSlideId));
+    syncScriptureImageUI(current);
   }
   updateSettingsVisibility();
   if (slideTypeSelect.value === 'custom') {
-    const current = slides.find((s) => s.id === currentSlideId);
     // Switching type is itself an unsaved change, so the canvas starts dirty.
     showCustomSlideInEditor(current, { markSaved: false });
   } else {
@@ -1881,6 +1886,11 @@ function setCoverThemePicker(grid, value) {
   });
 }
 
+function restoreCoverThemePickers(hymnGrid, scriptureGrid, value) {
+  setCoverThemePicker(hymnGrid, value);
+  setCoverThemePicker(scriptureGrid, value);
+}
+
 function getCoverThemePicker(grid) {
   return (
     grid?.querySelector("[data-title-theme].is-active")?.dataset.titleTheme ||
@@ -1891,6 +1901,28 @@ function getCoverThemePicker(grid) {
 function setCoverThemeGridHidden(grid, hidden) {
   if (!grid) return;
   grid.hidden = hidden;
+}
+
+function buildHymnTitlePreviewCacheKey(data) {
+  if (data?.type !== "hymn") return "";
+  return JSON.stringify({
+    includeTitle: !!data.includeTitle,
+    titleThemeId: normalizeCoverTitleThemeId(data.titleThemeId),
+    hymnNumber: String(data.hymnNumber || ""),
+    hymnKorTitle: (data.hymnKorTitle || "").trim(),
+    hymnEngTitle: (data.hymnEngTitle || "").trim(),
+  });
+}
+
+function isPreviewCacheHit(
+  cachedSource,
+  nextSource,
+  cachedHymnTitle,
+  nextHymnTitle
+) {
+  return (
+    cachedSource === nextSource && cachedHymnTitle === nextHymnTitle
+  );
 }
 
 function getScriptureTitleSlideType() {
@@ -2956,6 +2988,7 @@ function renderPreview(slideOverride) {
 
   // Optimization: Prevent iframe reload on name change (Comprehensive)
   let skipRender = false;
+  const hymnTitlePreviewKey = buildHymnTitlePreviewCacheKey(data);
 
   // Case 1: Legacy PPT URL Cache
   let potentialPptUrl = null;
@@ -2965,14 +2998,29 @@ function renderPreview(slideOverride) {
       potentialPptUrl = `https://www.rickc.online/uploads/1/0/9/7/109730685/nhymn${data.hymnNumber}.ppt`;
     }
   }
-  if (potentialPptUrl && slidePreview.dataset.lastRenderedUrl === potentialPptUrl) {
+  if (
+    potentialPptUrl &&
+    isPreviewCacheHit(
+      slidePreview.dataset.lastRenderedUrl,
+      potentialPptUrl,
+      slidePreview.dataset.lastRenderedHymnTitle,
+      hymnTitlePreviewKey
+    )
+  ) {
     skipRender = true;
   }
 
   // Case 2: File object (Blob) Cache
   if (data.file) {
     const fileId = data.file.name + ':' + data.file.size + ':' + data.file.lastModified;
-    if (slidePreview.dataset.lastRenderedFile === fileId) {
+    if (
+      isPreviewCacheHit(
+        slidePreview.dataset.lastRenderedFile,
+        fileId,
+        slidePreview.dataset.lastRenderedHymnTitle,
+        hymnTitlePreviewKey
+      )
+    ) {
       skipRender = true;
     }
   }
@@ -2982,7 +3030,14 @@ function renderPreview(slideOverride) {
   // drawn from their own fields, so a leftover file path must not freeze them.
   const isTitleType = data.type === 'title' || data.type === 'custom-title';
   if (data.serverFilePath && !data.file && !isTitleType) {
-    if (slidePreview.dataset.lastRenderedPath === data.serverFilePath) {
+    if (
+      isPreviewCacheHit(
+        slidePreview.dataset.lastRenderedPath,
+        data.serverFilePath,
+        slidePreview.dataset.lastRenderedHymnTitle,
+        hymnTitlePreviewKey
+      )
+    ) {
       skipRender = true;
     }
   }
@@ -2997,6 +3052,7 @@ function renderPreview(slideOverride) {
   slidePreview.dataset.lastRenderedUrl = "";
   slidePreview.dataset.lastRenderedFile = "";
   slidePreview.dataset.lastRenderedPath = "";
+  slidePreview.dataset.lastRenderedHymnTitle = hymnTitlePreviewKey;
 
   slidePreview.innerHTML = "";
 
@@ -3500,7 +3556,11 @@ function populateEditor(slide, { reloadCustomCanvas = true } = {}) {
   hymnNumberInput.value = slide.hymnNumber || '';
   hymnIncludeTitle.checked = !!slide.includeTitle;
   if (hymnTitleFields) hymnTitleFields.hidden = !slide.includeTitle;
-  setCoverThemePicker(hymnTitleThemeGrid, slide.titleThemeId);
+  restoreCoverThemePickers(
+    hymnTitleThemeGrid,
+    scriptureTitleThemeGrid,
+    slide.titleThemeId
+  );
   setCoverThemeGridHidden(hymnTitleThemeGrid, !hymnIncludeTitle.checked);
   hymnKorTitleInput.value = slide.hymnKorTitle || '';
   hymnEngTitleInput.value = slide.hymnEngTitle || '';
