@@ -3959,7 +3959,6 @@ const CUSTOM_TITLE_THEMES = {
     enWeight: 700,
     enTracking: 0.42,
     subtitlePanelFill: "rgba(23,14,51,0.78)",
-    subtitlePanelBorder: "#8B6BFF",
     subtitlePanelText: "#FFFFFF",
   },
   monolith: {
@@ -3980,8 +3979,9 @@ const CUSTOM_TITLE_THEMES = {
     enTracking: 0.5,
     hairline: "#2C2E33",
     subtitlePanelFill: "#111216",
-    subtitlePanelBorder: "#67645C",
     subtitlePanelText: "#EEE9DC",
+    subtitlePanelAccent: "#67645C",
+    subtitlePanelAccentType: "line",
   },
   ivory: {
     background: "#FAF6EF",
@@ -4000,9 +4000,9 @@ const CUSTOM_TITLE_THEMES = {
     frame: "#C2A87A",
     frameWeight: 0.021,
     subtitlePanelFill: "#F2EADC",
-    subtitlePanelBorder: "#C2A87A",
     subtitlePanelText: "#5F4B2C",
-    subtitlePanelDouble: true,
+    subtitlePanelAccent: "#C2A87A",
+    subtitlePanelAccentType: "dots",
   },
   marquee: {
     background: "#2A0F16",
@@ -4022,9 +4022,9 @@ const CUSTOM_TITLE_THEMES = {
     frameWeight: 0.024,
     diamonds: true,
     subtitlePanelFill: "#34131C",
-    subtitlePanelBorder: "#D9B376",
     subtitlePanelText: "#F7EBDA",
-    subtitlePanelDiamonds: true,
+    subtitlePanelAccent: "#D9B376",
+    subtitlePanelAccentType: "diamonds",
   },
 };
 
@@ -4087,35 +4087,48 @@ function addCustomTitleSubtitlePanel(container, subtitle, theme, unit) {
   const panel = titlePreviewNode(
     `position:absolute;left:8%;right:8%;bottom:${inch(0.55)}px;` +
       `height:${inch(0.85)}px;display:flex;align-items:center;justify-content:center;` +
-      `box-sizing:border-box;background:${theme.subtitlePanelFill};` +
-      `border:1px solid ${theme.subtitlePanelBorder};z-index:2;`
+      `box-sizing:border-box;background:${theme.subtitlePanelFill};border:none;z-index:2;`
   );
 
-  if (theme.subtitlePanelDouble) {
-    [inch(0.09), inch(0.76)].forEach((top) => {
+  if (theme.subtitlePanelAccentType === "line") {
+    panel.appendChild(
+      titlePreviewNode(
+        `position:absolute;top:${inch(0.04)}px;left:50%;width:${inch(1.1)}px;` +
+          `height:1px;transform:translateX(-50%);background:${theme.subtitlePanelAccent};`
+      )
+    );
+  }
+
+  if (theme.subtitlePanelAccentType === "dots") {
+    const size = inch(0.06);
+    [
+      `left:${inch(0.35)}px;`,
+      `right:${inch(0.35)}px;`,
+    ].forEach((position) => {
       panel.appendChild(
         titlePreviewNode(
-          `position:absolute;left:${inch(0.16)}px;right:${inch(0.16)}px;` +
-            `top:${top}px;height:1px;background:${theme.subtitlePanelBorder};`
+          `position:absolute;${position}top:calc(50% - ${size / 2}px);` +
+            `width:${size}px;height:${size}px;border-radius:50%;` +
+            `background:${theme.subtitlePanelAccent};`
         )
       );
     });
   }
 
-  if (theme.subtitlePanelDiamonds) {
+  if (theme.subtitlePanelAccentType === "diamonds") {
     const size = inch(0.14);
     panel.appendChild(
       customTitleDiamond(
         `left:${-size / 2}px;top:calc(50% - ${size / 2}px);`,
         size,
-        theme.subtitlePanelBorder
+        theme.subtitlePanelAccent
       )
     );
     panel.appendChild(
       customTitleDiamond(
         `right:${-size / 2}px;top:calc(50% - ${size / 2}px);`,
         size,
-        theme.subtitlePanelBorder
+        theme.subtitlePanelAccent
       )
     );
   }

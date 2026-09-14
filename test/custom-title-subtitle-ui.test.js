@@ -53,5 +53,7 @@ describe("Custom title subtitle editor wiring", () => {
     );
     assert.match(app, /bottom:\$\{inch\(0\.55\)\}px/);
     assert.match(app, /height:\$\{inch\(0\.85\)\}px/);
+    assert.match(app, /background:\$\{theme\.subtitlePanelFill\};border:none;/);
+    assert.doesNotMatch(app, /subtitlePanelDouble/);
   });
 });

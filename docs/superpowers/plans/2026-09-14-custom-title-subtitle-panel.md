@@ -14,7 +14,8 @@
 - The panel is 0.85 inches high and 0.55 inches above the slide bottom.
 - When a subtitle exists, the Korean/English title stack moves up 0.45 inches.
 - When no subtitle exists, the current Custom title layout and output remain unchanged.
-- Aurora, Monolith, Ivory, and Marquee use the approved theme-specific panel colors and decorations.
+- Every panel has a fully transparent outline.
+- Aurora uses only its translucent fill; Monolith adds one short accent line; Ivory adds two small gold dots; Marquee keeps two small gold diamonds.
 
 ---
 
@@ -85,7 +86,7 @@ assert.equal(
 );
 ```
 
-Also assert each design’s panel fill or border color: Aurora `170E33`/`8B6BFF`, Monolith `111216`/`67645C`, Ivory `F2EADC`/`C2A87A`, Marquee `34131C`/`D9B376`.
+Assert each design’s panel fill color and transparent outline: Aurora `170E33`, Monolith `111216`, Ivory `F2EADC`, Marquee `34131C`. Assert the minimal accent object names for Monolith, Ivory, and Marquee.
 
 - [ ] **Step 2: Run the renderer test and verify RED**
 
@@ -95,7 +96,7 @@ Expected: FAIL because the subtitle remains in the centered title stack at 18pt.
 
 - [ ] **Step 3: Move the title stack and draw a separate panel**
 
-Remove the subtitle block from `stackTitleBlocks()`. Apply `-0.45` to every title-stack draw coordinate only when the normalized subtitle is non-empty. Add per-design `drawSubtitlePanel()` callbacks using the fixed geometry, `subtitleFontSize()`, bold Malgun Gothic text, and the approved panel fill/border decorations.
+Remove the subtitle block from `stackTitleBlocks()`. Apply `-0.45` to every title-stack draw coordinate only when the normalized subtitle is non-empty. Add per-design `drawSubtitlePanel()` callbacks using the fixed geometry, `subtitleFontSize()`, bold Malgun Gothic text, a transparent outline, and the approved minimal accents.
 
 - [ ] **Step 4: Preserve the no-subtitle layout**
 
@@ -136,11 +137,11 @@ Expected: FAIL because the preview still appends a small inline subtitle.
 
 - [ ] **Step 3: Add theme panel tokens**
 
-Extend each `CUSTOM_TITLE_THEMES` entry with `subtitlePanelFill`, `subtitlePanelBorder`, and `subtitlePanelText`; add `subtitlePanelDouble` for Ivory and `subtitlePanelDiamonds` for Marquee.
+Extend each `CUSTOM_TITLE_THEMES` entry with `subtitlePanelFill` and `subtitlePanelText`. Add an accent type and color for Monolith’s short line, Ivory’s dots, and Marquee’s diamonds.
 
 - [ ] **Step 4: Build the fixed preview panel**
 
-Implement `addCustomTitleSubtitlePanel(container, subtitle, theme, unit)` with left/right 8%, bottom `inch(0.55)`, height `inch(0.85)`, shared size helper, bold text, and theme decorations. Remove the old inline subtitle node.
+Implement `addCustomTitleSubtitlePanel(container, subtitle, theme, unit)` with left/right 8%, bottom `inch(0.55)`, height `inch(0.85)`, no border, shared size helper, bold text, and minimal theme accents. Remove the old inline subtitle node.
 
 - [ ] **Step 5: Shift only non-empty subtitle title stacks**
 

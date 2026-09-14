@@ -69,11 +69,11 @@ describe("subtitleFontSize", () => {
 
 describe("appendCustomTitleSlide", () => {
   it("renders a fixed lower panel and shifts the title stack in every design", async () => {
-    const colors = {
-      aurora: ["170E33", "8B6BFF"],
-      monolith: ["111216", "67645C"],
-      ivory: ["F2EADC", "C2A87A"],
-      marquee: ["34131C", "D9B376"],
+    const fills = {
+      aurora: "170E33",
+      monolith: "111216",
+      ivory: "F2EADC",
+      marquee: "34131C",
     };
 
     for (const customTitleDesign of CUSTOM_TITLE_DESIGNS) {
@@ -112,8 +112,42 @@ describe("appendCustomTitleSlide", () => {
 
       const panel = shapeByName(subtitleXml, "custom-title:subtitle-panel");
       assert.ok(panel, `${customTitleDesign} subtitle panel must exist`);
-      for (const color of colors[customTitleDesign]) {
-        assert.match(panel.toString(), new RegExp(`val="${color}"`));
+      assert.match(panel.toString(), new RegExp(`val="${fills[customTitleDesign]}"`));
+      assert.match(
+        panel.getElementsByTagName("a:ln")[0].toString(),
+        /<a:alpha val="0"\/>/,
+        `${customTitleDesign} panel outline must be invisible`
+      );
+    }
+  });
+
+  it("uses only minimal theme accents on borderless panels", async () => {
+    const expectedAccents = {
+      aurora: [],
+      monolith: ["custom-title:subtitle-accent"],
+      ivory: [
+        "custom-title:subtitle-dot-1",
+        "custom-title:subtitle-dot-2",
+      ],
+      marquee: [
+        "custom-title:subtitle-diamond-1",
+        "custom-title:subtitle-diamond-2",
+      ],
+    };
+
+    for (const customTitleDesign of CUSTOM_TITLE_DESIGNS) {
+      const slideXml = await render({
+        customTitleDesign,
+        customTitleKo: "성찬 예배",
+        customTitleSubtitle: "한 몸을 이루는 교회",
+      });
+
+      assert.equal(
+        slideXml.includes("custom-title:subtitle-inner-line"),
+        false
+      );
+      for (const name of expectedAccents[customTitleDesign]) {
+        assert.match(slideXml, new RegExp(`name="${name}"`));
       }
     }
   });
