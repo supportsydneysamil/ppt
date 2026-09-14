@@ -26,6 +26,7 @@ import {
   hasOwnedSlideAsset,
   insertSlideAfter,
 } from "@lib/slide-duplicate.js";
+import { buildHymnSubtitle } from "@lib/cover-title-content.js";
 
 const testamentSelect = document.getElementById("testament");
 const bookSelect = document.getElementById("book");
@@ -1064,7 +1065,6 @@ function collectCurrentSlideDraft() {
 
   if (draft.type === "scripture") {
     Object.assign(draft, collectScriptureSlideFields());
-    draft.titleThemeId = draft.titleThemeId || "original";
     draft.sourceType = "upload";
   } else if (draft.type === "title") {
     Object.assign(draft, collectTitleSlideData());
@@ -1082,7 +1082,6 @@ function collectCurrentSlideDraft() {
     draft.hymnNumber = hymnNumberInput.value;
     draft.includeTitle = hymnIncludeTitle.checked;
     draft.titleThemeId = getCoverThemePicker(hymnTitleThemeGrid);
-    draft.titleThemeId = draft.titleThemeId || "original";
     draft.hymnKorTitle = hymnKorTitleInput.value.trim();
     draft.hymnEngTitle = hymnEngTitleInput.value.trim();
     draft.sourceType = "upload";
@@ -2839,11 +2838,12 @@ function buildHymnTitleSlidePreview(hymnNumber, korTitle, engTitle) {
 
   // Title text in band
   const titleEl = document.createElement('div');
-  let titleText = hymnNumber ? `${hymnNumber}.` : '';
-  if (korTitle) titleText += ` ${korTitle}`;
-  if (engTitle) titleText += `\n(${engTitle})`;
   titleEl.style.cssText = 'text-align:center;font-family:"Malgun Gothic",sans-serif;font-size:1.6cqi;font-weight:bold;color:#fff;white-space:pre-line;line-height:1.3;padding:0 8px;';
-  titleEl.textContent = titleText.trim();
+  titleEl.textContent = buildHymnSubtitle({
+    hymnNumber,
+    hymnKorTitle: korTitle,
+    hymnEngTitle: engTitle,
+  });
   band.appendChild(titleEl);
 
   // container-type for cqi units
@@ -2859,23 +2859,25 @@ function buildThemedHymnTitleSlidePreview(
   engTitle,
   previewWidth
 ) {
-  let hymnTitleText = hymnNumber ? `${hymnNumber}.` : "";
-  if (korTitle) {
-    hymnTitleText += `${hymnTitleText ? " " : ""}${korTitle}`;
-  }
-  if (engTitle) {
-    hymnTitleText += `${hymnTitleText ? "\n" : ""}(${engTitle})`;
-  }
-
-  return buildCustomTitleSlidePreview(
+  const preview = buildCustomTitleSlidePreview(
     {
       customTitleDesign: normalizeCoverTitleThemeId(titleThemeId),
       customTitleKo: "찬송",
       customTitleEn: "HYMN",
-      customTitleSubtitle: hymnTitleText,
+      customTitleSubtitle: buildHymnSubtitle({
+        hymnNumber,
+        hymnKorTitle: korTitle,
+        hymnEngTitle: engTitle,
+      }),
     },
     previewWidth
   );
+  preview.style.width = "100%";
+  preview.style.height = "auto";
+  preview.style.aspectRatio = "16 / 9";
+  preview.style.marginBottom = "8px";
+  preview.style.borderRadius = "4px";
+  return preview;
 }
 
 function renderPreview(slideOverride) {
@@ -3548,7 +3550,6 @@ function clearTransientSlideFileInputs() {
 // would needlessly drop the user's selection.
 function populateEditor(slide, { reloadCustomCanvas = true } = {}) {
   clearTransientSlideFileInputs();
-  slide.titleThemeId = slide.titleThemeId || "original";
   slide.titleThemeId = normalizeCoverTitleThemeId(slide.titleThemeId);
   slideNameInput.value = slide.name;
   slideTypeSelect.value = slide.type;
@@ -5015,7 +5016,6 @@ async function saveCurrentSlide({ silent = false } = {}) {
       slide.sourceType = 'upload';
       slide.includeTitle = hymnIncludeTitle.checked;
       slide.titleThemeId = getCoverThemePicker(hymnTitleThemeGrid);
-      slide.titleThemeId = slide.titleThemeId || 'original';
       slide.hymnKorTitle = hymnKorTitleInput.value.trim();
       slide.hymnEngTitle = hymnEngTitleInput.value.trim();
       slide.saved = true;
@@ -5024,7 +5024,6 @@ async function saveCurrentSlide({ silent = false } = {}) {
       if (!(await applyScriptureSlideSettings(slide))) {
         return false;
       }
-      slide.titleThemeId = slide.titleThemeId || 'original';
 
       const generated = await ensureScriptureSlideFile(
         slide,
@@ -6299,11 +6298,6 @@ titleSeasonSuggestBtn.addEventListener('click', () => {
     const card = event.target.closest("[data-title-theme]");
     if (!card) return;
     setCoverThemePicker(grid, card.dataset.titleTheme);
-    if (grid === hymnTitleThemeGrid && slidePreview) {
-      slidePreview.dataset.lastRenderedUrl = "";
-      slidePreview.dataset.lastRenderedFile = "";
-      slidePreview.dataset.lastRenderedPath = "";
-    }
     renderPreview();
     refreshSaveState();
   });

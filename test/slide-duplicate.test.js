@@ -7,37 +7,12 @@ import {
   hasOwnedSlideAsset,
   insertSlideAfter,
 } from "../lib/slide-duplicate.js";
+import { functionBody } from "./helpers/app-function.js";
 
 const [html, app] = await Promise.all([
   fs.readFile(new URL("../public/index.html", import.meta.url), "utf8"),
   fs.readFile(new URL("../public/app.js", import.meta.url), "utf8"),
 ]);
-
-// Reads one top-level function body out of app.js so a guard can be asserted
-// against the function that owns it rather than the whole file. Comments are
-// dropped so an assertion about statement order cannot be satisfied - or
-// defeated - by prose that happens to name the thing being asserted.
-function functionBody(source, name) {
-  const start = source.indexOf(`function ${name}(`);
-  assert.notEqual(start, -1, `${name} is missing`);
-  const bodyStart = source.indexOf("{", start);
-  let depth = 0;
-
-  for (let index = bodyStart; index < source.length; index += 1) {
-    if (source[index] === "{") depth += 1;
-    if (source[index] === "}") {
-      depth -= 1;
-      if (depth === 0) {
-        return source
-          .slice(bodyStart, index + 1)
-          .replace(/(^|\s)\/\/[^\n]*/g, "$1")
-          .replace(/\/\*[\s\S]*?\*\//g, "");
-      }
-    }
-  }
-
-  throw new Error(`${name} body is unbalanced`);
-}
 
 describe("current-slide duplicate helpers", () => {
   it("creates the first available Korean copy name", () => {

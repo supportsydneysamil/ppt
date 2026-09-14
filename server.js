@@ -1,7 +1,7 @@
 import express from "express";
 import fs from "fs/promises";
 import path from "path";
-import { fileURLToPath, pathToFileURL } from "url";
+import { fileURLToPath } from "url";
 import PptxGenJS from "pptxgenjs";
 import multer from "multer";
 import AdmZip from "adm-zip";
@@ -38,10 +38,21 @@ import { appendTitleSlide } from "./lib/title-slide.js";
 
 const execAsync = promisify(exec);
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const isDirectRun =
-  Boolean(process.argv[1]) &&
-  import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
+async function canonicalPath(value) {
+  const resolved = path.resolve(value);
+  try {
+    return await fs.realpath(resolved);
+  } catch {
+    return resolved;
+  }
+}
+
+const modulePath = await canonicalPath(fileURLToPath(import.meta.url));
+const directRunPath = process.argv[1]
+  ? await canonicalPath(process.argv[1])
+  : null;
+const __dirname = path.dirname(modulePath);
+const isDirectRun = directRunPath === modulePath;
 const app = express();
 const PORT = process.env.PORT || 3000;
 const BASE_URLS = {

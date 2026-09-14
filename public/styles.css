@@ -980,6 +980,14 @@ body {
   background: rgba(255, 255, 255, 0.9);
 }
 
+.title-preview-original-scripture {
+  background: #101114 url("/assets/scriptures/title-top.png") center / cover no-repeat;
+}
+
+.title-preview-original-scripture::before {
+  background: url("/assets/scriptures/title-bottom.png") center / cover no-repeat;
+}
+
 /* Custom title thumbnails: one rule under the headline, like the renderers. */
 .title-preview-aurora,
 .title-preview-monolith,

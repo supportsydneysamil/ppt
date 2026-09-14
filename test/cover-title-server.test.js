@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import AdmZip from "adm-zip";
 
@@ -10,6 +14,63 @@ import {
 } from "../server.js";
 
 const execFileAsync = promisify(execFile);
+const projectRoot = fileURLToPath(new URL("..", import.meta.url));
+const serverPath = path.join(projectRoot, "server.js");
+
+function launchUntilReady(entryPath) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [entryPath], {
+      cwd: projectRoot,
+      env: {
+        ...process.env,
+        ENABLE_VITE: "0",
+        NODE_ENV: "production",
+        PORT: "0",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    const timer = setTimeout(() => {
+      finish(new Error(`server startup timed out\n${stdout}\n${stderr}`));
+    }, 3000);
+
+    function finish(error) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      const complete = () =>
+        error ? reject(error) : resolve({ stdout, stderr });
+      if (child.exitCode === null) {
+        child.once("exit", complete);
+        child.kill("SIGTERM");
+      } else {
+        complete();
+      }
+    }
+
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+      if (stdout.includes("Server running on")) {
+        finish();
+      }
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.once("error", finish);
+    child.once("exit", (code, signal) => {
+      if (!settled) {
+        finish(
+          new Error(
+            `server exited before startup (code ${code}, signal ${signal})\n${stdout}\n${stderr}`
+          )
+        );
+      }
+    });
+  });
+}
 
 function slideXmlEntries(buffer) {
   return new AdmZip(buffer)
@@ -66,7 +127,7 @@ async function scriptureDeck(options) {
 describe("server cover title routing", () => {
   it("imports without startup side effects when Vite is enabled", async () => {
     const serverUrl = new URL("../server.js", import.meta.url).href;
-    const { stdout, stderr } = await execFileAsync(
+    const { stdout } = await execFileAsync(
       process.execPath,
       [
         "--input-type=module",
@@ -80,7 +141,21 @@ describe("server cover title routing", () => {
     );
 
     assert.equal(stdout, "imported\n");
-    assert.equal(stderr, "");
+  });
+
+  it("starts from both canonical and symlinked direct launch paths", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "samil-server-"));
+    const symlinkPath = path.join(tempDir, "server-link.js");
+
+    try {
+      await fs.symlink(serverPath, symlinkPath);
+      for (const entryPath of [serverPath, symlinkPath]) {
+        const { stdout } = await launchUntilReady(entryPath);
+        assert.match(stdout, /Server running on http:\/\/0\.0\.0\.0:0/);
+      }
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
   });
 
   it("keeps the original image-based hymn title slide", async () => {

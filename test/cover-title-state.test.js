@@ -2,98 +2,106 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import { describe, it } from "node:test";
 
+import {
+  compileAsyncFunction,
+  compileFunction as compileAppFunction,
+  functionBody,
+} from "./helpers/app-function.js";
+
 const app = await fs.readFile(
   new URL("../public/app.js", import.meta.url),
   "utf8"
 );
 
-function functionBody(source, name) {
-  const start = source.indexOf(`function ${name}(`);
-  assert.notEqual(start, -1, `${name} is missing`);
-  const parametersStart = source.indexOf("(", start);
-  let parameterDepth = 0;
-  let parametersEnd = -1;
-
-  for (let index = parametersStart; index < source.length; index += 1) {
-    if (source[index] === "(") parameterDepth += 1;
-    if (source[index] === ")") {
-      parameterDepth -= 1;
-      if (parameterDepth === 0) {
-        parametersEnd = index;
-        break;
-      }
-    }
-  }
-
-  assert.notEqual(parametersEnd, -1, `${name} parameters are unbalanced`);
-  const bodyStart = source.indexOf("{", parametersEnd);
-  let depth = 0;
-
-  for (let index = bodyStart; index < source.length; index += 1) {
-    if (source[index] === "{") depth += 1;
-    if (source[index] === "}") {
-      depth -= 1;
-      if (depth === 0) {
-        return source.slice(bodyStart, index + 1);
-      }
-    }
-  }
-
-  throw new Error(`${name} body is unbalanced`);
+function compileFunction(name, parameters, dependencies = {}) {
+  return compileAppFunction(app, name, parameters, dependencies);
 }
 
 describe("cover title theme browser state", () => {
-  it("keeps the theme in hymn and scripture drafts", () => {
-    const body = functionBody(app, "collectCurrentSlideDraft");
-    const scriptureBranch = body.slice(
-      body.indexOf('if (draft.type === "scripture")'),
-      body.indexOf('} else if (draft.type === "title")')
-    );
-    const hymnBranch = body.slice(
-      body.indexOf('} else if (draft.type === "hymn")'),
-      body.indexOf("} else {", body.indexOf('} else if (draft.type === "hymn")'))
-    );
+  it("defaults hymn draft themes at the picker boundary", () => {
+    const getCoverThemePicker = compileFunction("getCoverThemePicker", ["grid"]);
+    const collectDraft = compileFunction("collectCurrentSlideDraft", [], {
+      slides: [{ id: "slide-1", type: "hymn", titleThemeId: "marquee" }],
+      currentSlideId: "slide-1",
+      cloneSlide: (slide) => ({ ...slide }),
+      slideRuntimeDraft: { titleThemeId: "ivory" },
+      slideNameInput: { value: "찬송" },
+      slideTypeSelect: { value: "hymn" },
+      collectScriptureSlideFields() {
+        throw new Error("scripture fields crossed into hymn state");
+      },
+      hymnNumberInput: { value: "1" },
+      hymnIncludeTitle: { checked: true },
+      getCoverThemePicker,
+      hymnTitleThemeGrid: { querySelector: () => null },
+      hymnKorTitleInput: { value: "찬양하라" },
+      hymnEngTitleInput: { value: "Praise Him" },
+      userPptxFile: null,
+      adBgImageFile: null,
+      scripturePptxImageInput: null,
+      toFileMetadata: () => null,
+    });
 
-    assert.match(
-      scriptureBranch,
-      /draft\.titleThemeId\s*=\s*draft\.titleThemeId\s*\|\|\s*["']original["']/
-    );
-    assert.match(
-      hymnBranch,
-      /draft\.titleThemeId\s*=\s*draft\.titleThemeId\s*\|\|\s*["']original["']/
+    assert.deepEqual(
+      {
+        type: collectDraft().type,
+        titleThemeId: collectDraft().titleThemeId,
+        hymnNumber: collectDraft().hymnNumber,
+      },
+      { type: "hymn", titleThemeId: "original", hymnNumber: "1" }
     );
   });
 
-  it("defaults the theme while populating and saving the editor", () => {
-    assert.match(
-      functionBody(app, "populateEditor"),
-      /slide\.titleThemeId\s*=\s*slide\.titleThemeId\s*\|\|\s*["']original["']/
+  it("defaults scripture draft themes independently at its picker boundary", () => {
+    const getCoverThemePicker = compileFunction("getCoverThemePicker", ["grid"]);
+    const collectScriptureSlideFields = compileFunction(
+      "collectScriptureSlideFields",
+      [],
+      {
+        scriptureTestamentSelect: { value: "old" },
+        scriptureBookSelect: { value: "genesis" },
+        scriptureChapterInput: { value: "1" },
+        scriptureStartInput: { value: "1" },
+        scriptureEndInput: { value: "3" },
+        scriptureKoVersionSelect: { value: "새번역" },
+        scriptureEnVersionSelect: { value: "" },
+        scripturePptxThemeSelect: { value: "dark" },
+        scriptureIncludeTitle: { checked: true },
+        getCoverThemePicker,
+        scriptureTitleThemeGrid: { querySelector: () => null },
+        getScriptureTitleSlideType: () => "말씀",
+      }
     );
+    const collectDraft = compileFunction("collectCurrentSlideDraft", [], {
+      slides: [{ id: "slide-1", type: "scripture", titleThemeId: "marquee" }],
+      currentSlideId: "slide-1",
+      cloneSlide: (slide) => ({ ...slide }),
+      slideRuntimeDraft: { titleThemeId: "ivory" },
+      slideNameInput: { value: "성경 말씀" },
+      slideTypeSelect: { value: "scripture" },
+      collectScriptureSlideFields,
+      userPptxFile: null,
+      adBgImageFile: null,
+      scripturePptxImageInput: null,
+      toFileMetadata: () => null,
+    });
 
-    const saveBody = functionBody(app, "saveCurrentSlide");
-    const hymnBranch = saveBody.slice(
-      saveBody.indexOf("} else if (slide.type === 'hymn')"),
-      saveBody.indexOf("} else if (slide.type === 'scripture')")
-    );
-    const scriptureBranch = saveBody.slice(
-      saveBody.indexOf("} else if (slide.type === 'scripture')"),
-      saveBody.indexOf("} else if (slide.type === 'ad')")
-    );
-
-    assert.match(
-      hymnBranch,
-      /slide\.titleThemeId\s*=\s*slide\.titleThemeId\s*\|\|\s*["']original["']/
-    );
-    assert.match(
-      scriptureBranch,
-      /slide\.titleThemeId\s*=\s*slide\.titleThemeId\s*\|\|\s*["']original["']/
-    );
+    const draft = collectDraft();
+    assert.equal(collectScriptureSlideFields().titleThemeId, "original");
+    assert.equal(draft.type, "scripture");
+    assert.equal(draft.titleThemeId, "original");
+    assert.equal(draft.sourceType, "upload");
   });
 
   it("includes the theme in serialized slide payloads", () => {
-    assert.match(
-      functionBody(app, "buildSerializableSlide"),
-      /titleThemeId:\s*slide\.titleThemeId\s*\|\|\s*["']original["']/
+    const serialize = compileFunction("buildSerializableSlide", ["slide"], {
+      copyCustomSlideModel: (value) => value,
+    });
+
+    assert.equal(serialize({}).titleThemeId, "original");
+    assert.equal(
+      serialize({ titleThemeId: "aurora" }).titleThemeId,
+      "aurora"
     );
   });
 
@@ -145,16 +153,60 @@ describe("cover title theme browser state", () => {
   });
 
   it("includes the theme in scripture regeneration signatures", () => {
-    assert.match(
-      functionBody(app, "buildScriptureSignature"),
-      /titleThemeId:\s*slide\.titleThemeId\s*\|\|\s*["']original["']/
+    const signature = compileFunction("buildScriptureSignature", ["slide"]);
+    const base = {
+      testament: "old",
+      book: "genesis",
+      chapter: "1",
+      includeTitle: true,
+    };
+
+    assert.equal(JSON.parse(signature(base)).titleThemeId, "original");
+    assert.notEqual(
+      signature(base),
+      signature({ ...base, titleThemeId: "aurora" })
     );
   });
 
-  it("sends the theme when generating scripture slides", () => {
-    assert.match(
-      functionBody(app, "generateScriptureSlideFile"),
-      /titleThemeId:\s*slide\.titleThemeId\s*\|\|\s*["']original["']/
+  it("sends defaulted and selected themes when generating scripture slides", async () => {
+    const requests = [];
+    const generate = compileAsyncFunction(
+      app,
+      "generateScriptureSlideFile",
+      ["slideName", "slide"],
+      {
+        fetch: async (url, options) => {
+          requests.push({ url, body: JSON.parse(options.body) });
+          return {
+            ok: true,
+            json: async () => ({ success: true }),
+          };
+        },
+      }
+    );
+    const slide = {
+      testament: "old",
+      book: "genesis",
+      chapter: "1",
+      koVersion: "새번역",
+      enVersion: "",
+      themeId: "dark",
+      includeTitle: true,
+      titleSlideType: "말씀",
+    };
+
+    await generate("성경 말씀", slide);
+    await generate("성경 말씀", { ...slide, titleThemeId: "ivory" });
+
+    assert.deepEqual(
+      requests.map((request) => [
+        request.url,
+        request.body.titleThemeId,
+      ]),
+      [
+        ["/api/scripture/generate-slide", "original"],
+        ["/api/scripture/generate-slide", "ivory"],
+      ]
     );
   });
 });

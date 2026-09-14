@@ -3,6 +3,12 @@ import fs from "node:fs/promises";
 import { describe, it } from "node:test";
 import { JSDOM } from "jsdom";
 
+import { buildCoverTitleContent } from "../lib/cover-title-slide.js";
+import {
+  compileFunction as compileAppFunction,
+  functionBody,
+} from "./helpers/app-function.js";
+
 const [html, css, app] = await Promise.all([
   fs.readFile(new URL("../public/index.html", import.meta.url), "utf8"),
   fs.readFile(new URL("../public/styles.css", import.meta.url), "utf8"),
@@ -11,47 +17,8 @@ const [html, css, app] = await Promise.all([
 
 const themeIds = ["original", "aurora", "monolith", "ivory", "marquee"];
 
-function functionBody(source, name) {
-  const start = source.indexOf(`function ${name}(`);
-  assert.notEqual(start, -1, `${name} is missing`);
-  const parametersStart = source.indexOf("(", start);
-  let parameterDepth = 0;
-  let parametersEnd = -1;
-
-  for (let index = parametersStart; index < source.length; index += 1) {
-    if (source[index] === "(") parameterDepth += 1;
-    if (source[index] === ")") {
-      parameterDepth -= 1;
-      if (parameterDepth === 0) {
-        parametersEnd = index;
-        break;
-      }
-    }
-  }
-
-  assert.notEqual(parametersEnd, -1, `${name} parameters are unbalanced`);
-  const bodyStart = source.indexOf("{", parametersEnd);
-  let depth = 0;
-
-  for (let index = bodyStart; index < source.length; index += 1) {
-    if (source[index] === "{") depth += 1;
-    if (source[index] === "}") {
-      depth -= 1;
-      if (depth === 0) return source.slice(bodyStart, index + 1);
-    }
-  }
-
-  throw new Error(`${name} body is unbalanced`);
-}
-
 function compileFunction(name, parameters, dependencies = {}) {
-  const body = functionBody(app, name);
-  const dependencyNames = Object.keys(dependencies);
-  const factory = new Function(
-    ...dependencyNames,
-    `return function (${parameters.join(", ")}) ${body};`
-  );
-  return factory(...Object.values(dependencies));
+  return compileAppFunction(app, name, parameters, dependencies);
 }
 
 function createDocument() {
@@ -81,17 +48,32 @@ describe("cover title theme picker UI", () => {
     }
   });
 
-  it("reuses custom title thumbnails and adds an original thumbnail", () => {
+  it("uses grid-scoped theme classes and scripture artwork for its original card", () => {
     const document = createDocument();
-    for (const themeId of themeIds) {
-      assert.equal(
-        document.querySelectorAll(
-          `.title-preview-${themeId}[data-cover-title-preview="${themeId}"]`
-        ).length,
-        2
-      );
+    for (const gridId of ["hymnTitleThemeGrid", "scriptureTitleThemeGrid"]) {
+      const grid = document.getElementById(gridId);
+      for (const themeId of themeIds) {
+        assert.ok(
+          grid
+            .querySelector(`[data-title-theme="${themeId}"]`)
+            .querySelector(`.title-preview-${themeId}`)
+        );
+      }
     }
-    assert.match(css, /\.title-preview-original\s*\{/);
+    assert.equal(document.querySelectorAll("[data-cover-title-preview]").length, 0);
+    assert.ok(
+      document
+        .querySelector("#scriptureTitleThemeGrid [data-title-theme='original']")
+        .querySelector(".title-preview-original-scripture")
+    );
+    assert.match(
+      css,
+      /\.title-preview-original-scripture\s*\{[\s\S]*scriptures\/title-top\.png/
+    );
+    assert.match(
+      css,
+      /\.title-preview-original-scripture::before\s*\{[\s\S]*scriptures\/title-bottom\.png/
+    );
   });
 
   it("normalizes picker values, marks one card, and defaults behaviorally", () => {
@@ -270,21 +252,27 @@ describe("cover title theme picker UI", () => {
       },
     };
 
+    slidePreview.dataset.lastRenderedUrl = "cached-url";
+    slidePreview.dataset.lastRenderedFile = "cached-file";
+    slidePreview.dataset.lastRenderedPath = "cached-path";
     new Function(...Object.keys(dependencies), listenerSource)(
       ...Object.values(dependencies)
     );
-    scriptureGrid
+    hymnGrid
       .querySelector('[data-title-theme="ivory"]')
       .dispatchEvent(
         new document.defaultView.MouseEvent("click", { bubbles: true })
       );
 
     assert.equal(
-      scriptureGrid.querySelector(".is-active").dataset.titleTheme,
+      hymnGrid.querySelector(".is-active").dataset.titleTheme,
       "ivory"
     );
     assert.equal(renders, 1);
     assert.equal(dirtyRefreshes, 1);
+    assert.equal(slidePreview.dataset.lastRenderedUrl, "cached-url");
+    assert.equal(slidePreview.dataset.lastRenderedFile, "cached-file");
+    assert.equal(slidePreview.dataset.lastRenderedPath, "cached-path");
   });
 
   it("includes cover state in hymn preview cache identity", () => {
@@ -335,20 +323,48 @@ describe("cover title theme picker UI", () => {
     );
   });
 
-  it("keeps original hymn rendering and routes themed previews through the custom builder", () => {
-    const original = functionBody(app, "buildHymnTitleSlidePreview");
-    const themed = functionBody(app, "buildThemedHymnTitleSlidePreview");
-    const render = functionBody(app, "renderPreview");
-
-    assert.match(original, /hymn-title-bg\.png/);
-    assert.match(original, /hymn-title-band\.png/);
-    assert.match(themed, /customTitleKo:\s*["']찬송["']/);
-    assert.match(themed, /customTitleEn:\s*["']HYMN["']/);
-    assert.match(themed, /customTitleSubtitle:\s*hymnTitleText/);
-    assert.match(themed, /buildCustomTitleSlidePreview\(/);
-    assert.match(
-      render,
-      /buildThemedHymnTitleSlidePreview\(\s*data\.titleThemeId/
+  it("formats original and themed hymn subtitles identically without cropping", () => {
+    const document = createDocument();
+    const buildHymnSubtitle = (data) =>
+      buildCoverTitleContent("hymn", data).subtitle;
+    const original = compileFunction(
+      "buildHymnTitleSlidePreview",
+      ["hymnNumber", "korTitle", "engTitle"],
+      { document, buildHymnSubtitle }
     );
+    const themed = compileFunction(
+      "buildThemedHymnTitleSlidePreview",
+      ["titleThemeId", "hymnNumber", "korTitle", "engTitle", "previewWidth"],
+      {
+        buildHymnSubtitle,
+        normalizeCoverTitleThemeId: (value) => value,
+        buildCustomTitleSlidePreview(data, width) {
+          const node = document.createElement("div");
+          node.style.width = `${width}px`;
+          node.style.height = `${width * 0.5625}px`;
+          node.previewData = data;
+          return node;
+        },
+      }
+    );
+
+    const originalNode = original(1, "  찬양하라  ", "  Praise Him  ");
+    const themedNode = themed(
+      "aurora",
+      1,
+      "  찬양하라  ",
+      "  Praise Him  ",
+      640
+    );
+
+    assert.equal(originalNode.children[1].textContent, "1. 찬양하라\n(Praise Him)");
+    assert.equal(
+      themedNode.previewData.customTitleSubtitle,
+      "1. 찬양하라\n(Praise Him)"
+    );
+    assert.equal(themedNode.style.width, "100%");
+    assert.equal(themedNode.style.aspectRatio, "16 / 9");
+    assert.equal(themedNode.style.marginBottom, "8px");
+    assert.equal(themedNode.style.borderRadius, "4px");
   });
 });

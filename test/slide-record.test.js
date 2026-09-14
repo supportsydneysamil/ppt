@@ -95,6 +95,15 @@ test("sanitizeSlideForTemplate", async (t) => {
     assert.equal(sanitized.customSlide, null);
   });
 
+  await t.test("normalizes invalid cover title themes at persistence", () => {
+    assert.equal(
+      sanitizeSlideForTemplate(
+        uploadedSlide({ titleThemeId: "future-theme" })
+      ).titleThemeId,
+      "original"
+    );
+  });
+
   await t.test("keeps an explicitly unsaved slide unsaved", () => {
     assert.equal(sanitizeSlideForTemplate({ id: "x", saved: false }).saved, false);
   });

@@ -121,6 +121,13 @@ describe("buildCoverTitleContent", () => {
       }
     );
   });
+
+  it("rejects unsupported cover kinds", () => {
+    assert.throws(
+      () => buildCoverTitleContent("announcement", {}),
+      /unsupported cover title kind: announcement/
+    );
+  });
 });
 
 describe("appendThemedCoverTitleSlide", () => {
