@@ -1328,6 +1328,15 @@ body {
   background: var(--bg-accent);
 }
 
+.bulk-dropdown-item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.bulk-dropdown-item:disabled:hover {
+  background: transparent;
+}
+
 .bulk-dropdown-item.danger {
   color: var(--danger);
 }
@@ -1640,6 +1649,48 @@ body {
   margin: 0;
   font-size: 16px;
   color: var(--ink);
+}
+
+.add-slide-control {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.split-btn {
+  display: inline-flex;
+  align-items: stretch;
+}
+
+.split-btn > .ghost:first-child {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.split-btn > .ghost:last-child {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  margin-left: -1px;
+}
+
+/* The lift on hover would tear the two halves apart at the seam. */
+.split-btn > .ghost:hover {
+  transform: none;
+  z-index: 1;
+}
+
+.split-btn-caret {
+  min-width: var(--ctrl-h-sm);
+  padding: 0 8px;
+  color: var(--muted);
+}
+
+.split-btn-caret[aria-expanded="true"] {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.split-btn-caret[aria-expanded="true"] .dropdown-caret {
+  transform: rotate(180deg);
 }
 
 .slide-list-toolbar {
