@@ -3912,6 +3912,11 @@ function customTitleEnSize(text) {
   return api ? api.enTitleFontSize(text) : 19;
 }
 
+function customTitleSubtitleSize(text) {
+  const api = customTitleTextApi();
+  return api ? api.subtitleFontSize(text) : 28;
+}
+
 function syncCustomTitleDesignCards(value) {
   if (!customTitleDesignGrid) return;
   customTitleDesignGrid
@@ -3953,6 +3958,9 @@ const CUSTOM_TITLE_THEMES = {
     enColor: "#C4B2FF",
     enWeight: 700,
     enTracking: 0.42,
+    subtitlePanelFill: "rgba(23,14,51,0.78)",
+    subtitlePanelBorder: "#8B6BFF",
+    subtitlePanelText: "#FFFFFF",
   },
   monolith: {
     background:
@@ -3971,6 +3979,9 @@ const CUSTOM_TITLE_THEMES = {
     enWeight: 400,
     enTracking: 0.5,
     hairline: "#2C2E33",
+    subtitlePanelFill: "#111216",
+    subtitlePanelBorder: "#67645C",
+    subtitlePanelText: "#EEE9DC",
   },
   ivory: {
     background: "#FAF6EF",
@@ -3988,6 +3999,10 @@ const CUSTOM_TITLE_THEMES = {
     enTracking: 0.45,
     frame: "#C2A87A",
     frameWeight: 0.021,
+    subtitlePanelFill: "#F2EADC",
+    subtitlePanelBorder: "#C2A87A",
+    subtitlePanelText: "#5F4B2C",
+    subtitlePanelDouble: true,
   },
   marquee: {
     background: "#2A0F16",
@@ -4006,6 +4021,10 @@ const CUSTOM_TITLE_THEMES = {
     frame: "#D9B376",
     frameWeight: 0.024,
     diamonds: true,
+    subtitlePanelFill: "#34131C",
+    subtitlePanelBorder: "#D9B376",
+    subtitlePanelText: "#F7EBDA",
+    subtitlePanelDiamonds: true,
   },
 };
 
@@ -4063,6 +4082,55 @@ function addCustomTitleFrame(container, theme, unit) {
   );
 }
 
+function addCustomTitleSubtitlePanel(container, subtitle, theme, unit) {
+  const { inch, pt } = unit;
+  const panel = titlePreviewNode(
+    `position:absolute;left:8%;right:8%;bottom:${inch(0.55)}px;` +
+      `height:${inch(0.85)}px;display:flex;align-items:center;justify-content:center;` +
+      `box-sizing:border-box;background:${theme.subtitlePanelFill};` +
+      `border:1px solid ${theme.subtitlePanelBorder};z-index:2;`
+  );
+
+  if (theme.subtitlePanelDouble) {
+    [inch(0.09), inch(0.76)].forEach((top) => {
+      panel.appendChild(
+        titlePreviewNode(
+          `position:absolute;left:${inch(0.16)}px;right:${inch(0.16)}px;` +
+            `top:${top}px;height:1px;background:${theme.subtitlePanelBorder};`
+        )
+      );
+    });
+  }
+
+  if (theme.subtitlePanelDiamonds) {
+    const size = inch(0.14);
+    panel.appendChild(
+      customTitleDiamond(
+        `left:${-size / 2}px;top:calc(50% - ${size / 2}px);`,
+        size,
+        theme.subtitlePanelBorder
+      )
+    );
+    panel.appendChild(
+      customTitleDiamond(
+        `right:${-size / 2}px;top:calc(50% - ${size / 2}px);`,
+        size,
+        theme.subtitlePanelBorder
+      )
+    );
+  }
+
+  panel.appendChild(
+    titlePreviewNode(
+      `position:relative;font-family:${TITLE_SANS};font-weight:700;` +
+        `font-size:${pt(customTitleSubtitleSize(subtitle))}px;line-height:1.2;` +
+        `color:${theme.subtitlePanelText};white-space:nowrap;letter-spacing:0.08em;`,
+      subtitle
+    )
+  );
+  container.appendChild(panel);
+}
+
 function buildCustomTitleSlidePreview(data, previewWidth) {
   const width = previewWidth || 400;
   const perInch = width / 13.333;
@@ -4085,9 +4153,12 @@ function buildCustomTitleSlidePreview(data, previewWidth) {
 
   addCustomTitleFrame(container, theme, unit);
 
+  const stackOffset = subtitle
+    ? `transform:translateY(${inch(-0.45)}px);`
+    : "";
   const stack = titlePreviewNode(
     "position:relative;height:100%;display:flex;flex-direction:column;" +
-      "align-items:center;justify-content:center;"
+      `align-items:center;justify-content:center;${stackOffset}`
   );
 
   const koSize = pt(customTitleKoSize(ko));
@@ -4141,18 +4212,10 @@ function buildCustomTitleSlidePreview(data, previewWidth) {
     );
   }
 
-  if (subtitle) {
-    stack.appendChild(
-      titlePreviewNode(
-        `font-family:${TITLE_SANS};font-weight:600;font-size:${pt(18)}px;` +
-          `line-height:1.35;color:${theme.enColor};white-space:nowrap;` +
-          `margin-top:${inch(en ? 0.2 : theme.koGap)}px;`,
-        subtitle
-      )
-    );
-  }
-
   container.appendChild(stack);
+  if (subtitle) {
+    addCustomTitleSubtitlePanel(container, subtitle, theme, unit);
+  }
   return container;
 }
 

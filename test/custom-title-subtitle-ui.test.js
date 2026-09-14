@@ -39,4 +39,19 @@ describe("Custom title subtitle editor wiring", () => {
       /customTitleSubtitleInput\.addEventListener\(["']input["'][\s\S]*?renderPreview\(\)[\s\S]*?refreshSaveState\(\)/
     );
   });
+
+  it("renders the approved lower signature panel with the shared size rule", () => {
+    assert.match(app, /api\.subtitleFontSize\(text\)/);
+    assert.match(app, /function addCustomTitleSubtitlePanel\(/);
+    assert.match(
+      app,
+      /font-size:\$\{pt\(customTitleSubtitleSize\(subtitle\)\)\}px/
+    );
+    assert.match(
+      app,
+      /transform:translateY\(\$\{inch\(-0\.45\)\}px\)/
+    );
+    assert.match(app, /bottom:\$\{inch\(0\.55\)\}px/);
+    assert.match(app, /height:\$\{inch\(0\.85\)\}px/);
+  });
 });
