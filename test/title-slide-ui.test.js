@@ -56,10 +56,15 @@ describe("Sunday worship title editor", () => {
   });
 
   it("provides title, date visibility, mode, and free date controls", () => {
-    assert.match(html, /id="titleKo"/);
-    assert.match(html, /id="titleEn"/);
+    assert.match(html, /<label[^>]+for="titleKo"/);
+    assert.match(html, /<label[^>]+for="titleEn"/);
+    assert.match(html, /<label[^>]+for="titleServiceDate"/);
     assert.match(html, /id="titleShowDate"/);
-    assert.match(html, /id="titleDateMode"/);
+    assert.match(html, /id="titleDateModeLabel"/);
+    assert.match(
+      html,
+      /class="rte-seg-group"\s+id="titleDateMode"\s+role="radiogroup"\s+aria-labelledby="titleDateModeLabel"/
+    );
     assert.match(html, /id="titleServiceDate"\s+type="date"/);
     assert.match(
       html,
@@ -87,6 +92,21 @@ describe("Sunday worship title editor", () => {
       /font-size:\$\{pt\(14\)\}px;[\s\S]*?content\.en/
     );
     assert.doesNotMatch(editorial, /titleEnFontSize/);
+  });
+
+  it("hides original-design English rules only when English is empty", () => {
+    const editorial = functionSource("buildEditorialPreview");
+    assert.match(
+      editorial,
+      /if \(content\.en\) \{[\s\S]*?middle\.appendChild\(rule\)[\s\S]*?content\.en/
+    );
+
+    const glow = functionSource("buildGlowPreview");
+    assert.match(
+      glow,
+      /if \(content\.en\) \{[\s\S]*?upper\.appendChild\(rule\)[\s\S]*?content\.en/
+    );
+    assert.match(glow, /if \(content\.en\) \{[\s\S]*?forEach/);
   });
 
   it("resolves date modes and switches typed dates to custom", () => {
@@ -122,6 +142,24 @@ describe("Sunday worship title editor", () => {
       prepare,
       /titleServiceDateInput\.value\s*=\s*api[\s\S]*?api\.resolveServiceDate/
     );
+  });
+
+  it("synchronizes automatic dates onto the opened slide record", () => {
+    const populate = functionSource("populateEditor");
+    assert.match(
+      populate,
+      /api\.syncAutomaticServiceDate\(slide,\s*api\.todayIsoDate\(\)\)/
+    );
+  });
+
+  it("uses browser today for a blank preview date", () => {
+    const preview = functionSource("buildTitleSlidePreview");
+    assert.match(
+      preview,
+      /dateApi\.resolveServiceDate\(\s*"custom",\s*data\.serviceDate,\s*dateApi\.todayIsoDate\(\)\s*\)/
+    );
+    assert.match(preview, /formatTitleDateKo\(serviceDate\)/);
+    assert.match(preview, /formatTitleDateEn\(serviceDate\)/);
   });
 
   it("creates motifs only in seasonal preview builders", () => {

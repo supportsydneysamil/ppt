@@ -37,6 +37,40 @@ function textMetrics(shape) {
   };
 }
 
+function shapeGeometry(shape) {
+  const transform = shape.getElementsByTagName("a:xfrm")[0];
+  const offset = transform.getElementsByTagName("a:off")[0];
+  const extent = transform.getElementsByTagName("a:ext")[0];
+  const inches = (value) => Number((Number(value) / 914400).toFixed(3));
+  return {
+    x: inches(offset.getAttribute("x")),
+    y: inches(offset.getAttribute("y")),
+    w: inches(extent.getAttribute("cx")),
+    h: inches(extent.getAttribute("cy")),
+  };
+}
+
+function shapesAt(slideXml, expected) {
+  return Array.from(parse(slideXml).getElementsByTagName("p:sp")).filter(
+    (shape) => JSON.stringify(shapeGeometry(shape)) === JSON.stringify(expected)
+  );
+}
+
+function textColor(shape) {
+  return shape
+    ?.getElementsByTagName("a:rPr")[0]
+    ?.getElementsByTagName("a:srgbClr")[0]
+    ?.getAttribute("val");
+}
+
+function presetShapeCount(slideXml, preset) {
+  return Array.from(parse(slideXml).getElementsByTagName("p:sp")).filter(
+    (shape) =>
+      shape.getElementsByTagName("a:prstGeom")[0]?.getAttribute("prst") ===
+      preset
+  ).length;
+}
+
 function objectNames(slideXml) {
   return Array.from(parse(slideXml).getElementsByTagName("p:cNvPr")).map(
     (node) => node.getAttribute("name") || ""
@@ -103,6 +137,10 @@ describe("buildTitleContent", () => {
       buildTitleContent({ showDate: false, serviceDate: "2026-09-13" }).koDate,
       ""
     );
+    assert.equal(
+      buildTitleContent({ showDate: false, serviceDate: "2026-09-13" }).enDate,
+      ""
+    );
     assert.equal(buildTitleContent({ serviceDate: "nope" }).koDate, "");
   });
 });
@@ -137,6 +175,14 @@ describe("worship title font sizing", () => {
     assert.equal(capped, 11);
     assert.ok(capped < worshipEnFontSize(text, 17));
     assert.equal(worshipEnFontSize("X".repeat(39), 17, 1), 10);
+  });
+
+  it("keeps pathological width-capped Korean titles legible", () => {
+    assert.equal(worshipKoFontSize("가".repeat(100), 64, 1), 12);
+    assert.equal(
+      worshipKoFontSize("부활의소망을기뻐하는온가족예배", 64, 4.93),
+      21
+    );
   });
 });
 
@@ -198,6 +244,95 @@ describe("appendTitleSlide", () => {
     });
     assert.match(custom, /SUNDAY WORSHIP/);
     assert.doesNotMatch(custom, /SERVICE/);
+  });
+
+  it("hides English-associated editorial and glow rules when English is empty", async () => {
+    const editorialRule = { x: 1.05, y: 4.52, w: 4.4, h: 0 };
+    const glowRule = { x: 4.367, y: 4.3, w: 4.6, h: 0 };
+
+    const editorialDefault = await render({
+      titleDesign: "editorial",
+      churchName: "A",
+      serviceDate: "2026-09-13",
+    });
+    const editorialEmpty = await render({
+      titleDesign: "editorial",
+      titleEn: "",
+      churchName: "A",
+      serviceDate: "2026-09-13",
+    });
+    assert.equal(shapesAt(editorialDefault, editorialRule).length, 1);
+    assert.equal(shapesAt(editorialEmpty, editorialRule).length, 0);
+
+    const glowDefault = await render({
+      titleDesign: "glow",
+      churchName: "A",
+      serviceDate: "2026-09-13",
+    });
+    const glowEmpty = await render({
+      titleDesign: "glow",
+      titleEn: "",
+      churchName: "A",
+      serviceDate: "2026-09-13",
+    });
+    assert.equal(shapesAt(glowDefault, glowRule).length, 1);
+    assert.equal(presetShapeCount(glowDefault, "ellipse"), 2);
+    assert.equal(shapesAt(glowEmpty, glowRule).length, 0);
+    assert.equal(presetShapeCount(glowEmpty, "ellipse"), 0);
+  });
+
+  it("hides editorial DATE content and empty glow Korean copy", async () => {
+    const editorial = await render({
+      titleDesign: "editorial",
+      showDate: false,
+      churchName: "A",
+      serviceDate: "2026-09-13",
+    });
+    assert.doesNotMatch(editorial, /<a:t>DATE<\/a:t>/);
+    assert.doesNotMatch(editorial, /2026년/);
+    assert.doesNotMatch(editorial, /SEPTEMBER/);
+
+    const glow = await render({
+      titleDesign: "glow",
+      titleKo: "",
+      churchName: "A",
+      serviceDate: "2026-09-13",
+    });
+    assert.doesNotMatch(glow, /<a:t>주<\/a:t>/);
+    assert.doesNotMatch(glow, /<a:t>주일예배<\/a:t>/);
+  });
+
+  it("preserves key original design geometry and colors", async () => {
+    const editorial = await render({
+      titleDesign: "editorial",
+      churchName: "A",
+      serviceDate: "2026-09-13",
+    });
+    const editorialTitle = shapeWithText(editorial, "주일예배");
+    assert.deepEqual(shapeGeometry(editorialTitle), {
+      x: 0.95,
+      y: 2.45,
+      w: 10.5,
+      h: 1.75,
+    });
+    assert.equal(textMetrics(editorialTitle).fontSize, 112);
+    assert.equal(textColor(editorialTitle), "17150F");
+
+    const glow = await render({
+      titleDesign: "glow",
+      titleKo: "성찬",
+      churchName: "A",
+      serviceDate: "2026-09-13",
+    });
+    const glowTitle = shapeWithText(glow, "성찬");
+    assert.deepEqual(shapeGeometry(glowTitle), {
+      x: 0,
+      y: 1.95,
+      w: 13.333,
+      h: 1.79,
+    });
+    assert.equal(textMetrics(glowTitle).fontSize, 88);
+    assert.equal(textColor(glowTitle), "FFFFFF");
   });
 
   it("keeps chapel default Korean at 96pt and scales long copy", async () => {

@@ -3449,7 +3449,7 @@ function populateEditor(slide, { reloadCustomCanvas = true } = {}) {
     setSelectedDateMode(dateMode);
     titleShowDate.checked = slide.showDate !== false;
     titleServiceDateInput.value = api
-      ? api.resolveServiceDate(dateMode, slide.serviceDate, api.todayIsoDate())
+      ? api.syncAutomaticServiceDate(slide, api.todayIsoDate())
       : slide.serviceDate || defaultServiceDate();
     updateTitleSeasonSuggestion();
   } else if (slide.type === 'custom-title') {
@@ -3849,13 +3849,12 @@ function buildEditorialPreview(container, content, unit) {
       )
     );
   }
-  middle.appendChild(
-    titlePreviewNode(
+  if (content.en) {
+    const rule = titlePreviewNode(
       `width:${inch(4.4)}px;height:${Math.max(1, inch(0.009))}px;background:${hair};` +
         `margin-top:${inch(0.36)}px;`
-    )
-  );
-  if (content.en) {
+    );
+    middle.appendChild(rule);
     middle.appendChild(
       titlePreviewNode(
         `font-family:${TITLE_LATIN};font-weight:700;font-size:${pt(14)}px;` +
@@ -3945,21 +3944,20 @@ function buildGlowPreview(container, content, unit) {
     );
   }
 
-  const rule = titlePreviewNode(
-    `position:relative;width:${inch(4.6)}px;height:${Math.max(1, inch(0.011))}px;` +
-      `background:${gold};opacity:0.85;margin-top:${inch(0.36)}px;`
-  );
-  [`left:${-inch(0.05)}px`, `right:${-inch(0.05)}px`].forEach((side) => {
-    rule.appendChild(
-      titlePreviewNode(
-        `position:absolute;${side};top:${-inch(0.045)}px;width:${inch(0.1)}px;` +
-          `height:${inch(0.1)}px;border-radius:50%;background:${gold};`
-      )
-    );
-  });
-  upper.appendChild(rule);
-
   if (content.en) {
+    const rule = titlePreviewNode(
+      `position:relative;width:${inch(4.6)}px;height:${Math.max(1, inch(0.011))}px;` +
+        `background:${gold};opacity:0.85;margin-top:${inch(0.36)}px;`
+    );
+    [`left:${-inch(0.05)}px`, `right:${-inch(0.05)}px`].forEach((side) => {
+      rule.appendChild(
+        titlePreviewNode(
+          `position:absolute;${side};top:${-inch(0.045)}px;width:${inch(0.1)}px;` +
+            `height:${inch(0.1)}px;border-radius:50%;background:${gold};`
+        )
+      );
+    });
+    upper.appendChild(rule);
     upper.appendChild(
       titlePreviewNode(
         `font-family:${TITLE_LATIN};font-weight:700;font-size:${pt(17)}px;` +
@@ -4304,13 +4302,21 @@ function buildTitleSlidePreview(data, previewWidth) {
     pt: (value) => (value / 72) * perInch,
   };
   const design = normalizeTitleDesign(data.titleDesign);
+  const dateApi = titleDateApi();
+  const serviceDate = dateApi
+    ? dateApi.resolveServiceDate(
+        "custom",
+        data.serviceDate,
+        dateApi.todayIsoDate()
+      )
+    : data.serviceDate;
   const content = {
     church: (data.churchName || "").trim() || "교회 이름",
     subtitle: (data.titleSubtitle || "").trim(),
     ko: resolveTitlePreviewKo(data),
     en: resolveTitlePreviewEn(data, design),
-    koDate: data.showDate === false ? "" : formatTitleDateKo(data.serviceDate),
-    enDate: data.showDate === false ? "" : formatTitleDateEn(data.serviceDate),
+    koDate: data.showDate === false ? "" : formatTitleDateKo(serviceDate),
+    enDate: data.showDate === false ? "" : formatTitleDateEn(serviceDate),
   };
 
   const container = document.createElement("div");

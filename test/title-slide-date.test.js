@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
+import * as titleSlideDate from "../lib/title-slide-date.js";
 import {
   formatServiceDateEn,
   formatServiceDateKo,
@@ -111,5 +112,43 @@ describe("resolveServiceDate", () => {
   it("uses today when it is Sunday, otherwise the next Sunday", () => {
     assert.equal(resolveServiceDate("next-sunday", "", "2026-09-13"), "2026-09-13");
     assert.equal(resolveServiceDate("next-sunday", "", "2026-09-16"), "2026-09-20");
+  });
+});
+
+describe("syncAutomaticServiceDate", () => {
+  it("updates the slide record for automatic modes", () => {
+    assert.equal(typeof titleSlideDate.syncAutomaticServiceDate, "function");
+    const todaySlide = {
+      dateMode: "today",
+      serviceDate: "2026-01-01",
+    };
+    const sundaySlide = {
+      dateMode: "next-sunday",
+      serviceDate: "2026-01-04",
+    };
+
+    assert.equal(
+      titleSlideDate.syncAutomaticServiceDate(todaySlide, "2026-09-14"),
+      "2026-09-14"
+    );
+    assert.equal(todaySlide.serviceDate, "2026-09-14");
+    assert.equal(
+      titleSlideDate.syncAutomaticServiceDate(sundaySlide, "2026-09-14"),
+      "2026-09-20"
+    );
+    assert.equal(sundaySlide.serviceDate, "2026-09-20");
+  });
+
+  it("returns the resolved custom date without changing its record", () => {
+    const customSlide = {
+      dateMode: "custom",
+      serviceDate: "",
+    };
+
+    assert.equal(
+      titleSlideDate.syncAutomaticServiceDate(customSlide, "2026-09-14"),
+      "2026-09-14"
+    );
+    assert.equal(customSlide.serviceDate, "");
   });
 });
