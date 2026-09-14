@@ -165,7 +165,7 @@ async function cloneUploadedAsset(serverFilePath) {
   return `/uploads/${cloneName}`;
 }
 
-async function cloneSlideForTemplate(slide) {
+async function cloneSlideWithAssets(slide) {
   const cloned = sanitizeSlideForTemplate(slide);
   cloned.id = createEntityId("slide");
   cloned.serverFilePath = await cloneUploadedAsset(cloned.serverFilePath);
@@ -580,6 +580,19 @@ app.post("/api/slides", async (req, res) => {
   }
 });
 
+app.post("/api/slides/clone", async (req, res) => {
+  try {
+    const slide = req.body?.slide;
+    if (!slide || typeof slide !== "object" || Array.isArray(slide)) {
+      return res.status(400).json({ error: "유효한 슬라이드가 필요합니다." });
+    }
+    return res.json(await cloneSlideWithAssets(slide));
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Failed to clone slide" });
+  }
+});
+
 app.post("/api/slides/bulk-delete", async (req, res) => {
   try {
     const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
@@ -640,7 +653,7 @@ app.post("/api/templates", async (req, res) => {
       name,
       createdAt: new Date().toISOString(),
       slideCount: rawSlides.length,
-      slides: await Promise.all(rawSlides.map(cloneSlideForTemplate)),
+      slides: await Promise.all(rawSlides.map(cloneSlideWithAssets)),
     };
 
     templates.push(template);
