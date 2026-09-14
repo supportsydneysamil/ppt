@@ -838,6 +838,7 @@ const hymnNumberInput = document.getElementById("hymnNumber");
 const hymnLoadBtn = document.getElementById("hymnLoadBtn");
 const hymnIncludeTitle = document.getElementById("hymnIncludeTitle");
 const hymnTitleFields = document.getElementById("hymnTitleFields");
+const hymnTitleThemeGrid = document.getElementById("hymnTitleThemeGrid");
 const hymnKorTitleInput = document.getElementById("hymnKorTitle");
 const hymnEngTitleInput = document.getElementById("hymnEngTitle");
 const scriptureSlideSettings = document.getElementById("scriptureSlideSettings");
@@ -855,6 +856,7 @@ const scripturePptxImageStatus = document.getElementById("scripturePptxImageStat
 const scriptureSettingsAccordion = document.getElementById("scriptureSettingsAccordion");
 const scriptureIncludeTitle = document.getElementById("scriptureIncludeTitle");
 const scriptureTitleSlideTypeGroup = document.getElementById("scriptureTitleSlideTypeGroup");
+const scriptureTitleThemeGrid = document.getElementById("scriptureTitleThemeGrid");
 const scriptureGenerateBtn = document.getElementById("scriptureGenerateBtn");
 const userPptxFile = document.getElementById("userPptxFile");
 const adContentSettings = document.getElementById("adContentSettings");
@@ -1079,6 +1081,7 @@ function collectCurrentSlideDraft() {
   } else if (draft.type === "hymn") {
     draft.hymnNumber = hymnNumberInput.value;
     draft.includeTitle = hymnIncludeTitle.checked;
+    draft.titleThemeId = getCoverThemePicker(hymnTitleThemeGrid);
     draft.titleThemeId = draft.titleThemeId || "original";
     draft.hymnKorTitle = hymnKorTitleInput.value.trim();
     draft.hymnEngTitle = hymnEngTitleInput.value.trim();
@@ -1788,6 +1791,7 @@ hymnLoadBtn.addEventListener('click', async () => {
     if (current) {
       // Sync title fields into current so renderPreview(current) has full data
       current.includeTitle = hymnIncludeTitle.checked;
+      current.titleThemeId = getCoverThemePicker(hymnTitleThemeGrid);
       current.hymnKorTitle = hymnKorTitleInput.value.trim();
       current.hymnEngTitle = hymnEngTitleInput.value.trim();
 
@@ -1839,6 +1843,10 @@ hymnNumberInput.addEventListener('change', () => {
 
 hymnIncludeTitle.addEventListener('change', async () => {
   hymnTitleFields.hidden = !hymnIncludeTitle.checked;
+  setCoverThemeGridHidden(
+    hymnTitleThemeGrid,
+    !hymnIncludeTitle.checked
+  );
   if (hymnIncludeTitle.checked && hymnNumberInput.value) {
     await fetchAndFillHymnTitle(hymnNumberInput.value);
   }
@@ -1850,6 +1858,40 @@ hymnIncludeTitle.addEventListener('change', async () => {
   renderPreview();
   refreshSaveState();
 });
+
+const COVER_TITLE_THEME_IDS = [
+  "original",
+  "aurora",
+  "monolith",
+  "ivory",
+  "marquee",
+];
+
+function normalizeCoverTitleThemeId(value) {
+  return COVER_TITLE_THEME_IDS.includes(value) ? value : "original";
+}
+
+function setCoverThemePicker(grid, value) {
+  if (!grid) return;
+  const normalized = normalizeCoverTitleThemeId(value);
+  grid.querySelectorAll("[data-title-theme]").forEach((card) => {
+    const active = card.dataset.titleTheme === normalized;
+    card.classList.toggle("is-active", active);
+    card.setAttribute("aria-pressed", String(active));
+  });
+}
+
+function getCoverThemePicker(grid) {
+  return (
+    grid?.querySelector("[data-title-theme].is-active")?.dataset.titleTheme ||
+    "original"
+  );
+}
+
+function setCoverThemeGridHidden(grid, hidden) {
+  if (!grid) return;
+  grid.hidden = hidden;
+}
 
 function getScriptureTitleSlideType() {
   const selected = document.querySelector(
@@ -1873,6 +1915,10 @@ function syncScriptureTitleTypeUi() {
   }
   scriptureTitleSlideTypeGroup.classList.toggle(
     "hidden",
+    !scriptureIncludeTitle.checked
+  );
+  setCoverThemeGridHidden(
+    scriptureTitleThemeGrid,
     !scriptureIncludeTitle.checked
   );
 }
@@ -1909,6 +1955,7 @@ function populateScriptureEditor(slide) {
     slide.themeId || localStorage.getItem("biblics-pptx-theme") || "dark";
   scriptureIncludeTitle.checked =
     slide.includeTitle === undefined ? true : !!slide.includeTitle;
+  setCoverThemePicker(scriptureTitleThemeGrid, slide.titleThemeId);
   setScriptureTitleSlideType(slide.titleSlideType || "말씀");
   syncScriptureTitleTypeUi();
   if (scripturePptxImageInput) {
@@ -1928,6 +1975,7 @@ function collectScriptureSlideFields() {
     enVersion: scriptureEnVersionSelect.value || "",
     themeId: scripturePptxThemeSelect.value || "dark",
     includeTitle: scriptureIncludeTitle.checked,
+    titleThemeId: getCoverThemePicker(scriptureTitleThemeGrid),
     titleSlideType: getScriptureTitleSlideType(),
   };
 }
@@ -2772,6 +2820,32 @@ function buildHymnTitleSlidePreview(hymnNumber, korTitle, engTitle) {
   return wrap;
 }
 
+function buildThemedHymnTitleSlidePreview(
+  titleThemeId,
+  hymnNumber,
+  korTitle,
+  engTitle,
+  previewWidth
+) {
+  let hymnTitleText = hymnNumber ? `${hymnNumber}.` : "";
+  if (korTitle) {
+    hymnTitleText += `${hymnTitleText ? " " : ""}${korTitle}`;
+  }
+  if (engTitle) {
+    hymnTitleText += `${hymnTitleText ? "\n" : ""}(${engTitle})`;
+  }
+
+  return buildCustomTitleSlidePreview(
+    {
+      customTitleDesign: normalizeCoverTitleThemeId(titleThemeId),
+      customTitleKo: "찬송",
+      customTitleEn: "HYMN",
+      customTitleSubtitle: hymnTitleText,
+    },
+    previewWidth
+  );
+}
+
 function renderPreview(slideOverride) {
   if (!slidePreview) return;
 
@@ -2790,6 +2864,7 @@ function renderPreview(slideOverride) {
         type: 'hymn',
         hymnNumber: hymnNumberInput.value,
         includeTitle: hymnIncludeTitle.checked,
+        titleThemeId: getCoverThemePicker(hymnTitleThemeGrid),
         hymnKorTitle: hymnKorTitleInput.value.trim(),
         hymnEngTitle: hymnEngTitleInput.value.trim(),
       };
@@ -2801,6 +2876,7 @@ function renderPreview(slideOverride) {
         type: 'scripture',
         name: slideNameInput.value,
         includeTitle: scriptureIncludeTitle.checked,
+        titleThemeId: getCoverThemePicker(scriptureTitleThemeGrid),
         titleSlideType: getScriptureTitleSlideType(),
         sourceType: current.serverFilePath ? 'upload' : 'basic',
       };
@@ -3205,11 +3281,20 @@ function renderPreview(slideOverride) {
 
     // Hymn title slide preview — inserted AFTER final innerHTML clear
     if (data.type === 'hymn' && data.includeTitle) {
-      const titleEl = buildHymnTitleSlidePreview(
-        data.hymnNumber,
-        data.hymnKorTitle,
-        data.hymnEngTitle
-      );
+      const titleEl =
+        normalizeCoverTitleThemeId(data.titleThemeId) === "original"
+          ? buildHymnTitleSlidePreview(
+              data.hymnNumber,
+              data.hymnKorTitle,
+              data.hymnEngTitle
+            )
+          : buildThemedHymnTitleSlidePreview(
+              data.titleThemeId,
+              data.hymnNumber,
+              data.hymnKorTitle,
+              data.hymnEngTitle,
+              slidePreview.offsetWidth || 400
+            );
       slidePreview.appendChild(titleEl);
     }
 
@@ -3408,12 +3493,15 @@ function clearTransientSlideFileInputs() {
 function populateEditor(slide, { reloadCustomCanvas = true } = {}) {
   clearTransientSlideFileInputs();
   slide.titleThemeId = slide.titleThemeId || "original";
+  slide.titleThemeId = normalizeCoverTitleThemeId(slide.titleThemeId);
   slideNameInput.value = slide.name;
   slideTypeSelect.value = slide.type;
 
   hymnNumberInput.value = slide.hymnNumber || '';
   hymnIncludeTitle.checked = !!slide.includeTitle;
   if (hymnTitleFields) hymnTitleFields.hidden = !slide.includeTitle;
+  setCoverThemePicker(hymnTitleThemeGrid, slide.titleThemeId);
+  setCoverThemeGridHidden(hymnTitleThemeGrid, !hymnIncludeTitle.checked);
   hymnKorTitleInput.value = slide.hymnKorTitle || '';
   hymnEngTitleInput.value = slide.hymnEngTitle || '';
 
@@ -4866,6 +4954,7 @@ async function saveCurrentSlide({ silent = false } = {}) {
       }
       slide.sourceType = 'upload';
       slide.includeTitle = hymnIncludeTitle.checked;
+      slide.titleThemeId = getCoverThemePicker(hymnTitleThemeGrid);
       slide.titleThemeId = slide.titleThemeId || 'original';
       slide.hymnKorTitle = hymnKorTitleInput.value.trim();
       slide.hymnEngTitle = hymnEngTitleInput.value.trim();
@@ -6140,6 +6229,25 @@ titleSeasonSuggestBtn.addEventListener('click', () => {
 });
 
 // --- Title (Custom) slide listeners ---
+
+[
+  hymnTitleThemeGrid,
+  scriptureTitleThemeGrid,
+].forEach((grid) => {
+  if (!grid) return;
+  grid.addEventListener("click", (event) => {
+    const card = event.target.closest("[data-title-theme]");
+    if (!card) return;
+    setCoverThemePicker(grid, card.dataset.titleTheme);
+    if (grid === hymnTitleThemeGrid && slidePreview) {
+      slidePreview.dataset.lastRenderedUrl = "";
+      slidePreview.dataset.lastRenderedFile = "";
+      slidePreview.dataset.lastRenderedPath = "";
+    }
+    renderPreview();
+    refreshSaveState();
+  });
+});
 
 // Only replaces names the user has not personalised yet.
 function maybeAutoNameCustomTitleSlide() {
