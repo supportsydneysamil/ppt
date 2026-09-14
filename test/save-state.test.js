@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  buildResetSlideDraft,
   createSnapshot,
   isSnapshotDirty,
   isTemplateDirty,
@@ -12,6 +13,7 @@ import {
   isSaveBusy,
   isSlideUnsaved,
   planDiscard,
+  resolveAdjacentSlideId,
   runGuardedTransition,
   saveAllPendingScopes,
   selectTransientPreviewFiles,
@@ -20,6 +22,7 @@ import {
   toFileMetadata,
   withTransientFiles,
 } from "../lib/save-state.js";
+import { createDefaultCustomSlide } from "../public/custom-slide-model.js";
 
 describe("save state snapshots", () => {
   it("keeps transient file metadata stable for dirty comparison", () => {
@@ -662,5 +665,296 @@ describe("guarded transition orchestration", () => {
     assert.equal(harness.calls.transition, 0);
     assert.deepEqual(harness.calls.saved, []);
     assert.equal(harness.calls.discard, 0);
+  });
+});
+
+describe("resolveAdjacentSlideId", () => {
+  const slides = [{ id: "a" }, { id: "b" }, { id: "c" }];
+
+  it("prefers the next slide when one exists", () => {
+    assert.equal(resolveAdjacentSlideId(slides, "b"), "c");
+  });
+
+  it("falls back to the previous slide at the end of the list", () => {
+    assert.equal(resolveAdjacentSlideId(slides, "c"), "b");
+  });
+
+  it("returns null when the removed slide is the only one", () => {
+    assert.equal(resolveAdjacentSlideId([{ id: "solo" }], "solo"), null);
+  });
+
+  it("returns null when the id is not in the list", () => {
+    assert.equal(resolveAdjacentSlideId(slides, "missing"), null);
+  });
+});
+
+describe("buildResetSlideDraft", () => {
+  const emptyCustomSlide = createDefaultCustomSlide();
+
+  it("does not mutate the source slide", () => {
+    const source = {
+      id: "slide-1",
+      name: "광고",
+      type: "ad",
+      content: "본문",
+      saved: true,
+    };
+    const snapshot = structuredClone(source);
+
+    buildResetSlideDraft(source);
+
+    assert.deepEqual(source, snapshot);
+  });
+
+  it("preserves id, name, type, and saved for a simple slide", () => {
+    const reset = buildResetSlideDraft({
+      id: "slide-simple",
+      name: "텍스트 슬라이드",
+      type: "simple",
+      saved: true,
+      sourceType: "upload",
+      content: "편집된 내용",
+      font: "Arial",
+      fontSize: "24",
+      bg: "white",
+      align: "left",
+      fileName: "deck.pptx",
+      fileSaved: true,
+      serverFilePath: "/uploads/deck.pptx",
+      thumbnail: "/uploads/deck-thumb.jpeg",
+    });
+
+    assert.equal(reset.id, "slide-simple");
+    assert.equal(reset.name, "텍스트 슬라이드");
+    assert.equal(reset.type, "simple");
+    assert.equal(reset.saved, true);
+    assert.equal(reset.sourceType, "basic");
+    assert.equal(reset.content, "");
+    assert.equal(reset.font, "Malgun Gothic");
+    assert.equal(reset.fontSize, "40");
+    assert.equal(reset.bg, "black");
+    assert.equal(reset.align, "center");
+    assert.deepEqual(
+      {
+        fileName: reset.fileName,
+        fileSaved: reset.fileSaved,
+        serverFilePath: reset.serverFilePath,
+        thumbnail: reset.thumbnail,
+      },
+      {
+        fileName: null,
+        fileSaved: false,
+        serverFilePath: null,
+        thumbnail: null,
+      }
+    );
+  });
+
+  it("resets ad design fields and clears uploaded background media", () => {
+    const reset = buildResetSlideDraft({
+      id: "slide-ad",
+      name: "광고",
+      type: "ad",
+      saved: true,
+      sourceType: "upload",
+      content: "본문",
+      adTitle: "제목",
+      adTitleSize: "large",
+      adTitleAlign: "left",
+      adBgSource: "file",
+      adBgImagePath: "/uploads/bg.png",
+      adBgImageUrl: "https://example.com/bg.png",
+      adBgOpacity: 80,
+      fileName: "ad.pptx",
+      serverFilePath: "/uploads/ad.pptx",
+    });
+
+    assert.equal(reset.type, "ad");
+    assert.equal(reset.name, "광고");
+    assert.equal(reset.sourceType, "basic");
+    assert.equal(reset.content, "");
+    assert.equal(reset.adTitle, "");
+    assert.equal(reset.adTitleSize, "medium");
+    assert.equal(reset.adTitleAlign, "center");
+    assert.equal(reset.adBgSource, "none");
+    assert.equal(reset.adBgOpacity, 30);
+    assert.deepEqual(
+      {
+        adBgImagePath: reset.adBgImagePath,
+        adBgImageUrl: reset.adBgImageUrl,
+        serverFilePath: reset.serverFilePath,
+        fileName: reset.fileName,
+      },
+      {
+        adBgImagePath: null,
+        adBgImageUrl: null,
+        serverFilePath: null,
+        fileName: null,
+      }
+    );
+  });
+
+  it("resets hymn metadata and clears downloaded file references", () => {
+    const reset = buildResetSlideDraft({
+      id: "slide-hymn",
+      name: "찬송가 25장",
+      type: "hymn",
+      saved: true,
+      hymnNumber: "25",
+      hymnKorTitle: "내 영혼아",
+      hymnEngTitle: "Blessed Assurance",
+      includeTitle: true,
+      originalUrl: "https://example.com/hymn.ppt",
+      serverFilePath: "/uploads/hymn.ppt",
+      fileName: "hymn.ppt",
+      fileSaved: true,
+    });
+
+    assert.equal(reset.type, "hymn");
+    assert.equal(reset.name, "찬송가 25장");
+    assert.equal(reset.sourceType, "upload");
+    assert.equal(reset.hymnNumber, null);
+    assert.equal(reset.hymnKorTitle, "");
+    assert.equal(reset.hymnEngTitle, "");
+    assert.equal(reset.includeTitle, false);
+    assert.deepEqual(
+      {
+        originalUrl: reset.originalUrl,
+        serverFilePath: reset.serverFilePath,
+        fileName: reset.fileName,
+        fileSaved: reset.fileSaved,
+      },
+      {
+        originalUrl: null,
+        serverFilePath: null,
+        fileName: null,
+        fileSaved: false,
+      }
+    );
+  });
+
+  it("resets scripture verse fields and clears generated uploads", () => {
+    const reset = buildResetSlideDraft({
+      id: "slide-scripture",
+      name: "출애굽기 1:1-2",
+      type: "scripture",
+      saved: true,
+      testament: "old",
+      book: "exodus",
+      chapter: "1",
+      start: "1",
+      end: "2",
+      koVersion: "개역개정",
+      enVersion: "kjv",
+      themeId: "light",
+      includeTitle: false,
+      titleSlideType: "설교",
+      scriptureSignature: "sig",
+      customImageData: "data:image/png;base64,abc",
+      serverFilePath: "/uploads/scripture.pptx",
+      thumbnail: "/uploads/scripture-thumb.jpeg",
+    });
+
+    assert.equal(reset.type, "scripture");
+    assert.equal(reset.name, "출애굽기 1:1-2");
+    assert.equal(reset.sourceType, "upload");
+    assert.equal(reset.testament, "");
+    assert.equal(reset.book, "");
+    assert.equal(reset.chapter, "");
+    assert.equal(reset.start, "");
+    assert.equal(reset.end, "");
+    assert.equal(reset.koVersion, "새번역");
+    assert.equal(reset.enVersion, "web");
+    assert.equal(reset.themeId, "dark");
+    assert.equal(reset.includeTitle, true);
+    assert.equal(reset.titleSlideType, "말씀");
+    assert.equal(reset.scriptureSignature, "");
+    assert.deepEqual(
+      {
+        customImageData: reset.customImageData,
+        serverFilePath: reset.serverFilePath,
+        thumbnail: reset.thumbnail,
+      },
+      {
+        customImageData: null,
+        serverFilePath: null,
+        thumbnail: null,
+      }
+    );
+  });
+
+  it("resets title slide design fields", () => {
+    const reset = buildResetSlideDraft({
+      id: "slide-title",
+      name: "주일예배",
+      type: "title",
+      saved: true,
+      titleDesign: "gothic",
+      churchName: "삼일교회",
+      serviceDate: "2026-09-14",
+      titleSubtitle: "추석 감사",
+    });
+
+    assert.equal(reset.type, "title");
+    assert.equal(reset.name, "주일예배");
+    assert.equal(reset.sourceType, "basic");
+    assert.equal(reset.titleDesign, "chapel");
+    assert.equal(reset.churchName, "");
+    assert.equal(reset.serviceDate, "");
+    assert.equal(reset.titleSubtitle, "");
+  });
+
+  it("resets custom-title slide design fields", () => {
+    const reset = buildResetSlideDraft({
+      id: "slide-custom-title",
+      name: "타이틀+",
+      type: "custom-title",
+      saved: true,
+      customTitleDesign: "monolith",
+      customTitleKo: "주일예배",
+      customTitleEn: "Sunday Worship",
+      customTitleSubtitle: "2026",
+    });
+
+    assert.equal(reset.type, "custom-title");
+    assert.equal(reset.name, "타이틀+");
+    assert.equal(reset.sourceType, "basic");
+    assert.equal(reset.customTitleDesign, "aurora");
+    assert.equal(reset.customTitleKo, "");
+    assert.equal(reset.customTitleEn, "");
+    assert.equal(reset.customTitleSubtitle, "");
+  });
+
+  it("replaces a custom slide canvas with a normalized empty model", () => {
+    const reset = buildResetSlideDraft({
+      id: "slide-custom",
+      name: "커스텀",
+      type: "custom",
+      saved: true,
+      customSlide: {
+        version: 1,
+        width: 1280,
+        height: 720,
+        background: { color: "#112233" },
+        elements: [
+          {
+            id: "rect-1",
+            type: "rect",
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 100,
+            fill: "#ff0000",
+            zIndex: 0,
+          },
+        ],
+      },
+    });
+
+    assert.equal(reset.type, "custom");
+    assert.equal(reset.name, "커스텀");
+    assert.equal(reset.sourceType, "basic");
+    assert.deepEqual(reset.customSlide, emptyCustomSlide);
+    assert.notEqual(reset.customSlide, emptyCustomSlide);
   });
 });
