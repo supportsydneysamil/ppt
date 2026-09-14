@@ -1236,6 +1236,80 @@ await runScenario(
   { expectedConsole: [/500/] }
 );
 
+// Each new slide is saved before the next one is added, so the scenario
+// measures the insert position rather than the unsaved-changes guard.
+async function addAndSave(page, name, menuItem = null) {
+  if (menuItem) {
+    await page.locator("#addSlideMenuBtn").click();
+    await page.locator(menuItem).click();
+  } else {
+    await page.locator("#addSlideBtn").click();
+  }
+  await fillName(page, name);
+  await page.locator("#editorSaveBtn").click();
+  // The saved name reaching the card is what proves the list has re-rendered.
+  await page
+    .locator("#slideListContainer .slide-card h4", { hasText: name })
+    .first()
+    .waitFor();
+}
+
+await runScenario("new slides land at the chosen position", async (page) => {
+  await setup(page);
+
+  // No slide is being edited, so there is nothing for above/below to mean.
+  assert.equal(await page.locator("#slideEditor").isVisible(), false);
+  await page.locator("#addSlideMenuBtn").click();
+  assert.equal(await page.locator("#addSlideBeforeBtn").isDisabled(), true);
+  assert.equal(await page.locator("#addSlideAfterBtn").isDisabled(), true);
+  assert.equal(await page.locator("#addSlideEndBtn").isDisabled(), false);
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator("#addSlideDropdown").isHidden(), true);
+
+  await addAndSave(page, "끝 추가");
+  assert.deepEqual(await slideNames(page), [
+    "첫 슬라이드",
+    "둘째 슬라이드",
+    "끝 추가",
+  ]);
+
+  await selectMainSlide(page, 0);
+  await addAndSave(page, "아래 추가");
+  assert.deepEqual(await slideNames(page), [
+    "첫 슬라이드",
+    "아래 추가",
+    "둘째 슬라이드",
+    "끝 추가",
+  ]);
+
+  await selectMainSlide(page, 0);
+  await addAndSave(page, "위 추가", "#addSlideBeforeBtn");
+  assert.deepEqual(await slideNames(page), [
+    "위 추가",
+    "첫 슬라이드",
+    "아래 추가",
+    "둘째 슬라이드",
+    "끝 추가",
+  ]);
+
+  // A selection must not trap the new slide next to it.
+  await selectMainSlide(page, 0);
+  await addAndSave(page, "선택 있어도 끝", "#addSlideEndBtn");
+  assert.deepEqual(await slideNames(page), [
+    "위 추가",
+    "첫 슬라이드",
+    "아래 추가",
+    "둘째 슬라이드",
+    "끝 추가",
+    "선택 있어도 끝",
+  ]);
+
+  // The last card has no neighbour below, and appending there still works.
+  await selectMainSlide(page, 5);
+  await addAndSave(page, "막차");
+  assert.deepEqual((await slideNames(page)).at(-1), "막차");
+});
+
 await browser.close();
 if (server) {
   server.kill();
