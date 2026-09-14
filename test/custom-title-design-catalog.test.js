@@ -71,6 +71,17 @@ const DESIGN_FIELDS = [
   "theme",
 ];
 
+const EXPECTED_ASSETS = {
+  "bethlehem-star": "assets/custom-title/bethlehem.png",
+  "empty-tomb-light": "assets/custom-title/empty-tomb.png",
+  "wilderness-violet": "assets/custom-title/wilderness.png",
+  "palm-shadow": "assets/custom-title/palm-shadow.png",
+  "first-fruits": "assets/custom-title/first-fruits.png",
+  "midnight-gate": "assets/custom-title/midnight-gate.png",
+  "new-path": "assets/custom-title/new-path.png",
+  "cobalt-ripple": "assets/custom-title/cobalt-ripple.png",
+};
+
 function keys(value) {
   return Object.keys(value).sort();
 }
@@ -242,6 +253,28 @@ describe("custom title catalog helpers", () => {
 });
 
 describe("custom title asset paths", () => {
+  it("declares exactly one 1280x720 local asset for each non-default category", () => {
+    const assets = CUSTOM_TITLE_DESIGN_CATALOG.filter(
+      (design) => "asset" in design
+    );
+
+    assert.deepEqual(
+      Object.fromEntries(assets.map((design) => [design.id, design.asset.path])),
+      EXPECTED_ASSETS
+    );
+    assert.deepEqual(
+      assets.map((design) => design.categoryId),
+      CUSTOM_TITLE_DESIGN_CATEGORIES.slice(1).map((category) => category.id)
+    );
+    for (const design of assets) {
+      assert.deepEqual(
+        { width: design.asset.width, height: design.asset.height },
+        { width: 1280, height: 720 },
+        `${design.id} metadata must match its generated source`
+      );
+    }
+  });
+
   it("accepts only project-relative paths under assets/custom-title/", () => {
     assert.equal(
       isSafeCustomTitleAssetPath("assets/custom-title/christmas/star.png"),
