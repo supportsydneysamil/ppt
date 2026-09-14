@@ -1,7 +1,7 @@
 import express from "express";
 import fs from "fs/promises";
 import path from "path";
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 import PptxGenJS from "pptxgenjs";
 import multer from "multer";
 import AdmZip from "adm-zip";
@@ -27,6 +27,10 @@ import {
 } from "./lib/template-store.js";
 import { appendCustomSlide } from "./lib/custom-slide-pptx.js";
 import { appendCustomTitleSlide } from "./lib/custom-title-slide.js";
+import {
+  appendThemedCoverTitleSlide,
+  normalizeTitleThemeId,
+} from "./lib/cover-title-slide.js";
 import { convertLegacyPptToPptx } from "./lib/legacy-ppt.js";
 import { mergePptxBuffers } from "./lib/merge-pptx.js";
 import { fetchRemoteImage, sniffImageMimeType } from "./lib/remote-image.js";
@@ -408,12 +412,25 @@ async function buffersForSlide(slideData, warnings) {
   if (slideData.type === "hymn" && slideData.includeTitle) {
     buffers.push(
       await writeGeneratedDeck((pptx) => {
-        addHymnTitleSlide(
-          pptx,
-          slideData.hymnNumber,
-          slideData.hymnKorTitle,
-          slideData.hymnEngTitle
-        );
+        const titleThemeId = normalizeTitleThemeId(slideData.titleThemeId);
+        if (titleThemeId === "original") {
+          addHymnTitleSlide(
+            pptx,
+            slideData.hymnNumber,
+            slideData.hymnKorTitle,
+            slideData.hymnEngTitle
+          );
+        } else {
+          appendThemedCoverTitleSlide(pptx, {
+            titleThemeId,
+            kind: "hymn",
+            data: {
+              hymnNumber: slideData.hymnNumber,
+              hymnKorTitle: slideData.hymnKorTitle,
+              hymnEngTitle: slideData.hymnEngTitle,
+            },
+          });
+        }
       })
     );
   }
@@ -467,7 +484,7 @@ async function buffersForSlide(slideData, warnings) {
 
 // `warnings` collects the pictures that were skipped, so a combined deck can
 // report the same count as a single custom slide download.
-async function buildCombinedSlidesDeck(slides, warnings) {
+export async function buildCombinedSlidesDeck(slides, warnings) {
   const buffers = [];
   for (const rawSlide of slides) {
     buffers.push(
@@ -1219,6 +1236,7 @@ async function writeScripturePptxFile(body, slideName) {
   const pptx = buildPptx(payload, theme, {
     includeTitleSlide,
     titleSlideType,
+    titleThemeId: body?.titleThemeId,
     referenceText: buildScriptureReferenceText(payload.meta, body),
   });
 
@@ -1594,7 +1612,7 @@ function buildUploadSlideRecord({
   };
 }
 
-function buildPptx(payload, theme, options = {}) {
+export function buildPptx(payload, theme, options = {}) {
   const pptx = new PptxGenJS();
   pptx.layout = "LAYOUT_WIDE";
 
@@ -1611,10 +1629,24 @@ function buildPptx(payload, theme, options = {}) {
   const slideTheme = theme || getPptxTheme("dark");
 
   if (options.includeTitleSlide) {
-    if (options.titleSlideType === "봉독") {
-      addScriptureBongdokTitleSlide(pptx, payload, layout, options.referenceText);
+    const titleThemeId = normalizeTitleThemeId(options.titleThemeId);
+    if (titleThemeId === "original") {
+      if (options.titleSlideType === "봉독") {
+        addScriptureBongdokTitleSlide(pptx, payload, layout, options.referenceText);
+      } else {
+        addScriptureTitleSlide(pptx, payload, layout, options.referenceText);
+      }
     } else {
-      addScriptureTitleSlide(pptx, payload, layout, options.referenceText);
+      appendThemedCoverTitleSlide(pptx, {
+        titleThemeId,
+        kind:
+          options.titleSlideType === "봉독"
+            ? "scripture-reading"
+            : "scripture",
+        data: {
+          referenceText: options.referenceText,
+        },
+      });
     }
   }
 
@@ -2739,6 +2771,11 @@ async function mountFrontend() {
 
 await mountFrontend();
 
-httpServer.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server running on http://0.0.0.0:${PORT}`);
-});
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href
+) {
+  httpServer.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://0.0.0.0:${PORT}`);
+  });
+}
