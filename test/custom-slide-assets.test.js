@@ -269,7 +269,11 @@ test("isSupportedCustomImageUpload", async (t) => {
 
 test("resolveUploadsChildPath", async (t) => {
   await t.test("resolves uploads-relative paths", () => {
-    const uploadsDir = path.join("C:", "app", "uploads");
+    const uploadsDir = path.join(
+      path.parse(process.cwd()).root,
+      "app",
+      "uploads"
+    );
     assert.equal(
       resolveUploadsChildPath(uploadsDir, "/uploads/photo.png"),
       path.join(uploadsDir, "photo.png")
@@ -277,7 +281,11 @@ test("resolveUploadsChildPath", async (t) => {
   });
 
   await t.test("refuses anything that escapes the uploads directory", () => {
-    const uploadsDir = path.join("C:", "app", "uploads");
+    const uploadsDir = path.join(
+      path.parse(process.cwd()).root,
+      "app",
+      "uploads"
+    );
     assert.equal(resolveUploadsChildPath(uploadsDir, "/uploads/../server.js"), null);
     assert.equal(resolveUploadsChildPath(uploadsDir, "/uploads/a/../../server.js"), null);
     assert.equal(resolveUploadsChildPath(uploadsDir, "/etc/passwd"), null);
