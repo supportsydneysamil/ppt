@@ -1645,6 +1645,12 @@ body {
   min-width: 0;
 }
 
+.slide-list-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .slide-list-header h3 {
   margin: 0;
   font-size: 16px;
