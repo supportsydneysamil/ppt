@@ -3,11 +3,13 @@ import "@simonwep/pickr/dist/themes/nano.min.css";
 
 import { createRoot } from "react-dom/client";
 
+import * as customTitleDesignCatalog from "@lib/custom-title-design-catalog.js";
 import * as customTitleText from "@lib/custom-title-text.js";
 import * as titleSlideDate from "@lib/title-slide-date.js";
 import { CustomEditorChrome } from "./custom-editor-chrome.jsx";
 
 window.TitleSlideDate = titleSlideDate;
+window.CustomTitleDesignCatalog = customTitleDesignCatalog;
 window.CustomTitleText = customTitleText;
 
 const editorRoot = document.getElementById("customSlideEditor");
@@ -17,4 +19,4 @@ if (editorRoot && chromeHost) {
   createRoot(chromeHost).render(<CustomEditorChrome />);
 }
 
-import "./app.js";
+await import("./app.js");

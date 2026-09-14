@@ -982,42 +982,19 @@
               <div class="rte-panel">
                 <div class="rte-panel-label">디자인</div>
                 <div class="rte-panel-body">
-                  <div class="theme-option-grid" id="customTitleDesignGrid" role="list" aria-label="커스텀 타이틀 디자인 목록">
-                    <button type="button" class="theme-option-card is-active" data-custom-title-design="aurora">
-                      <span class="title-design-preview title-preview-aurora"><span>타이틀</span></span>
-                      <span class="theme-option-copy">
-                        <strong>오로라 그라디언트</strong>
-                        <small>바이올렛 · 틸 번짐</small>
-                      </span>
-                    </button>
-                    <button type="button" class="theme-option-card" data-custom-title-design="monolith">
-                      <span class="title-design-preview title-preview-monolith"><span>타이틀</span></span>
-                      <span class="theme-option-copy">
-                        <strong>모노리스</strong>
-                        <small>딥 블랙 · 명조 대제목</small>
-                      </span>
-                    </button>
-                    <button type="button" class="theme-option-card" data-custom-title-design="ivory">
-                      <span class="title-design-preview title-preview-ivory"><span>타이틀</span></span>
-                      <span class="theme-option-copy">
-                        <strong>아이보리 클래식</strong>
-                        <small>아이보리 · 이중 금테</small>
-                      </span>
-                    </button>
-                    <button type="button" class="theme-option-card" data-custom-title-design="marquee">
-                      <span class="title-design-preview title-preview-marquee"><span>타이틀</span></span>
-                      <span class="theme-option-copy">
-                        <strong>마키 프레임</strong>
-                        <small>버건디 · 금색 다이아</small>
-                      </span>
-                    </button>
-                  </div>
-                  <select id="customTitleDesign" class="hidden-select">
-                    <option value="aurora" selected>오로라 그라디언트</option>
-                    <option value="monolith">모노리스</option>
-                    <option value="ivory">아이보리 클래식</option>
-                    <option value="marquee">마키 프레임</option>
-                  </select>
+                  <div
+                    class="custom-title-category-group"
+                    id="customTitleDesignCategories"
+                    role="group"
+                    aria-label="커스텀 타이틀 디자인 카테고리"
+                  ></div>
+                  <div
+                    class="theme-option-grid custom-title-design-grid"
+                    id="customTitleDesignGrid"
+                    role="group"
+                    aria-label="커스텀 타이틀 디자인"
+                  ></div>
+                  <select id="customTitleDesign" class="hidden-select"></select>
                 </div>
               </div>
 
