@@ -89,6 +89,45 @@ test("toPortableTemplateSchema writes version 1 and drops local paths", () => {
   assert.equal(ad.adTitle, "주보");
 });
 
+test("unrestorableSlideNames treats embedded originalUrl as unrestorable", () => {
+  const portableShell = toPortableTemplateSchema({
+    name: "테스트",
+    slides: [baseSlide({ name: "placeholder" })],
+  });
+  portableShell.template.slides[0] = {
+    ...baseSlide({
+      name: "로컬 originalUrl",
+      type: "hymn",
+      sourceType: "upload",
+      fileName: "hymn.ppt",
+      originalUrl: "/uploads/hymn.ppt",
+    }),
+  };
+  delete portableShell.template.slides[0].id;
+
+  const direct = parseTemplateSchema(JSON.stringify(portableShell));
+  assert.equal(direct.ok, true);
+  assert.deepEqual(direct.unrestorableNames, ["로컬 originalUrl"]);
+  assert.equal(direct.schema.template.slides[0].originalUrl, null);
+
+  const exported = toPortableTemplateSchema({
+    name: "테스트",
+    slides: [
+      baseSlide({
+        name: "DATA originalUrl",
+        type: "hymn",
+        sourceType: "upload",
+        fileName: "hymn.ppt",
+        originalUrl: "DATA:application/vnd.ms-powerpoint;base64,AAAA",
+      }),
+    ],
+  });
+  const roundtrip = parseTemplateSchema(JSON.stringify(exported));
+  assert.equal(roundtrip.ok, true);
+  assert.deepEqual(roundtrip.unrestorableNames, ["DATA originalUrl"]);
+  assert.equal(roundtrip.schema.template.slides[0].originalUrl, null);
+});
+
 test("unrestorableSlideNames skips hymns with originalUrl", () => {
   const names = unrestorableSlideNames([
     baseSlide({
