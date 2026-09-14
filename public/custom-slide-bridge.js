@@ -154,6 +154,7 @@ export function createCustomEditorSession(options = {}) {
   let editor = null;
   let generation = 0;
   let activeSlideId = null;
+  let loadingSlideId = null;
   let loadDepth = 0;
 
   function ensureEditor() {
@@ -195,6 +196,7 @@ export function createCustomEditorSession(options = {}) {
     // Mid-load the canvas belongs to nobody: the outgoing slide must not be
     // serialized or marked saved from a canvas that is being overwritten.
     activeSlideId = null;
+    loadingSlideId = slideId;
 
     let instance;
     try {
@@ -212,6 +214,7 @@ export function createCustomEditorSession(options = {}) {
     } catch (error) {
       if (token === generation) {
         activeSlideId = null;
+        loadingSlideId = null;
       }
       throw error;
     }
@@ -221,6 +224,7 @@ export function createCustomEditorSession(options = {}) {
     }
 
     activeSlideId = slideId;
+    loadingSlideId = null;
     return { applied: true, dirty: instance.isDirty() };
   }
 
@@ -243,6 +247,9 @@ export function createCustomEditorSession(options = {}) {
     isActive(slideId) {
       return ownsSlide(slideId);
     },
+    isLoading(slideId) {
+      return slideId !== undefined && slideId === loadingSlideId;
+    },
     isDirty() {
       return editor ? editor.isDirty() : false;
     },
@@ -251,6 +258,13 @@ export function createCustomEditorSession(options = {}) {
         return null;
       }
       return editor.serialize();
+    },
+    async reset(slideId) {
+      if (!ownsSlide(slideId)) {
+        return false;
+      }
+      await editor.reset();
+      return ownsSlide(slideId);
     },
     markSaved(slideId) {
       if (!ownsSlide(slideId)) {
@@ -262,6 +276,7 @@ export function createCustomEditorSession(options = {}) {
     release() {
       generation += 1;
       activeSlideId = null;
+      loadingSlideId = null;
     },
   };
 }

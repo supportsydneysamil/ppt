@@ -179,6 +179,7 @@ describe("cover title theme picker UI", () => {
       app.indexOf("hymnLoadBtn.addEventListener")
     );
     const slide = { id: "new-slide" };
+    let currentSource = slide;
     const dependencies = {
       slideTypeSelect,
       prepareTitleSlideFields() {},
@@ -190,6 +191,7 @@ describe("cover title theme picker UI", () => {
       syncScriptureImageUI() {},
       slides: [slide],
       currentSlideId: slide.id,
+      getCurrentTypeChangeSource: () => currentSource,
       updateSettingsVisibility() {},
       showCustomSlideInEditor() {},
       releaseCustomEditorSlide() {},
@@ -214,6 +216,15 @@ describe("cover title theme picker UI", () => {
 
     assert.equal(getPicker(scriptureGrid), "original");
     assert.equal(getPicker(hymnGrid), "original");
+
+    currentSource = { ...slide, titleThemeId: "ivory" };
+    setPicker(scriptureGrid, "marquee");
+    slideTypeSelect.dispatchEvent(
+      new document.defaultView.Event("change", { bubbles: true })
+    );
+
+    assert.equal(getPicker(scriptureGrid), "ivory");
+    assert.equal(getPicker(hymnGrid), "ivory");
   });
 
   it("drives preview and dirty callbacks from real picker clicks", () => {
@@ -309,7 +320,7 @@ describe("cover title theme picker UI", () => {
     assert.equal(cacheHit(source, source, original, original), true);
     assert.match(app, /lastRenderedHymnTitle/);
     assert.match(functionBody(app, "applySlideSelection"), /renderPreview\(slide\)/);
-    assert.match(functionBody(app, "resetCurrentSlide"), /renderPreview\(slide\)/);
+    assert.match(functionBody(app, "confirmCurrentSlideReset"), /renderPreview\(\)/);
   });
 
   it("keeps both picker values in collected dirty-state drafts", () => {

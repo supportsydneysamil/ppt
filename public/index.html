@@ -341,7 +341,7 @@
             <h3>상세 설정</h3>
             <div class="editor-actions">
               <button id="editorCancelBtn" class="ghost small">취소</button>
-              <button id="editorResetBtn" class="ghost small">리셋</button>
+              <button id="editorResetBtn" class="ghost small">슬라이드 초기화</button>
               <button id="editorDeleteBtn" class="ghost small danger" style="display:none;">삭제</button>
               <button id="editorDownloadBtn" class="ghost small icon-btn" style="display:none;" title="PPTX 다운로드" aria-label="PPTX 다운로드">
                 <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -1377,6 +1377,34 @@
         <p class="hint modal-hint">
           변경 즉시 현재 화면 전체에 반영되며, 다음 방문 시에도 유지됩니다.
         </p>
+      </div>
+    </dialog>
+
+    <dialog
+      id="slideResetModal"
+      class="modal-dialog"
+      role="alertdialog"
+      aria-labelledby="slideResetTitle"
+      aria-describedby="slideResetDescription"
+    >
+      <div class="modal-card" id="slideResetCard" tabindex="-1">
+        <div class="modal-header">
+          <div>
+            <h3 id="slideResetTitle">슬라이드를 초기화할까요?</h3>
+            <p id="slideResetDescription">현재 입력한 내용, 디자인과 첨부파일이 이 슬라이드 타입의 초기값으로 변경됩니다. 저장하기 전에는 취소할 수 있습니다.</p>
+          </div>
+        </div>
+        <p
+          id="slideResetStatus"
+          class="hint"
+          role="status"
+          aria-live="polite"
+          hidden
+        ></p>
+        <div class="modal-actions">
+          <button type="button" id="slideResetBackBtn" class="ghost">돌아가기</button>
+          <button type="button" id="slideResetConfirmBtn" class="cta danger">초기화</button>
+        </div>
       </div>
     </dialog>
 

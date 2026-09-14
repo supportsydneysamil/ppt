@@ -388,4 +388,3 @@ git log --oneline --decorate -5
 ```
 
 Expected: no unexpected files, no whitespace errors, and only planned commits.
-

@@ -2,17 +2,24 @@
 // alias main.jsx uses rather than a server URL path.
 import {
   applyReorder,
+  buildResetSlideDraft,
+  canApplyResetDraft,
   createSnapshot,
+  CUSTOM_RESET_RETRY_MESSAGE,
   deriveSaveButtonState,
   getBooksUnavailableMessage,
   getBusyBlockMessage,
+  getResetDraftBlockMessage,
   isDiscardComplete,
   isSaveBusy,
+  isSlideAtResetDefaults,
   isSlideUnsaved,
   isSnapshotDirty,
   planDiscard,
   planReorder,
   REORDER_FAILURE_MESSAGE,
+  resolveAdjacentSlideId,
+  resolveCurrentSlideSource,
   runGuardedTransition,
   selectTransientPreviewFiles,
   shouldWarnBeforeUnload,
@@ -126,8 +133,12 @@ function fillScriptureBookSelects(preferred = {}) {
     return;
   }
 
-  const previousTestament = preferred.testament || testamentEl.value;
-  const previousBook = preferred.book || bookEl.value;
+  const hasPreferredTestament = Object.hasOwn(preferred, "testament");
+  const hasPreferredBook = Object.hasOwn(preferred, "book");
+  const previousTestament = hasPreferredTestament
+    ? preferred.testament
+    : testamentEl.value;
+  const previousBook = hasPreferredBook ? preferred.book : bookEl.value;
 
   testamentEl.innerHTML = "";
   dataCache.testaments.forEach((testament) => {
@@ -137,13 +148,19 @@ function fillScriptureBookSelects(preferred = {}) {
     testamentEl.appendChild(option);
   });
 
-  testamentEl.value =
-    previousTestament || dataCache.testaments[0]?.id || "";
+  if (hasPreferredTestament && !previousTestament) {
+    ensureEmptySelectValue(testamentEl, "구분 선택");
+  } else {
+    testamentEl.value =
+      previousTestament || dataCache.testaments[0]?.id || "";
+  }
 
-  fillScriptureBooks(previousBook);
+  fillScriptureBooks(previousBook, {
+    allowEmpty: hasPreferredBook && !previousBook,
+  });
 }
 
-function fillScriptureBooks(preferredBook) {
+function fillScriptureBooks(preferredBook, { allowEmpty = false } = {}) {
   const testamentEl = document.getElementById("scriptureTestament");
   const bookEl = document.getElementById("scriptureBook");
   if (!testamentEl || !bookEl || !dataCache) {
@@ -155,6 +172,9 @@ function fillScriptureBooks(preferredBook) {
   );
   bookEl.innerHTML = "";
   if (!selected) {
+    if (allowEmpty) {
+      ensureEmptySelectValue(bookEl, "책 선택");
+    }
     return;
   }
 
@@ -165,7 +185,9 @@ function fillScriptureBooks(preferredBook) {
     bookEl.appendChild(option);
   });
 
-  if (preferredBook) {
+  if (allowEmpty) {
+    ensureEmptySelectValue(bookEl, "책 선택");
+  } else if (preferredBook) {
     bookEl.value = preferredBook;
   }
 }
@@ -814,6 +836,11 @@ const duplicateSlideBtn = document.getElementById("duplicateSlideBtn");
 const editorSaveBtn = document.getElementById("editorSaveBtn");
 const editorResetBtn = document.getElementById("editorResetBtn");
 const editorCancelBtn = document.getElementById("editorCancelBtn");
+const slideResetModal = document.getElementById("slideResetModal");
+const slideResetCard = document.getElementById("slideResetCard");
+const slideResetBackBtn = document.getElementById("slideResetBackBtn");
+const slideResetConfirmBtn = document.getElementById("slideResetConfirmBtn");
+const slideResetStatus = document.getElementById("slideResetStatus");
 
 const editorDeleteBtn = document.getElementById("editorDeleteBtn");
 
@@ -911,6 +938,9 @@ let activeTemplateId = null;
 let currentSlideId = null;
 let slideBaselineSnapshot = null;
 let slideRuntimeDraft = {};
+// A confirmed reset is a replacement draft, not a mutation of the stored
+// slide. Keeping it separate also lets Cancel restore the saved record.
+let slideResetDraft = null;
 let slideDirty = false;
 // Canvas dirtiness for the custom slide the editor is currently attached to.
 // The canvas tracks it against its own saved baseline, so it is kept beside
@@ -1059,7 +1089,11 @@ function collectCurrentSlideDraft() {
   const savedSlide = slides.find((slide) => slide.id === currentSlideId);
   if (!savedSlide) return null;
 
-  const draft = { ...cloneSlide(savedSlide), ...slideRuntimeDraft };
+  const draftBase =
+    slideResetDraft?.id === currentSlideId
+      ? slideResetDraft.draft
+      : savedSlide;
+  const draft = { ...cloneSlide(draftBase), ...slideRuntimeDraft };
   draft.name = slideNameInput.value.trim();
   draft.type = slideTypeSelect.value;
 
@@ -1130,6 +1164,18 @@ function collectCurrentSlidePreviewDraft(slideOverride) {
   );
 }
 
+function isCurrentSlideAtResetDefaults(draft) {
+  if (!draft) return true;
+
+  if (draft.type === "custom") {
+    if (!customEditorModel) return false;
+    return isSlideAtResetDefaults(draft, {
+      customSlide: customEditorModel,
+    });
+  }
+  return isSlideAtResetDefaults(draft);
+}
+
 function refreshSaveState() {
   const draft = collectCurrentSlideDraft();
   const recordDirty = Boolean(
@@ -1165,12 +1211,19 @@ function refreshSaveState() {
     duplicateSlideBtn.disabled =
       !draft || duplicateInProgress || isSaveBusy(getSaveState());
   }
+  if (editorCancelBtn) {
+    editorCancelBtn.disabled = !slideDirty;
+  }
+  if (editorResetBtn) {
+    editorResetBtn.disabled = !draft || isCurrentSlideAtResetDefaults(draft);
+  }
 }
 
 function resetEditorSelection() {
   currentSlideId = null;
   slideBaselineSnapshot = null;
   slideRuntimeDraft = {};
+  slideResetDraft = null;
   slideDirty = false;
   clearTransientSlideFileInputs();
   // Detach the canvas so a later stray change cannot touch the slide that was
@@ -1318,6 +1371,7 @@ async function discardPendingChanges() {
     renderSlideList();
   } else if (plan.repopulateSlide && current) {
     slideRuntimeDraft = {};
+    slideResetDraft = null;
     populateEditor(current);
     slideBaselineSnapshot = createSnapshot(collectCurrentSlideDraft());
     renderPreview(current);
@@ -1728,8 +1782,16 @@ function cleanupPreviewResources() {
 }
 
 // --- Event Listeners for Hymn Type ---
+function getCurrentTypeChangeSource() {
+  return resolveCurrentSlideSource({
+    currentSlideId,
+    slides,
+    resetDraft: slideResetDraft,
+  });
+}
+
 slideTypeSelect.addEventListener('change', () => {
-  const current = slides.find((slide) => slide.id === currentSlideId);
+  const current = getCurrentTypeChangeSource();
   restoreCoverThemePickers(
     hymnTitleThemeGrid,
     scriptureTitleThemeGrid,
@@ -1742,7 +1804,7 @@ slideTypeSelect.addEventListener('change', () => {
     maybeAutoNameCustomTitleSlide();
   }
   if (slideTypeSelect.value === 'scripture') {
-    fillScriptureBookSelects();
+    fillScriptureBookSelects(getCurrentTypeChangeSource() || {});
     if (scriptureIncludeTitle) scriptureIncludeTitle.checked = true;
     setScriptureTitleSlideType("말씀");
     syncScriptureTitleTypeUi();
@@ -2904,7 +2966,7 @@ function renderPreview(slideOverride) {
       };
       data.sourceType = 'upload';
     } else if (type === 'scripture') {
-      const current = slides.find((s) => s.id === currentSlideId) || {};
+      const current = getCurrentTypeChangeSource() || {};
       data = {
         ...current,
         type: 'scripture',
@@ -3517,8 +3579,9 @@ function applySlideSelection(id) {
   if (slide) {
     emptyEditorState.style.display = "none";
     slideEditor.style.display = "flex";
-    populateEditor(slide);
     slideRuntimeDraft = {};
+    slideResetDraft = null;
+    populateEditor(slide);
     slideBaselineSnapshot = isSlideUnsaved(slide)
       ? null
       : createSnapshot(collectCurrentSlideDraft());
@@ -3533,6 +3596,7 @@ function applySlideSelection(id) {
     slideEditor.style.display = "none";
     slideBaselineSnapshot = null;
     slideRuntimeDraft = {};
+    slideResetDraft = null;
     slideDirty = false;
     refreshSaveState();
     renderSlideList();
@@ -3548,7 +3612,10 @@ function clearTransientSlideFileInputs() {
 // `reloadCustomCanvas` is only turned off right after a successful custom save,
 // where the canvas already holds exactly what was committed and reloading it
 // would needlessly drop the user's selection.
-function populateEditor(slide, { reloadCustomCanvas = true } = {}) {
+function populateEditor(
+  slide,
+  { reloadCustomCanvas = true, useExactDefaults = false } = {}
+) {
   clearTransientSlideFileInputs();
   slide.titleThemeId = normalizeCoverTitleThemeId(slide.titleThemeId);
   slideNameInput.value = slide.name;
@@ -3579,13 +3646,23 @@ function populateEditor(slide, { reloadCustomCanvas = true } = {}) {
     }
   } else if (slide.type === 'scripture') {
     populateScriptureEditor(slide);
+    if (useExactDefaults && !slide.testament) {
+      ensureEmptySelectValue(scriptureTestamentSelect, "구분 선택");
+    }
+    if (useExactDefaults && !slide.book) {
+      ensureEmptySelectValue(scriptureBookSelect, "책 선택");
+    }
   } else if (slide.type === 'title') {
 
     titleDesignSelect.value = normalizeTitleDesign(slide.titleDesign);
     syncTitleDesignCards(titleDesignSelect.value);
-    titleChurchNameInput.value = slide.churchName || rememberedChurchName();
+    titleChurchNameInput.value =
+      slide.churchName || (useExactDefaults ? "" : rememberedChurchName());
     titleSubtitleInput.value = slide.titleSubtitle || '';
-    ensureTitleServiceDateOptions(slide.serviceDate || defaultServiceDate());
+    ensureTitleServiceDateOptions(
+      slide.serviceDate || (useExactDefaults ? "" : defaultServiceDate()),
+      { allowEmpty: useExactDefaults }
+    );
     updateTitleSeasonSuggestion();
   } else if (slide.type === 'custom-title') {
     customTitleDesignSelect.value = normalizeCustomTitleDesign(
@@ -3766,7 +3843,18 @@ function syncTitleDesignCards(value) {
   });
 }
 
-function ensureTitleServiceDateOptions(selectedIso) {
+function ensureEmptySelectValue(select, label) {
+  if (!select) return;
+  if (![...select.options].some((option) => option.value === "")) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = label;
+    select.prepend(option);
+  }
+  select.value = "";
+}
+
+function ensureTitleServiceDateOptions(selectedIso, { allowEmpty = false } = {}) {
   const api = titleDateApi();
   if (!api || !titleServiceDateSelect) return;
 
@@ -3775,10 +3863,16 @@ function ensureTitleServiceDateOptions(selectedIso) {
     selectedIso && !sundays.includes(selectedIso)
       ? [selectedIso, ...sundays]
       : sundays;
-  const signature = values.join(",");
+  const signature = `${allowEmpty ? "empty|" : ""}${values.join(",")}`;
 
   if (titleServiceDateSelect.dataset.signature !== signature) {
     titleServiceDateSelect.innerHTML = "";
+    if (allowEmpty) {
+      const option = document.createElement("option");
+      option.value = "";
+      option.textContent = "날짜 선택";
+      titleServiceDateSelect.appendChild(option);
+    }
     values.forEach((iso) => {
       const option = document.createElement("option");
       option.value = iso;
@@ -3788,7 +3882,8 @@ function ensureTitleServiceDateOptions(selectedIso) {
     titleServiceDateSelect.dataset.signature = signature;
   }
 
-  titleServiceDateSelect.value = selectedIso || values[0] || "";
+  titleServiceDateSelect.value =
+    selectedIso || (allowEmpty ? "" : values[0] || "");
 }
 
 function updateTitleSeasonSuggestion() {
@@ -4425,6 +4520,7 @@ let customSlideBridge = null;
 let customSlideBridgePromise = null;
 let customEditorSession = null;
 let customEditorSessionPromise = null;
+let customEditorModel = null;
 
 function loadCustomSlideBridge() {
   if (!customSlideBridgePromise) {
@@ -4499,10 +4595,11 @@ function ensureCustomEditorSession() {
   return customEditorSessionPromise;
 }
 
-function handleCustomEditorChange({ slideId, dirty }) {
+function handleCustomEditorChange({ slideId, model, dirty }) {
   if (!slideId || slideId !== currentSlideId) {
     return;
   }
+  customEditorModel = copyCustomSlideModel(model);
   customEditorDirty = Boolean(dirty);
   // Same path as a keystroke in the form: the guard, the save buttons and the
   // beforeunload warning all read the state this recomputes.
@@ -4516,6 +4613,7 @@ function showCustomSlideInEditor(slide, { markSaved = Boolean(slide?.saved) } = 
 
   const slideId = slide.id;
   const model = copyCustomSlideModel(slide.customSlide) || emptyCustomSlideModel();
+  customEditorModel = null;
 
   return ensureCustomEditorSession()
     .then((session) => session.showSlide(slideId, model, { markSaved }))
@@ -4523,6 +4621,7 @@ function showCustomSlideInEditor(slide, { markSaved = Boolean(slide?.saved) } = 
       if (!result?.applied || slideId !== currentSlideId) {
         return;
       }
+      customEditorModel = copyCustomSlideModel(model);
       customEditorDirty = Boolean(result.dirty);
       refreshSaveState();
     })
@@ -4533,6 +4632,7 @@ function showCustomSlideInEditor(slide, { markSaved = Boolean(slide?.saved) } = 
 }
 
 function releaseCustomEditorSlide() {
+  customEditorModel = null;
   customEditorDirty = false;
   if (customEditorSession) {
     customEditorSession.release();
@@ -4647,19 +4747,137 @@ function toggleBgMode(source) {
   setHidden(dimOverlayRow, !hasImage);
 }
 
+function closeSlideResetDialog({ restoreFocus = true } = {}) {
+  if (slideResetModal.open) {
+    slideResetModal.close();
+  }
+  if (restoreFocus) {
+    const focusTarget = editorResetBtn.disabled
+      ? slideNameInput
+      : editorResetBtn;
+    if (focusTarget && !focusTarget.disabled) {
+      focusTarget.focus();
+    }
+  }
+}
+
+function setSlideResetDialogBusy(busy) {
+  const hadFocusInside =
+    busy && slideResetModal.contains(document.activeElement);
+  slideResetBackBtn.disabled = busy;
+  slideResetConfirmBtn.disabled = busy;
+  if (busy) {
+    slideResetModal.setAttribute("aria-busy", "true");
+    if (slideResetStatus) {
+      slideResetStatus.hidden = false;
+      slideResetStatus.textContent = "초기화하는 중입니다…";
+    }
+    if (hadFocusInside && slideResetCard) {
+      slideResetCard.focus();
+    }
+  } else {
+    slideResetModal.removeAttribute("aria-busy");
+    if (slideResetStatus) {
+      slideResetStatus.textContent = "";
+      slideResetStatus.hidden = true;
+    }
+  }
+}
+
 function resetCurrentSlide() {
   if (!currentSlideId) return;
   if (blockedBySaveInProgress()) return;
-  const slide = slides.find((s) => s.id === currentSlideId);
-  // Reset fields to last saved state
-  populateEditor(slide);
-  slideRuntimeDraft = {};
-  renderPreview(slide);
-  slideBaselineSnapshot = isSlideUnsaved(slide)
-    ? null
-    : createSnapshot(collectCurrentSlideDraft());
-  refreshSaveState();
-  updateButtonsState(slide);
+  if (!slideResetModal.open) {
+    slideResetModal.showModal();
+    slideResetBackBtn.focus();
+  }
+}
+
+async function confirmCurrentSlideReset() {
+  if (!currentSlideId || blockedBySaveInProgress()) {
+    closeSlideResetDialog();
+    return;
+  }
+
+  const slideId = currentSlideId;
+  const currentDraft = collectCurrentSlideDraft();
+  if (!currentDraft) {
+    closeSlideResetDialog();
+    return;
+  }
+  const resetDraft = buildResetSlideDraft(currentDraft);
+  const storedSlide = slides.find((slide) => slide.id === slideId);
+  const resetStateDraft =
+    storedSlide?.saved &&
+    storedSlide.type === resetDraft.type &&
+    isSlideAtResetDefaults(storedSlide)
+      ? {
+          ...storedSlide,
+          id: resetDraft.id,
+          name: resetDraft.name,
+          type: resetDraft.type,
+          saved: resetDraft.saved,
+        }
+      : resetDraft;
+
+  setSlideResetDialogBusy(true);
+  try {
+    if (resetDraft.type === "custom") {
+      // Let the browser paint aria-busy and the card focus before canvas work.
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const session = await ensureCustomEditorSession();
+      if (session.isLoading(slideId)) {
+        showToast("커스텀 슬라이드를 불러오는 중입니다. 완료 후 다시 시도해 주세요.");
+        closeSlideResetDialog();
+        return;
+      }
+      if (!session.isActive(slideId)) {
+        showToast("커스텀 편집기가 준비되지 않았습니다. 잠시 후 다시 시도해 주세요.");
+        closeSlideResetDialog();
+        return;
+      }
+      if (!(await session.reset(slideId))) {
+        showToast(CUSTOM_RESET_RETRY_MESSAGE);
+        closeSlideResetDialog();
+        return;
+      }
+    }
+    const resetBlockInput = {
+      expectedSlideId: slideId,
+      currentSlideId,
+      saveState: getSaveState(),
+    };
+    if (!canApplyResetDraft(resetBlockInput)) {
+      showToast(getResetDraftBlockMessage(resetBlockInput));
+      closeSlideResetDialog();
+      return;
+    }
+
+    slideRuntimeDraft = {};
+    slideResetDraft = { id: slideId, draft: resetStateDraft };
+    populateEditor(resetDraft, {
+      reloadCustomCanvas: false,
+      useExactDefaults: true,
+    });
+    renderPreview();
+    updateButtonsState(resetDraft);
+    refreshSaveState();
+    const hasChangesToSave = !editorSaveBtn.disabled;
+    closeSlideResetDialog({ restoreFocus: false });
+    if (hasChangesToSave) {
+      editorSaveBtn.focus();
+      showToast("슬라이드를 초기화했습니다. 저장하기 전에는 취소할 수 있습니다.");
+    } else {
+      slideNameInput.focus();
+      showToast("슬라이드가 저장된 초기 상태로 돌아왔습니다.");
+    }
+  } catch (error) {
+    console.error("슬라이드 초기화 실패:", error);
+    alert("슬라이드를 초기화하지 못했습니다: " + error.message);
+    closeSlideResetDialog();
+  } finally {
+    setSlideResetDialogBusy(false);
+  }
 }
 
 function updateButtonsState(slide) {
@@ -5305,6 +5523,7 @@ async function saveCurrentSlide({ silent = false } = {}) {
       const canvasInPlace = markCustomEditorSaved(slide.id);
       populateEditor(slide, { reloadCustomCanvas: !canvasInPlace });
       slideRuntimeDraft = {};
+      slideResetDraft = null;
       slideBaselineSnapshot = createSnapshot(collectCurrentSlideDraft());
       updateButtonsState(slide);
     }
@@ -5990,6 +6209,20 @@ duplicateSlideBtn.addEventListener("click", duplicateCurrentSlide);
 editorSaveBtn.addEventListener("click", () => saveCurrentSlide());
 editorResetBtn.addEventListener("click", resetCurrentSlide);
 editorCancelBtn.addEventListener("click", cancelEdit);
+slideResetBackBtn.addEventListener("click", () => closeSlideResetDialog());
+slideResetConfirmBtn.addEventListener("click", () => {
+  confirmCurrentSlideReset();
+});
+slideResetModal.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  if (slideResetConfirmBtn.disabled) return;
+  closeSlideResetDialog();
+});
+slideResetModal.addEventListener("click", (event) => {
+  if (event.target === slideResetModal && !slideResetConfirmBtn.disabled) {
+    closeSlideResetDialog();
+  }
+});
 
 async function deleteCurrentSlide() {
   if (!currentSlideId) return;
@@ -6021,22 +6254,35 @@ async function deleteCurrentSlide() {
   }
 }
 
-// Closing the editor is the same decision as leaving it, so it goes through
-// the one guard instead of its own confirm.
+// Cancel restores the current slide in place. It is not navigation, so it
+// must not go through the unsaved-changes guard.
 function cancelEdit() {
-  if (!currentSlideId) return Promise.resolve(true);
+  if (!currentSlideId) return;
+  if (blockedBySaveInProgress()) return;
 
-  return guardTransition(async () => {
-    const slide = slides.find((s) => s.id === currentSlideId);
-    if (isSlideUnsaved(slide)) {
-      slides = slides.filter((s) => s.id !== currentSlideId);
-      syncWorkingSlidesToState();
+  const slide = slides.find((s) => s.id === currentSlideId);
+  if (!slide) return;
+
+  if (isSlideUnsaved(slide)) {
+    const neighborId = resolveAdjacentSlideId(slides, currentSlideId);
+    slides = slides.filter((entry) => entry.id !== currentSlideId);
+    syncWorkingSlidesToState();
+    if (neighborId) {
+      applySlideSelection(neighborId);
+    } else {
+      resetEditorSelection();
+      renderSlideList();
     }
-    // resetEditorSelection() detaches the custom canvas and refreshes the
-    // buttons, so closing the editor needs nothing else here.
-    resetEditorSelection();
-    renderSlideList();
-  });
+    return;
+  }
+
+  slideRuntimeDraft = {};
+  slideResetDraft = null;
+  populateEditor(slide);
+  slideBaselineSnapshot = createSnapshot(collectCurrentSlideDraft());
+  renderPreview(slide);
+  updateButtonsState(slide);
+  refreshSaveState();
 }
 
 editorDeleteBtn.addEventListener("click", deleteCurrentSlide);

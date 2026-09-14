@@ -25,6 +25,7 @@ describe("cover title theme browser state", () => {
       currentSlideId: "slide-1",
       cloneSlide: (slide) => ({ ...slide }),
       slideRuntimeDraft: { titleThemeId: "ivory" },
+      slideResetDraft: null,
       slideNameInput: { value: "찬송" },
       slideTypeSelect: { value: "hymn" },
       collectScriptureSlideFields() {
@@ -77,6 +78,7 @@ describe("cover title theme browser state", () => {
       currentSlideId: "slide-1",
       cloneSlide: (slide) => ({ ...slide }),
       slideRuntimeDraft: { titleThemeId: "ivory" },
+      slideResetDraft: null,
       slideNameInput: { value: "성경 말씀" },
       slideTypeSelect: { value: "scripture" },
       collectScriptureSlideFields,
