@@ -922,6 +922,9 @@ const adBgOpacityValue = document.getElementById("adBgOpacityValue");
 const bgSettings = document.getElementById("bgSettings");
 const dimOverlayRow = document.getElementById("dimOverlayRow");
 const titleSlideSettings = document.getElementById("titleSlideSettings");
+const titleDesignCategoryGroup = document.getElementById(
+  "titleDesignCategoryGroup"
+);
 const titleDesignGrid = document.getElementById("titleDesignGrid");
 const titleDesignSelect = document.getElementById("titleDesign");
 const titleChurchNameInput = document.getElementById("titleChurchName");
@@ -3702,8 +3705,12 @@ function populateEditor(
       ensureEmptySelectValue(scriptureBookSelect, "책 선택");
     }
   } else if (slide.type === 'title') {
-    titleDesignSelect.value = normalizeTitleDesign(slide.titleDesign);
-    syncTitleDesignCards(titleDesignSelect.value);
+    initializeTitleDesignPicker(
+      titleDesignCategoryGroup,
+      titleDesignGrid,
+      titleDesignSelect,
+      slide.titleDesign
+    );
     const textApi = titleTextApi();
     titleChurchNameInput.value =
       slide.churchName || (useExactDefaults ? "" : rememberedChurchName());
@@ -3864,6 +3871,10 @@ function titleTextApi() {
   return window.TitleSlideText;
 }
 
+function titleSlideCatalogApi() {
+  return window.TitleSlideDesignCatalog;
+}
+
 function normalizeTitleDesign(value) {
   return titleTextApi().normalizeTitleDesign(value);
 }
@@ -3921,8 +3932,140 @@ function rememberChurchName(value) {
 function syncTitleDesignCards(value) {
   if (!titleDesignGrid) return;
   titleDesignGrid.querySelectorAll("[data-title-design]").forEach((card) => {
-    card.classList.toggle("is-active", card.dataset.titleDesign === value);
+    const selected = card.dataset.titleDesign === value;
+    card.classList.toggle("is-active", selected);
+    card.setAttribute("aria-pressed", String(selected));
   });
+}
+
+function createTitleDesignCard(design, selectedId) {
+  const card = document.createElement("button");
+  card.type = "button";
+  card.className = "theme-option-card";
+  card.dataset.titleDesign = design.id;
+  card.setAttribute("aria-label", `${design.name} 디자인`);
+  const selected = design.id === selectedId;
+  card.classList.toggle("is-active", selected);
+  card.setAttribute("aria-pressed", String(selected));
+
+  const preview = buildTitleSlidePreview(
+    {
+      titleDesign: design.id,
+      titleKo: "주일예배",
+      titleEn: null,
+      churchName: "",
+      titleSubtitle: "",
+      showDate: false,
+      serviceDate: "",
+    },
+    180
+  );
+  preview.classList.add("title-design-preview", "custom-title-card-preview");
+  card.appendChild(preview);
+
+  const copy = document.createElement("span");
+  copy.className = "theme-option-copy";
+  const name = document.createElement("strong");
+  name.textContent = design.name;
+  const description = document.createElement("small");
+  description.textContent = design.description;
+  copy.append(name, description);
+  card.appendChild(copy);
+  return card;
+}
+
+function renderTitleDesignCards(designGrid, designs, selectedId) {
+  designGrid.replaceChildren(
+    ...designs.map((design) => createTitleDesignCard(design, selectedId))
+  );
+}
+
+function initializeTitleDesignPicker(
+  categoryGroup,
+  designGrid,
+  designSelect,
+  value
+) {
+  const api = titleSlideCatalogApi();
+  if (!api || !categoryGroup || !designGrid || !designSelect) return "chapel";
+
+  const hiddenThanksgiving = value === "thanksgiving";
+  const selectedId = hiddenThanksgiving
+    ? "thanksgiving"
+    : api.normalizeTitleDesignId(value);
+  const selectedCategory =
+    (!hiddenThanksgiving && api.findTitleDesignCategory(selectedId)) ||
+    api.findTitleDesignCategory(api.DEFAULT_TITLE_DESIGN_ID);
+
+  categoryGroup.replaceChildren();
+  for (const category of api.TITLE_SLIDE_DESIGN_CATEGORIES) {
+    const designs = api.listTitleDesignsByCategory(category.id);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "custom-title-category-button";
+    button.dataset.titleDesignCategory = category.id;
+    button.textContent = `${category.name} ${designs.length}`;
+    button.setAttribute("aria-label", `${category.name} 디자인 보기`);
+    const active = category.id === selectedCategory.id;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", String(active));
+    categoryGroup.appendChild(button);
+  }
+
+  designSelect.replaceChildren();
+  for (const design of api.TITLE_SLIDE_DESIGN_CATALOG) {
+    const option = document.createElement("option");
+    option.value = design.id;
+    option.textContent = design.name;
+    designSelect.appendChild(option);
+  }
+  if (hiddenThanksgiving) {
+    const option = document.createElement("option");
+    option.value = "thanksgiving";
+    option.textContent = "추수 감사";
+    designSelect.appendChild(option);
+  }
+  designSelect.value = selectedId;
+  renderTitleDesignCards(
+    designGrid,
+    api.listTitleDesignsByCategory(selectedCategory.id),
+    hiddenThanksgiving ? null : selectedId
+  );
+  return selectedId;
+}
+
+function filterTitleDesignCategory(
+  categoryGroup,
+  designGrid,
+  designSelect,
+  categoryId,
+  render,
+  refreshDirty
+) {
+  const api = titleSlideCatalogApi();
+  if (!api) return;
+  const designs = api.listTitleDesignsByCategory(categoryId);
+  if (!designs.length) return;
+
+  categoryGroup
+    .querySelectorAll("[data-title-design-category]")
+    .forEach((button) => {
+      const active = button.dataset.titleDesignCategory === categoryId;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-pressed", String(active));
+    });
+
+  const includesCurrent = designs.some(
+    (design) => design.id === designSelect.value
+  );
+  if (!includesCurrent) {
+    designSelect.value = designs[0].id;
+  }
+  renderTitleDesignCards(designGrid, designs, designSelect.value);
+  if (!includesCurrent) {
+    render();
+    refreshDirty();
+  }
 }
 
 function ensureEmptySelectValue(select, label) {
@@ -4577,6 +4720,124 @@ function buildDeepFogPreview(container, content, unit) {
   }
 }
 
+function buildCatalogFamilyPreview(container, content, unit, design) {
+  const { inch, pt } = unit;
+  const { theme, layoutFamily: family } = design;
+  const color = (hex) => `#${hex}`;
+  container.style.background = design.asset
+    ? `linear-gradient(rgba(0,0,0,.32),rgba(0,0,0,.32)),url("/${design.asset.path}") center/cover`
+    : `linear-gradient(145deg,${color(theme.background)},${color(theme.backgroundAccent)})`;
+
+  const addRule = (css) => container.appendChild(titlePreviewRule(css));
+  if (family === "centered-rule") {
+    addRule(
+      `position:absolute;left:${inch(3.4)}px;top:${inch(1.15)}px;width:${inch(6.5)}px;height:1px;background:${color(theme.rule)};`
+    );
+  } else if (family === "double-frame") {
+    addRule(
+      `position:absolute;inset:${inch(0.38)}px;border:1px solid ${color(theme.rule)};`
+    );
+    addRule(
+      `position:absolute;inset:${inch(0.52)}px;border:1px solid ${color(theme.rule)};opacity:.6;`
+    );
+  } else if (family === "side-band") {
+    addRule(
+      `position:absolute;left:0;top:0;width:${inch(0.42)}px;height:100%;background:${color(theme.accent)};`
+    );
+  } else if (family === "horizon-split") {
+    addRule(
+      `position:absolute;left:0;right:0;top:${inch(5.55)}px;bottom:0;background:${color(theme.backgroundAccent)};opacity:.82;`
+    );
+  } else if (family === "emblem-crest") {
+    addRule(
+      `position:absolute;left:${inch(5.4)}px;top:${inch(1.05)}px;width:${inch(2.5)}px;height:1px;background:${color(theme.rule)};`
+    );
+  } else if (family === "veil-panel") {
+    addRule(
+      `position:absolute;left:${inch(2.4)}px;top:0;width:${inch(8.5)}px;height:100%;background:${color(theme.background)};opacity:.7;`
+    );
+  } else if (family === "corner-mark") {
+    addRule(
+      `position:absolute;left:${inch(0.55)}px;top:${inch(0.55)}px;width:${inch(1.15)}px;height:${inch(0.75)}px;border-left:1px solid ${color(theme.rule)};border-top:1px solid ${color(theme.rule)};`
+    );
+    addRule(
+      `position:absolute;right:${inch(0.55)}px;bottom:${inch(0.55)}px;width:${inch(1.15)}px;height:${inch(0.75)}px;border-right:1px solid ${color(theme.rule)};border-bottom:1px solid ${color(theme.rule)};`
+    );
+  }
+
+  if (design.id === "lent-veil") {
+    container.appendChild(
+      titlePreviewMotif(
+        `position:absolute;left:${inch(0.55)}px;top:${inch(0.9)}px;width:${inch(0.22)}px;height:${inch(5.4)}px;border-radius:${inch(0.08)}px;background:${color(theme.accent)};`
+      )
+    );
+  } else if (design.id === "palm-procession") {
+    container.appendChild(
+      titlePreviewMotif(
+        `position:absolute;right:${inch(0.68)}px;top:${inch(0.55)}px;width:${inch(1.1)}px;height:${inch(1.1)}px;background:${color(theme.accent)};opacity:.8;clip-path:polygon(0 0,100% 50%,0 100%,28% 50%);transform:rotate(28deg);`
+      )
+    );
+  } else if (design.id === "new-year-blessing") {
+    container.appendChild(
+      titlePreviewMotif(
+        `position:absolute;left:${inch(6.45)}px;top:${inch(0.42)}px;width:${inch(0.42)}px;height:${inch(0.42)}px;background:${color(theme.accent)};transform:rotate(45deg);`
+      )
+    );
+  }
+
+  const left = family === "side-band";
+  const panel = family === "veil-panel";
+  const x = left ? 0.95 : panel ? 2.7 : 1;
+  const w = left ? 11.2 : panel ? 7.9 : 11.33;
+  const align = left ? "left" : "center";
+  const koY = family === "horizon-split" ? 1.85 : 2.25;
+  const text = (value, y, size, textColor, font = TITLE_SANS) => {
+    if (!value) return;
+    container.appendChild(
+      titlePreviewNode(
+        `position:absolute;left:${inch(x)}px;top:${inch(y)}px;width:${inch(w)}px;text-align:${align};` +
+          `font-family:${font};font-weight:700;font-size:${pt(size)}px;color:${textColor};`,
+        value
+      )
+    );
+  };
+
+  text(
+    content.church,
+    family === "horizon-split" ? 5.82 : 0.72,
+    17,
+    color(theme.muted)
+  );
+  text(
+    content.ko,
+    koY,
+    titleKoFontSize(content.ko, 72, w),
+    color(theme.title),
+    theme.titleFont === "serif" ? TITLE_SERIF : TITLE_SANS
+  );
+  text(content.subtitle, koY + 1.32, 20, color(theme.muted));
+  if (content.en) {
+    const ruleWidth = left ? 1.6 : 2.7;
+    const ruleLeft = left ? x : x + (w - ruleWidth) / 2;
+    addRule(
+      `position:absolute;left:${inch(ruleLeft)}px;top:${inch(koY + 1.9)}px;width:${inch(ruleWidth)}px;height:1px;background:${color(theme.rule)};`
+    );
+    text(
+      content.en,
+      koY + 2.03,
+      titleEnFontSize(content.en, 16, w),
+      color(theme.accent),
+      TITLE_LATIN
+    );
+  }
+  text(
+    content.koDate,
+    family === "horizon-split" ? 6.55 : 6.62,
+    15,
+    color(theme.muted)
+  );
+}
+
 function buildTitleSlidePreview(data, previewWidth) {
   const width = previewWidth || 400;
   const perInch = width / 13.333;
@@ -4619,7 +4880,17 @@ function buildTitleSlidePreview(data, previewWidth) {
     "slate-split": buildSlateSplitPreview,
     "deep-fog": buildDeepFogPreview,
   };
-  builders[design](container, content, unit);
+  const builder = builders[design];
+  if (builder) {
+    builder(container, content, unit);
+  } else {
+    const catalogDesign = titleSlideCatalogApi()?.findTitleDesign(design);
+    if (catalogDesign && catalogDesign.layoutFamily !== "legacy") {
+      buildCatalogFamilyPreview(container, content, unit, catalogDesign);
+    } else {
+      buildChapelPreview(container, content, unit);
+    }
+  }
 
   return container;
 }
@@ -6744,8 +7015,12 @@ function prepareTitleSlideFields() {
     titleChurchNameInput.value = rememberedChurchName();
   }
   if (slide?.type !== "title") {
-    titleDesignSelect.value = normalizeTitleDesign(slide?.titleDesign);
-    syncTitleDesignCards(titleDesignSelect.value);
+    initializeTitleDesignPicker(
+      titleDesignCategoryGroup,
+      titleDesignGrid,
+      titleDesignSelect,
+      slide?.titleDesign
+    );
     const textApi = titleTextApi();
     titleKoInput.value =
       slide?.titleKo == null ? textApi.defaultTitleKo() : slide.titleKo;
@@ -6769,6 +7044,27 @@ function prepareTitleSlideFields() {
   }
   updateTitleSeasonSuggestion();
   maybeAutoNameTitleSlide();
+}
+
+if (titleDesignCategoryGroup && titleDesignGrid && titleDesignSelect) {
+  initializeTitleDesignPicker(
+    titleDesignCategoryGroup,
+    titleDesignGrid,
+    titleDesignSelect,
+    titleDesignSelect.value
+  );
+  titleDesignCategoryGroup.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-title-design-category]");
+    if (!button) return;
+    filterTitleDesignCategory(
+      titleDesignCategoryGroup,
+      titleDesignGrid,
+      titleDesignSelect,
+      button.dataset.titleDesignCategory,
+      renderPreview,
+      refreshSaveState
+    );
+  });
 }
 
 if (titleDesignGrid) {

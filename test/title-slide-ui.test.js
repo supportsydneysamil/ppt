@@ -12,21 +12,6 @@ const [html, css, app, main, server] = await Promise.all([
   fs.readFile(new URL("../server.js", import.meta.url), "utf8"),
 ]);
 
-const designIds = [
-  "chapel",
-  "editorial",
-  "glow",
-  "easter-dawn",
-  "easter-stained",
-  "christmas-burgundy",
-  "christmas-evergreen",
-  "thanksgiving",
-  "advent",
-  "midnight-slab",
-  "slate-split",
-  "deep-fog",
-];
-
 function functionSource(name) {
   const start = app.indexOf(`function ${name}(`);
   assert.notEqual(start, -1, `missing ${name}`);
@@ -35,26 +20,33 @@ function functionSource(name) {
 }
 
 describe("Sunday worship title editor", () => {
-  it("shows all twelve design cards and options in the approved order", () => {
-    const cardIds = Array.from(
-      html.matchAll(/data-title-design="([^"]+)"/g),
-      (match) => match[1]
-    );
-    assert.deepEqual(cardIds, designIds);
-
+  it("hosts empty category and card containers for catalog rendering", () => {
+    assert.match(html, /id="titleDesignCategoryGroup"/);
+    assert.match(html, /id="titleDesignGrid"/);
+    assert.equal([...html.matchAll(/data-title-design="/g)].length, 0);
     const select = html.match(
       /<select id="titleDesign"[\s\S]*?<\/select>/
     )?.[0];
     assert.ok(select, "missing title design select");
-    const optionIds = Array.from(
-      select.matchAll(/<option value="([^"]+)"/g),
-      (match) => match[1]
-    );
-    assert.deepEqual(optionIds, designIds);
+    assert.equal([...select.matchAll(/<option /g)].length, 0);
+  });
 
-    for (const design of designIds.slice(3)) {
-      assert.match(css, new RegExp(`\\.title-preview-${design}`));
-    }
+  it("exposes the Sunday title catalog on window", () => {
+    assert.match(main, /window\.TitleSlideDesignCatalog\s*=/);
+    assert.match(app, /window\.TitleSlideDesignCatalog/);
+  });
+
+  it("switches categories to their first card and keeps thanksgiving hidden", () => {
+    const filter = functionSource("filterTitleDesignCategory");
+    assert.match(filter, /listTitleDesignsByCategory/);
+    assert.match(filter, /designs\[0\]\.id/);
+    assert.match(filter, /render\(\)/);
+    assert.match(filter, /refreshDirty\(\)/);
+
+    const initialize = functionSource("initializeTitleDesignPicker");
+    assert.match(initialize, /value\s*===\s*["']thanksgiving["']/);
+    assert.match(initialize, /DEFAULT_TITLE_DESIGN_ID/);
+    assert.doesNotMatch(initialize, /TITLE_SLIDE_DESIGN_IDS.*thanksgiving/);
   });
 
   it("provides title, date visibility, mode, and free date controls", () => {
@@ -128,7 +120,7 @@ describe("Sunday worship title editor", () => {
     const prepare = functionSource("prepareTitleSlideFields");
     assert.match(
       prepare,
-      /titleDesignSelect\.value\s*=\s*normalizeTitleDesign\(slide\?\.titleDesign\)/
+      /initializeTitleDesignPicker\([\s\S]*?slide\?\.titleDesign/
     );
     assert.match(
       prepare,
@@ -210,6 +202,25 @@ describe("Sunday worship title editor", () => {
         `${name} must remain symbol-free`
       );
     }
+  });
+
+  it("uses catalog themes and families for new previews", () => {
+    const preview = functionSource("buildCatalogFamilyPreview");
+    assert.match(preview, /design\.asset/);
+    assert.match(preview, /layoutFamily:\s*family/);
+    assert.match(preview, /titleKoFontSize/);
+    assert.match(preview, /titleEnFontSize/);
+    assert.match(preview, /lent-veil/);
+    assert.match(preview, /palm-procession/);
+    assert.match(preview, /new-year-blessing/);
+  });
+
+  it("keeps the season suggestion limited to subtitle copy", () => {
+    const start = app.indexOf("titleSeasonSuggestBtn.addEventListener");
+    const end = app.indexOf("// --- Title (Custom) slide listeners ---", start);
+    const handler = app.slice(start, end);
+    assert.match(handler, /titleSubtitleInput\.value/);
+    assert.doesNotMatch(handler, /titleDesign/);
   });
 
   it("has visible keyboard focus for hidden date-mode radios", () => {
