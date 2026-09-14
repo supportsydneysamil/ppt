@@ -5,12 +5,14 @@ import {
   buildResetSlideDraft,
   canApplyResetDraft,
   createSnapshot,
+  CUSTOM_RESET_RETRY_MESSAGE,
   deriveSaveButtonState,
   getBooksUnavailableMessage,
   getBusyBlockMessage,
   getUnsavedChangesMessage,
   isDiscardComplete,
   isSaveBusy,
+  isSlideAtResetDefaults,
   isSlideUnsaved,
   isSnapshotDirty,
   isTemplateDirty,
@@ -19,6 +21,7 @@ import {
   REORDER_FAILURE_MESSAGE,
   resetValuesMatch,
   resolveAdjacentSlideId,
+  resolveCurrentSlideSource,
   runGuardedTransition,
   selectTransientPreviewFiles,
   shouldRecaptureSlideBaseline,
@@ -824,6 +827,7 @@ const editorSaveBtn = document.getElementById("editorSaveBtn");
 const editorResetBtn = document.getElementById("editorResetBtn");
 const editorCancelBtn = document.getElementById("editorCancelBtn");
 const slideResetModal = document.getElementById("slideResetModal");
+const slideResetCard = document.getElementById("slideResetCard");
 const slideResetBackBtn = document.getElementById("slideResetBackBtn");
 const slideResetConfirmBtn = document.getElementById("slideResetConfirmBtn");
 
@@ -1823,6 +1827,14 @@ function cleanupPreviewResources() {
 }
 
 // --- Event Listeners for Hymn Type ---
+function getCurrentTypeChangeSource() {
+  return resolveCurrentSlideSource({
+    currentSlideId,
+    slides,
+    resetDraft: slideResetDraft,
+  });
+}
+
 slideTypeSelect.addEventListener('change', () => {
   if (slideTypeSelect.value === 'title') {
     prepareTitleSlideFields();
@@ -1835,11 +1847,11 @@ slideTypeSelect.addEventListener('change', () => {
     if (scriptureIncludeTitle) scriptureIncludeTitle.checked = true;
     setScriptureTitleSlideType("말씀");
     syncScriptureTitleTypeUi();
-    syncScriptureImageUI(slides.find((s) => s.id === currentSlideId));
+    syncScriptureImageUI(getCurrentTypeChangeSource());
   }
   updateSettingsVisibility();
   if (slideTypeSelect.value === 'custom') {
-    const current = slides.find((s) => s.id === currentSlideId);
+    const current = getCurrentTypeChangeSource();
     // Switching type is itself an unsaved change, so the canvas starts dirty.
     showCustomSlideInEditor(current, { markSaved: false });
   } else {
@@ -2925,7 +2937,7 @@ function renderPreview(slideOverride) {
       };
       data.sourceType = 'upload';
     } else if (type === 'scripture') {
-      const current = slides.find((s) => s.id === currentSlideId) || {};
+      const current = getCurrentTypeChangeSource() || {};
       data = {
         ...current,
         type: 'scripture',
@@ -4674,6 +4686,21 @@ function closeSlideResetDialog({ restoreFocus = true } = {}) {
   }
 }
 
+function setSlideResetDialogBusy(busy) {
+  const hadFocusInside =
+    busy && slideResetModal.contains(document.activeElement);
+  slideResetBackBtn.disabled = busy;
+  slideResetConfirmBtn.disabled = busy;
+  if (busy) {
+    slideResetModal.setAttribute("aria-busy", "true");
+    if (hadFocusInside && slideResetCard) {
+      slideResetCard.focus();
+    }
+  } else {
+    slideResetModal.removeAttribute("aria-busy");
+  }
+}
+
 function resetCurrentSlide() {
   if (!currentSlideId) return;
   if (blockedBySaveInProgress()) return;
@@ -4696,11 +4723,25 @@ async function confirmCurrentSlideReset() {
     return;
   }
   const resetDraft = buildResetSlideDraft(currentDraft);
+  const storedSlide = slides.find((slide) => slide.id === slideId);
+  const resetStateDraft =
+    storedSlide?.saved &&
+    storedSlide.type === resetDraft.type &&
+    isSlideAtResetDefaults(storedSlide)
+      ? {
+          ...storedSlide,
+          id: resetDraft.id,
+          name: resetDraft.name,
+          type: resetDraft.type,
+          saved: resetDraft.saved,
+        }
+      : resetDraft;
 
-  slideResetBackBtn.disabled = true;
-  slideResetConfirmBtn.disabled = true;
+  setSlideResetDialogBusy(true);
   try {
     if (resetDraft.type === "custom") {
+      // Let the browser paint aria-busy and the card focus before canvas work.
+      await new Promise((resolve) => requestAnimationFrame(resolve));
       const session = await ensureCustomEditorSession();
       if (session.isLoading(slideId)) {
         showToast("커스텀 슬라이드를 불러오는 중입니다. 완료 후 다시 시도해 주세요.");
@@ -4713,6 +4754,7 @@ async function confirmCurrentSlideReset() {
         return;
       }
       if (!(await session.reset(slideId))) {
+        showToast(CUSTOM_RESET_RETRY_MESSAGE);
         closeSlideResetDialog();
         return;
       }
@@ -4730,7 +4772,7 @@ async function confirmCurrentSlideReset() {
     }
 
     slideRuntimeDraft = {};
-    slideResetDraft = { id: slideId, draft: resetDraft };
+    slideResetDraft = { id: slideId, draft: resetStateDraft };
     populateEditor(resetDraft, {
       reloadCustomCanvas: false,
       useExactDefaults: true,
@@ -4738,16 +4780,21 @@ async function confirmCurrentSlideReset() {
     renderPreview();
     updateButtonsState(resetDraft);
     refreshSaveState();
+    const hasChangesToSave = !editorSaveBtn.disabled;
     closeSlideResetDialog({ restoreFocus: false });
-    editorSaveBtn.focus();
-    showToast("슬라이드를 초기화했습니다. 저장하기 전에는 취소할 수 있습니다.");
+    if (hasChangesToSave) {
+      editorSaveBtn.focus();
+      showToast("슬라이드를 초기화했습니다. 저장하기 전에는 취소할 수 있습니다.");
+    } else {
+      slideNameInput.focus();
+      showToast("슬라이드가 저장된 초기 상태로 돌아왔습니다.");
+    }
   } catch (error) {
     console.error("슬라이드 초기화 실패:", error);
     alert("슬라이드를 초기화하지 못했습니다: " + error.message);
     closeSlideResetDialog();
   } finally {
-    slideResetBackBtn.disabled = false;
-    slideResetConfirmBtn.disabled = false;
+    setSlideResetDialogBusy(false);
   }
 }
 

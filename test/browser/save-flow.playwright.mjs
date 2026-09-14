@@ -394,6 +394,23 @@ async function setup(page, options = {}) {
     },
   };
 
+  if (options.customResetGate) {
+    await page.addInitScript(() => {
+      globalThis.__customResetGate = new Promise((resolve) => {
+        globalThis.__releaseCustomReset = resolve;
+      });
+      const requestFrame = globalThis.requestAnimationFrame.bind(globalThis);
+      globalThis.requestAnimationFrame = (callback) => {
+        if (document.querySelector("#slideResetModal[aria-busy='true']")) {
+          return globalThis.__customResetGate.then(() =>
+            requestFrame(callback)
+          );
+        }
+        return requestFrame(callback);
+      };
+    });
+  }
+
   await page.route("https://**/*", async (route) => {
     const type = route.request().resourceType();
     if (type === "stylesheet") {
@@ -1605,6 +1622,156 @@ await runScenario(
     assert.equal(await page.locator("#editorCancelBtn").isDisabled(), true);
   }
 );
+
+await runScenario(
+  "saved default reset stays clean and focuses an enabled field",
+  async (page) => {
+    const state = await setup(page);
+    await selectMainSlide(page, 0);
+    await page.locator("#addSlideBtn").click();
+    await page.locator("#editorSaveBtn").click();
+    await expectToast(page, "슬라이드가 저장되었습니다");
+    assert.equal(state.counts.slidePost, 1);
+
+    await page.locator("#slideFontSize").selectOption("48");
+    await page.locator("#editorResetBtn:not([disabled])").waitFor();
+    await page.locator("#editorResetBtn").click();
+    await page.locator("#slideResetConfirmBtn").click();
+    await page.locator("#slideResetModal").waitFor({ state: "hidden" });
+
+    assert.equal(await page.locator("#slideFontSize").inputValue(), "40");
+    assert.equal(await page.locator("#editorSaveBtn").isDisabled(), true);
+    assert.equal(await page.locator("#editorCancelBtn").isDisabled(), true);
+    assert.equal(
+      await page.evaluate(() => document.activeElement?.id),
+      "slideName",
+      "a clean reset must focus an enabled editor field"
+    );
+    await expectToast(page, "저장된 초기 상태로 돌아왔습니다");
+    assert.equal(
+      await page
+        .locator("#appToastRegion .app-toast", { hasText: "저장하기 전에는" })
+        .count(),
+      0,
+      "clean reset feedback must not claim there are changes to save or cancel"
+    );
+  }
+);
+
+await runScenario(
+  "async custom reset keeps focus in its busy dialog",
+  async (page) => {
+    await setup(page, {
+      slides: customCanvasSlides,
+      customResetGate: true,
+    });
+    await selectMainSlide(page, 0);
+    await page
+      .locator("#customSlideEditor [data-custom-editor='status']")
+      .first()
+      .filter({ hasText: "슬라이드를 불러왔습니다" })
+      .waitFor();
+
+    await page.locator("#editorResetBtn").click();
+    await page.locator("#slideResetConfirmBtn").click();
+    await page.locator("#slideResetModal[aria-busy='true']").waitFor();
+    assert.equal(
+      await page.evaluate(() => document.activeElement?.id),
+      "slideResetCard"
+    );
+    assert.equal(
+      await page.locator("#slideResetCard").getAttribute("tabindex"),
+      "-1"
+    );
+
+    await page.evaluate(() => globalThis.__releaseCustomReset());
+    await page.locator("#slideResetModal").waitFor({ state: "hidden" });
+    assert.equal(await page.locator("#editorSaveBtn").isEnabled(), true);
+  }
+);
+
+await runScenario(
+  "reset draft media stays cleared across type changes",
+  async (page) => {
+    const scriptureWithImage = slide(
+      "scripture-image",
+      "이미지 말씀",
+      "scripture",
+      {
+        customImageData: "data:image/png;base64,saved",
+        customImageSize: 5,
+      }
+    );
+    await setup(page, { slides: [scriptureWithImage] });
+    await selectMainSlide(page, 0);
+    await page.locator("#editorResetBtn").click();
+    await page.locator("#slideResetConfirmBtn").click();
+    await page.locator("#slideType").selectOption("simple");
+    await page.locator("#slideType").selectOption("scripture");
+    assert.equal(
+      await page.locator("#scripturePptxImageStatus").textContent(),
+      "선택한 이미지 없음"
+    );
+  }
+);
+
+await runScenario(
+  "blank custom reset canvas does not reappear after type changes",
+  async (page) => {
+    await setup(page, { slides: customCanvasSlides });
+    await selectMainSlide(page, 0);
+    const status = page.locator(
+      "#customSlideEditor [data-custom-editor='status']"
+    ).first();
+    await status.filter({ hasText: "슬라이드를 불러왔습니다" }).waitFor();
+    await page.locator("#editorResetBtn").click();
+    await page.locator("#slideResetConfirmBtn").click();
+    await page.locator("#slideType").selectOption("simple");
+    await page.locator("#slideType").selectOption("custom");
+    await page.locator("#editorResetBtn[disabled]").waitFor();
+    assert.equal(
+      await page.locator("#editorResetBtn").isDisabled(),
+      true,
+      "type changes must reload the blank reset draft, not the stored canvas"
+    );
+  }
+);
+
+await runScenario("reset works inside a template workspace", async (page) => {
+  const template = templateFixture();
+  template.slides[0].content = "저장된 템플릿 본문";
+  const state = await setup(page, { templates: [template] });
+  await openTemplate(page);
+  await page.locator("#slideContent").fill("초기화할 템플릿 초안");
+  await page.locator("#editorResetBtn").click();
+  await page.locator("#slideResetConfirmBtn").click();
+
+  assert.equal(await page.locator("#slideContent").inputValue(), "");
+  assert.equal(await page.locator("#editorSaveBtn").isEnabled(), true);
+  assert.equal(state.templates[0].slides[0].content, "저장된 템플릿 본문");
+  assert.equal(await page.locator("#templateWorkspaceBar").isVisible(), true);
+});
+
+await runScenario("reset keeps a new unsaved slide selected", async (page) => {
+  const state = await setup(page);
+  await selectMainSlide(page, 0);
+  await page.locator("#addSlideBtn").click();
+  const newSlideId = await page
+    .locator(".slide-card.active")
+    .getAttribute("data-slide-id");
+  await page.locator("#slideContent").fill("신규 초안");
+  await page.locator("#editorResetBtn").click();
+  await page.locator("#slideResetConfirmBtn").click();
+
+  assert.equal(await page.locator("#slideContent").inputValue(), "");
+  assert.equal(await page.locator("#editorSaveBtn").isEnabled(), true);
+  assert.equal(await page.locator("#editorCancelBtn").isEnabled(), true);
+  assert.equal(
+    await page.locator(".slide-card.active").getAttribute("data-slide-id"),
+    newSlideId
+  );
+  assert.equal(state.counts.slidePost, 0);
+});
 
 await runScenario(
   "custom reset makes a blank draft and cancel restores the saved canvas",

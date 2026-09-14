@@ -4,6 +4,7 @@ import {
   buildResetSlideDraft,
   canApplyResetDraft,
   createSnapshot,
+  CUSTOM_RESET_RETRY_MESSAGE,
   isSnapshotDirty,
   isTemplateDirty,
   deriveSaveButtonState,
@@ -12,10 +13,12 @@ import {
   getUnsavedChangesMessage,
   isDiscardComplete,
   isSaveBusy,
+  isSlideAtResetDefaults,
   isSlideUnsaved,
   planDiscard,
   resetValuesMatch,
   resolveAdjacentSlideId,
+  resolveCurrentSlideSource,
   runGuardedTransition,
   saveAllPendingScopes,
   selectTransientPreviewFiles,
@@ -178,6 +181,45 @@ describe("save state snapshots", () => {
 });
 
 describe("save state decisions", () => {
+  it("names the defensive custom reset retry", () => {
+    assert.equal(
+      CUSTOM_RESET_RETRY_MESSAGE,
+      "커스텀 슬라이드 초기화를 적용하지 못했습니다. 다시 시도해 주세요."
+    );
+  });
+
+  it("uses the active reset draft as the type-change source", () => {
+    const stored = {
+      id: "slide-a",
+      type: "custom",
+      customImageData: "data:image/png;base64,saved",
+      customSlide: { elements: [{ id: "saved-image" }] },
+    };
+    const reset = {
+      id: "slide-a",
+      type: "custom",
+      customImageData: null,
+      customSlide: { elements: [] },
+    };
+
+    assert.equal(
+      resolveCurrentSlideSource({
+        currentSlideId: "slide-a",
+        slides: [stored],
+        resetDraft: { id: "slide-a", draft: reset },
+      }),
+      reset
+    );
+    assert.equal(
+      resolveCurrentSlideSource({
+        currentSlideId: "slide-a",
+        slides: [stored],
+        resetDraft: { id: "other", draft: reset },
+      }),
+      stored
+    );
+  });
+
   it("refuses to apply a reset when a save starts during an await", () => {
     assert.equal(
       canApplyResetDraft({
@@ -739,6 +781,36 @@ describe("resolveAdjacentSlideId", () => {
 
 describe("buildResetSlideDraft", () => {
   const emptyCustomSlide = createDefaultCustomSlide();
+
+  it("recognizes a saved slide already at its type defaults", () => {
+    assert.equal(
+      isSlideAtResetDefaults({
+        id: "default",
+        name: "기본",
+        type: "simple",
+        saved: true,
+        sourceType: "basic",
+        content: "",
+        font: "Malgun Gothic",
+        fontSize: "40",
+        bg: "black",
+        align: "center",
+        fileSaved: false,
+      }),
+      true
+    );
+    assert.equal(
+      isSlideAtResetDefaults({
+        id: "media",
+        name: "미디어",
+        type: "simple",
+        saved: true,
+        sourceType: "upload",
+        fileName: "saved.pptx",
+      }),
+      false
+    );
+  });
 
   it("does not mutate the source slide", () => {
     const source = {
