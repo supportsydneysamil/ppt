@@ -13,7 +13,10 @@
 - Envelope `kind` is exactly `samil-template-schema`.
 - Writer `version` is `1`. Reader accepts only integers in `[TEMPLATE_SCHEMA_MIN_VERSION, TEMPLATE_SCHEMA_MAX_VERSION]` (both currently `1`).
 - Always create a new template on import. Never overwrite by name or id.
-- Do not embed PPTX or image bytes. Strip `/uploads/` paths.
+- Do not embed PPTX or image bytes. Strip `/uploads/` paths and all `data:` URLs from every asset field, normalize those fields to safe null/empty canonical values, and record the loss with optional boolean `unrestorable: true`.
+- `sanitizeSlideForTemplate` preserves `unrestorable` as a Boolean so warnings survive `POST /api/templates` persistence and re-export. This optional field is backward-compatible in schema v1.
+- The browser field allowlist `buildSerializableSlide` must also preserve `unrestorable` because clone, gallery-cache, and save payload flows all cross it.
+- Keep `unrestorable: true` sticky. There is no complete repair operation that verifies every potentially missing asset, so clearing it after one replacement could hide another loss.
 - Do not add import/export HTTP routes. Use `POST /api/templates`.
 - Do not add Playwright coverage for this feature.
 - Implementation must occur in an isolated git worktree.
@@ -22,6 +25,9 @@
 
 - Create: `lib/template-schema.js` — constants, portable conversion, parse, migrate, error messages, download filename.
 - Create: `test/template-schema.test.js` — unit tests for the module.
+- Create: `test/template-import-guards.test.js` — source-level guard for malformed successful import responses.
+- Modify: `lib/slide-record.js` — preserve the optional `unrestorable` boolean at persistence boundaries.
+- Modify: `test/cover-title-state.test.js` — source-level serializer/clone boundary regression.
 - Modify: `public/index.html` — gallery “스키마 가져오기” control and hidden file input.
 - Modify: `public/styles.css` — gallery toolbar.
 - Modify: `public/app.js` — card Export, gallery Import, confirm/toast.
@@ -48,6 +54,7 @@
   - `migrateTemplateSchema(doc) => doc` (identity while min=max=1)
   - `templateSchemaErrorMessage(code) => string`
   - `templateSchemaFilename(name) => string`
+  - Portable slide records may include `unrestorable: true`; missing/false remains valid v1.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -240,6 +247,20 @@ test("parseTemplateSchema accepts v1 and returns portable slides", () => {
   assert.equal(result.schema.version, 1);
   assert.equal(result.schema.template.slides[0].serverFilePath, null);
   assert.equal(result.schema.template.slides[0].customImageData, null);
+  assert.equal(result.schema.template.slides[0].unrestorable, true);
+  assert.deepEqual(result.unrestorableNames, ["타이틀"]);
+});
+
+test("toPortableSlide strips data URLs and local upload paths from asset fields", () => {
+  // strips customImageData, adBgImageUrl, originalUrl, canvas src; keeps https adBgImageUrl
+});
+
+test("unrestorableSlideNames survives export JSON parse roundtrip", () => {
+  // export→JSON→parse returns unrestorableNames for stripped customImageData and adBgImageUrl
+});
+
+test("unrestorable marker survives POST sanitization and re-export", () => {
+  // export→parse→sanitizeSlideForTemplate→re-export still returns the slide name
 });
 
 test("templateSchemaFilename sanitizes the name", () => {
@@ -301,6 +322,14 @@ function isOwnedUploadPath(value) {
   return typeof value === "string" && value.startsWith("/uploads/");
 }
 
+function isDataUrl(value) {
+  return typeof value === "string" && value.startsWith("data:");
+}
+
+function isEmbeddedAsset(value) {
+  return isOwnedUploadPath(value) || isDataUrl(value);
+}
+
 function fail(code) {
   return { ok: false, code, message: templateSchemaErrorMessage(code) };
 }
@@ -314,7 +343,9 @@ function toPortableCustomSlide(customSlide) {
         if (element?.type !== "image") {
           return element;
         }
-        const src = isOwnedUploadPath(element.src) ? "" : element.src || "";
+        const src = isEmbeddedAsset(element.src)
+          ? ""
+          : element.src || "";
         return { ...element, src };
       })
     : [];
@@ -322,16 +353,29 @@ function toPortableCustomSlide(customSlide) {
 }
 
 export function toPortableSlide(slide) {
-  const portable = sanitizeSlideForTemplate(slide || {});
+  const source = slide || {};
+  const unrestorable = Boolean(
+    source.unrestorable || isUnrestorableSlide(source)
+  );
+  const portable = sanitizeSlideForTemplate(source);
   delete portable.id;
   portable.serverFilePath = null;
   portable.thumbnail = null;
   portable.fileSaved = false;
   portable.adBgImagePath = null;
-  if (isOwnedUploadPath(portable.customImageData)) {
+  if (isEmbeddedAsset(source.originalUrl)) {
+    portable.originalUrl = null;
+  }
+  if (isEmbeddedAsset(source.adBgImageUrl)) {
+    portable.adBgImageUrl = null;
+  }
+  if (isEmbeddedAsset(source.customImageData)) {
     portable.customImageData = null;
   }
-  portable.customSlide = toPortableCustomSlide(portable.customSlide);
+  portable.customSlide = toPortableCustomSlide(
+    source.customSlide ?? portable.customSlide
+  );
+  portable.unrestorable = unrestorable;
   return portable;
 }
 
@@ -354,23 +398,28 @@ export function isUnrestorableSlide(slide) {
   if (!slide || typeof slide !== "object") {
     return false;
   }
+  if (slide.unrestorable) {
+    return true;
+  }
   const localPptWithoutSource =
     Boolean(slide.fileName) &&
     !slide.originalUrl &&
     (slide.sourceType === "upload" || isOwnedUploadPath(slide.serverFilePath));
   const fileAdBackground =
     slide.adBgSource === "file" || isOwnedUploadPath(slide.adBgImagePath);
-  const localCustomImage = isOwnedUploadPath(slide.customImageData);
+  const localAdUrlBackground =
+    slide.adBgSource === "url" && isEmbeddedAsset(slide.adBgImageUrl);
+  const localCustomImage = isEmbeddedAsset(slide.customImageData);
   const localCanvasImage = Boolean(
     slide.customSlide?.elements?.some(
       (element) =>
-        element?.type === "image" &&
-        (isOwnedUploadPath(element.src) || element.src === "")
+        element?.type === "image" && isEmbeddedAsset(element.src)
     )
   );
   return Boolean(
     localPptWithoutSource ||
       fileAdBackground ||
+      localAdUrlBackground ||
       localCustomImage ||
       localCanvasImage
   );
@@ -453,7 +502,7 @@ export function templateSchemaFilename(name) {
 }
 ```
 
-Note: `isUnrestorableSlide` treats custom-canvas `image` elements with empty `src` as unrestorable so Import of an already-stripped schema still warns. Hymns with `originalUrl` are restorable even when `sourceType` is `upload`.
+Note: `isUnrestorableSlide` honors `unrestorable: true` and otherwise infers loss from local assets that have not yet been stripped. Empty asset values are canonical values, not metadata markers. Hymns with portable `originalUrl` values remain restorable even when `sourceType` is `upload`.
 
 - [ ] **Step 4: Run the tests and verify GREEN**
 
@@ -486,6 +535,8 @@ EOF
 **Interfaces:**
 - Consumes: `toPortableTemplateSchema`, `unrestorableSlideNames`, `parseTemplateSchema`, `templateSchemaFilename` from `@lib/template-schema.js`.
 - Produces: card menu item `스키마 내보내기`; gallery button `스키마 가져오기` that POSTs `{ name, slides }` to `/api/templates` and `templates.push`es the response. Duplicate names stay as two cards because the existing create route does not uniquify names.
+- `buildSerializableSlide` includes `unrestorable: Boolean(slide.unrestorable)` so `cloneSlide`/`cloneTemplate` and persistence payloads cannot drop the warning.
+- Import validates a successful response's template id, name, and non-empty slides array before mutating `templates`.
 
 The templates tab hides `#pptTabbarActions` while the gallery is showing, so Import must live inside `#templateGallery`, not the slide bulk menu. The gallery section stays visible when empty, so the button still works with zero templates. The workspace hides the whole gallery, which hides Import as specified.
 
@@ -499,7 +550,7 @@ In `public/index.html`, change the gallery section to:
     <input
       id="templateSchemaFileInput"
       type="file"
-      accept=".json,application/json"
+      accept=".json,.samil-template.json"
       hidden
     />
     <button id="templateSchemaImportBtn" type="button" class="ghost small">
@@ -533,7 +584,9 @@ Add to the existing `@lib` imports:
 
 ```js
 import {
+  TEMPLATE_SCHEMA_ERROR,
   parseTemplateSchema,
+  templateSchemaErrorMessage,
   templateSchemaFilename,
   toPortableTemplateSchema,
   unrestorableSlideNames,
@@ -607,7 +660,14 @@ function exportTemplateSchemaById(templateId) {
 }
 
 async function importTemplateSchemaFile(file) {
-  const text = await file.text();
+  let text;
+  try {
+    text = await file.text();
+  } catch {
+    alert(templateSchemaErrorMessage(TEMPLATE_SCHEMA_ERROR.INVALID_JSON));
+    return;
+  }
+
   const parsed = parseTemplateSchema(text);
   if (!parsed.ok) {
     alert(parsed.message);
@@ -623,14 +683,27 @@ async function importTemplateSchemaFile(file) {
         slides: parsed.schema.template.slides,
       }),
     });
-    const payload = await resp.json();
+    const payload = await resp.json().catch(() => ({}));
     if (!resp.ok) {
       throw new Error(payload.error || "템플릿 가져오기에 실패했습니다.");
     }
+    const importedTemplate = payload?.template;
+    if (
+      !importedTemplate ||
+      typeof importedTemplate !== "object" ||
+      typeof importedTemplate.id !== "string" ||
+      !importedTemplate.id.trim() ||
+      typeof importedTemplate.name !== "string" ||
+      !importedTemplate.name.trim() ||
+      !Array.isArray(importedTemplate.slides) ||
+      importedTemplate.slides.length === 0
+    ) {
+      throw new Error("템플릿 가져오기에 실패했습니다.");
+    }
 
-    templates.push(cloneTemplate(payload.template));
+    templates.push(cloneTemplate(importedTemplate));
     renderTemplateGallery();
-    showToast(`템플릿을 가져왔습니다: ${payload.template.name}`);
+    showToast(`템플릿을 가져왔습니다: ${importedTemplate.name}`);
     if (parsed.unrestorableNames.length > 0) {
       alert(
         formatUnrestorableSchemaMessage(parsed.unrestorableNames, {

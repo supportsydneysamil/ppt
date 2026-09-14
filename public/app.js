@@ -34,6 +34,14 @@ import {
   insertSlideAfter,
 } from "@lib/slide-duplicate.js";
 import { buildHymnSubtitle } from "@lib/cover-title-content.js";
+import {
+  TEMPLATE_SCHEMA_ERROR,
+  parseTemplateSchema,
+  templateSchemaErrorMessage,
+  templateSchemaFilename,
+  toPortableTemplateSchema,
+  unrestorableSlideNames,
+} from "@lib/template-schema.js";
 
 const testamentSelect = document.getElementById("testament");
 const bookSelect = document.getElementById("book");
@@ -815,6 +823,8 @@ const templateGallery = document.getElementById("templateGallery");
 const templateGalleryGrid = document.getElementById("templateGalleryGrid");
 const templateGalleryEmpty = document.getElementById("templateGalleryEmpty");
 const templateGalleryGoSlidesBtn = document.getElementById("templateGalleryGoSlidesBtn");
+const templateSchemaImportBtn = document.getElementById("templateSchemaImportBtn");
+const templateSchemaFileInput = document.getElementById("templateSchemaFileInput");
 const templateWorkspaceBar = document.getElementById("templateWorkspaceBar");
 const templateBackBtn = document.getElementById("templateBackBtn");
 const templateNameDisplay = document.getElementById("templateNameDisplay");
@@ -1726,7 +1736,18 @@ function buildTemplateCard(template) {
     deleteTemplateById(template.id);
   });
 
+  const exportItem = document.createElement("button");
+  exportItem.type = "button";
+  exportItem.className = "bulk-dropdown-item";
+  exportItem.textContent = "스키마 내보내기";
+  exportItem.addEventListener("click", (event) => {
+    event.stopPropagation();
+    closeTemplateCardMenus();
+    exportTemplateSchemaById(template.id);
+  });
+
   menuDropdown.appendChild(renameItem);
+  menuDropdown.appendChild(exportItem);
   menuDropdown.appendChild(deleteItem);
 
   menuBtn.addEventListener("click", (event) => {
@@ -2345,6 +2366,18 @@ tabTemplatesBtn.addEventListener("click", () => {
   setPptTab("templates");
 });
 templateGalleryGoSlidesBtn.addEventListener("click", () => setPptTab("slides"));
+templateSchemaImportBtn?.addEventListener("click", () => {
+  templateSchemaFileInput?.click();
+});
+
+templateSchemaFileInput?.addEventListener("change", async () => {
+  const file = templateSchemaFileInput.files?.[0];
+  templateSchemaFileInput.value = "";
+  if (!file) {
+    return;
+  }
+  await importTemplateSchemaFile(file);
+});
 templateBackBtn.addEventListener("click", () => {
   closeBulkDropdown();
   closeTemplateWorkspace();
@@ -5839,6 +5872,7 @@ function buildSerializableSlide(slide) {
     fileName: slide.fileName,
     fileSaved: slide.fileSaved,
     saved: slide.saved,
+    unrestorable: Boolean(slide.unrestorable),
     serverFilePath: slide.serverFilePath,
     thumbnail: slide.thumbnail,
     hymnNumber: slide.hymnNumber,
@@ -5950,6 +5984,101 @@ async function deleteSelectedSlides() {
     renderSlideList();
   } catch (err) {
     alert(err.message || "선택 삭제 중 오류가 발생했습니다.");
+  }
+}
+
+function formatUnrestorableSchemaMessage(names, { forExport }) {
+  const list = names.map((name) => `- ${name}`).join("\n");
+  if (forExport) {
+    return `다음 슬라이드는 파일이 없어 다른 컴퓨터에서 다시 만들 수 없습니다:\n\n${list}\n\n스키마만 내보낼까요?`;
+  }
+  return `템플릿을 가져왔습니다. 다음 슬라이드는 파일이 없어 다시 만들 수 없습니다:\n\n${list}`;
+}
+
+function downloadTemplateSchema(schema) {
+  const blob = new Blob([JSON.stringify(schema, null, 2)], {
+    type: "application/json",
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = templateSchemaFilename(schema.template.name);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function exportTemplateSchemaById(templateId) {
+  const template = templates.find((entry) => entry.id === templateId);
+  if (!template) {
+    return;
+  }
+  const unrestorable = unrestorableSlideNames(template.slides || []);
+  if (
+    unrestorable.length > 0 &&
+    !confirm(formatUnrestorableSchemaMessage(unrestorable, { forExport: true }))
+  ) {
+    return;
+  }
+  downloadTemplateSchema(toPortableTemplateSchema(template));
+  showToast(`스키마를 내보냈습니다: ${template.name}`);
+}
+
+async function importTemplateSchemaFile(file) {
+  let text;
+  try {
+    text = await file.text();
+  } catch {
+    alert(templateSchemaErrorMessage(TEMPLATE_SCHEMA_ERROR.INVALID_JSON));
+    return;
+  }
+
+  const parsed = parseTemplateSchema(text);
+  if (!parsed.ok) {
+    alert(parsed.message);
+    return;
+  }
+
+  try {
+    const resp = await fetch("/api/templates", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: parsed.schema.template.name,
+        slides: parsed.schema.template.slides,
+      }),
+    });
+    const payload = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      throw new Error(payload.error || "템플릿 가져오기에 실패했습니다.");
+    }
+    const importedTemplate = payload?.template;
+    if (
+      !importedTemplate ||
+      typeof importedTemplate !== "object" ||
+      typeof importedTemplate.id !== "string" ||
+      !importedTemplate.id.trim() ||
+      typeof importedTemplate.name !== "string" ||
+      !importedTemplate.name.trim() ||
+      !Array.isArray(importedTemplate.slides) ||
+      importedTemplate.slides.length === 0
+    ) {
+      throw new Error("템플릿 가져오기에 실패했습니다.");
+    }
+
+    templates.push(cloneTemplate(importedTemplate));
+    renderTemplateGallery();
+    showToast(`템플릿을 가져왔습니다: ${importedTemplate.name}`);
+    if (parsed.unrestorableNames.length > 0) {
+      alert(
+        formatUnrestorableSchemaMessage(parsed.unrestorableNames, {
+          forExport: false,
+        })
+      );
+    }
+  } catch (err) {
+    alert(err.message || "템플릿 가져오기 중 오류가 발생했습니다.");
   }
 }
 

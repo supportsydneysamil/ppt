@@ -78,14 +78,23 @@ PPTX 결과물이 아니라 템플릿 정의(슬라이드 타입, 텍스트, 테
 - 주일예배 타이틀·Custom 타이틀·말씀 필드 (`titleDesign`, `churchName`, `serviceDate`, `customTitle*`, `themeId`, `testament`/`book`/`chapter` 등)
 - 찬송가 `hymnNumber`, `hymnKorTitle`, `hymnEngTitle`, `originalUrl`
 - 광고 제목·크기·정렬·불투명도, `adBgSource`가 URL이면 `adBgImageUrl`
-- 커스텀 슬라이드 캔버스 모델. 로컬 `/uploads` 이미지 `src`는 빈 문자열로 둔다
+- 커스텀 슬라이드 캔버스 모델. 로컬 `/uploads` 이미지 `src`는 안전한 빈 값으로 둔다
+- 선택적 boolean `unrestorable`. 내보내기 중 로컬 자산을 제거했거나 원본 레코드가 이미 `unrestorable: true`이면 `true`다
 
 빼는 것 (항상 `null`/false/빈 값):
 
 - `serverFilePath`, `thumbnail`, `fileSaved`
 - `adBgImagePath`
 - `fileName`은 원래 파일명 문자열로 남긴다. 바이트는 없다
-- `customImageData`가 `/uploads/` 경로이면 `null`. data URL이면 그대로 둔다
+- `/uploads/` 경로와 `data:` URL(이미지·PPT 바이트 포함)은 모든 자산 필드에서 제거한다. `customImageData`, `adBgImageUrl`, `originalUrl`, 커스텀 캔버스 이미지 `src` 등에 적용한다
+- 제거된 nullable 자산 필드는 `null`, 캔버스 이미지 `src`는 빈 값으로 정규화한다. 자산 값 자체를 sentinel로 사용하지 않는다
+- 복원 불가 상태는 `unrestorable: true`에 기록한다. `sanitizeSlideForTemplate`은 이 값을 `Boolean`으로 보존하므로 Export→parse→`POST /api/templates` 저장→재Export 뒤에도 경고가 유지된다
+
+`unrestorable`은 선택 필드다. 없는 기존 v1 문서는 계속 읽히며, 새 선택 필드 추가이므로 스키마 버전은 1을 유지한다. 원본 로컬 자산이 아직 남아 있으면 `toPortableSlide`가 기존 판별 규칙으로 `true`를 계산한다.
+
+브라우저의 명시적 필드 allowlist인 `buildSerializableSlide`도 `unrestorable`을 Boolean으로 보존해야 한다. `cloneSlide`/`cloneTemplate`, 갤러리 캐시, 템플릿 저장 payload가 모두 이 경계를 사용하므로 서버 정규화만으로는 충분하지 않다.
+
+`unrestorable: true`는 의도적으로 sticky다. 한 슬라이드에 PPTX, 광고 배경, 캔버스 이미지처럼 복수 자산이 빠질 수 있지만 현재 UI에는 누락 자산 전체를 검증하고 한 번에 복구하는 완전한 repair 작업이 없다. 개별 자산을 교체했다는 이유로 flag를 자동 해제하면 다른 누락 자산의 경고를 숨길 수 있다. 따라서 가져온 슬라이드의 자산을 수동으로 모두 보완해도 경고가 남을 수 있으며, 향후 완전한 자산 검증/복구 기능이 생길 때만 안전하게 해제한다.
 
 복원 가능:
 
@@ -99,7 +108,8 @@ PPTX 결과물이 아니라 템플릿 정의(슬라이드 타입, 텍스트, 테
 - 직접 올린 PPT/PPTX (`sourceType`이 upload이거나 `serverFilePath`만 있고 `originalUrl`이 없음)
 - 광고 파일 배경
 - 커스텀 슬라이드의 로컬 업로드 이미지
-- 경로만 있는 사용자 배경 이미지
+- 경로만 있는 사용자 배경 이미지 (`customImageData`의 `/uploads/` 또는 `data:` URL)
+- `data:` URL로 넣은 광고 URL 배경·캔버스 이미지
 
 Export와 Import 모두 복원 불가 슬라이드 **이름 목록**을 사용자에게 보여 준다. Export는 확인 후에 다운로드하고, Import는 새 템플릿을 만든 뒤에 알려 준다. 확인을 거절하면 다운로드하지 않는다.
 
@@ -117,7 +127,7 @@ Export와 Import 모두 복원 불가 슬라이드 **이름 목록**을 사용�
 1. Export: 갤러리 캐시의 해당 템플릿을 `toPortableTemplateSchema(template)`로 변환한다. 복원 불가 목록이 있으면 확인한다. 확인되면 JSON을 브라우저에서 다운로드한다. 서버에 쓰지 않는다.
 2. Import: 파일을 읽고 `parseTemplateSchema(text)`가 `kind`·`version`·마이그레이션·슬라이드 배열을 검증한다. 실패면 에러만 보여 준다.
 3. 통과하면 기존 `POST /api/templates`에 `{ name, slides }`를 보낸다. 슬라이드는 이식 형태로, 로컬 경로가 없는 상태다.
-4. 성공 응답의 템플릿을 갤러리 캐시에 push하고 카드를 다시 그린다. 복원 불가 목록이 있으면 그다음 알린다.
+4. 성공 응답이 유효한 템플릿 id·name·slides를 포함하는지 확인한다. 유효할 때만 갤러리 캐시에 push하고 카드를 다시 그린 뒤 복원 불가 목록을 알린다.
 
 변환과 검증은 `lib/`의 순수 함수로 둔다. 브라우저와 테스트가 같은 규칙을 쓴다. 새 HTTP 엔드포인트는 없다.
 
@@ -134,6 +144,7 @@ Export와 Import 모두 복원 불가 슬라이드 **이름 목록**을 사용�
 | `version`이 MIN보다 작음 | 가져오지 않고, 너무 옛 형식이라고 안내 |
 | `template.name` 없음·슬라이드 없음 | 가져오지 않고 오류 알림 |
 | `POST /api/templates` 실패 | 갤러리를 바꾸지 않고 오류 알림 |
+| 성공 HTTP 응답이 JSON이 아니거나 유효한 템플릿 payload가 없음 | 갤러리를 바꾸지 않고 일반 가져오기 실패 알림 |
 | Export 대상 템플릿이 캐시에 없음 | 다운로드하지 않음 |
 
 ## 테스트
