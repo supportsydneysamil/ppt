@@ -559,6 +559,13 @@ body {
   flex: 0 0 auto;
 }
 
+/* `display: inline-flex` above would otherwise beat the hidden attribute and
+   leave an empty pill behind. */
+.ghost[hidden],
+.cta[hidden] {
+  display: none;
+}
+
 .ghost-subtle {
   min-height: var(--ctrl-h-md);
   padding: 0 14px;
@@ -2389,6 +2396,19 @@ body {
   display: none;
 }
 
+/* Labels that only screen readers need, where the surrounding row already
+   names the control visually. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* Preview Area */
 .preview-area {
   display: grid;
@@ -2641,11 +2661,33 @@ body {
   line-height: 1.4;
 }
 
+.rte-panel-sep {
+  height: 1px;
+  background: var(--border);
+  margin: var(--sp-1) 0;
+}
+
 .rte-row-main {
   display: flex;
   align-items: center;
   gap: 10px;
   min-width: 0;
+}
+
+.rte-row-main--wrap {
+  flex-wrap: wrap;
+  row-gap: var(--sp-2);
+}
+
+.rte-checkbox-row {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.rte-checkbox-row input {
+  width: 15px;
+  height: 15px;
 }
 
 /* Inside an rte row the controls are 28px tall, so page-level buttons have to
@@ -2662,9 +2704,12 @@ body {
   min-width: 0;
 }
 
-/* Segmented radio control */
+/* Segmented radio control: sized to its own pills, not to the row. */
 .rte-seg-group {
   display: flex;
+  width: max-content;
+  max-width: 100%;
+  justify-self: start;
   background: rgba(255,255,255,0.05);
   border: 1px solid rgba(255,255,255,0.07);
   border-radius: 8px;
@@ -2780,6 +2825,14 @@ body {
 
 .rte-url-input:disabled {
   opacity: 0.4;
+}
+
+/* A date is a known-length value, so the picker keeps its own width instead of
+   stretching across the row like a free-text field. */
+.rte-input--date {
+  width: 150px;
+  flex: 0 0 auto;
+  max-width: 100%;
 }
 
 /* Range value label */

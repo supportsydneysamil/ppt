@@ -949,21 +949,24 @@
                       <button type="button" id="titleSeasonSuggestBtn" class="ghost" hidden></button>
                     </div>
                   </div>
-                  <label class="rte-panel-row">
-                    <span class="rte-row-label">날짜 표시</span>
-                    <input id="titleShowDate" type="checkbox" checked />
-                  </label>
+                  <div class="rte-panel-sep" role="presentation"></div>
                   <div class="rte-panel-row">
-                    <span class="rte-row-label" id="titleDateModeLabel">날짜 모드</span>
-                    <div class="rte-seg-group" id="titleDateMode" role="radiogroup" aria-labelledby="titleDateModeLabel">
-                      <label class="rte-seg-item"><input type="radio" name="titleDateMode" value="next-sunday" /><span>다음 주일</span></label>
-                      <label class="rte-seg-item"><input type="radio" name="titleDateMode" value="today" /><span>오늘</span></label>
-                      <label class="rte-seg-item"><input type="radio" name="titleDateMode" value="custom" checked /><span>수동</span></label>
+                    <span class="rte-row-label" id="titleDateModeLabel">날짜</span>
+                    <div class="rte-row-main rte-row-main--wrap">
+                      <div class="rte-seg-group" id="titleDateMode" role="radiogroup" aria-labelledby="titleDateModeLabel">
+                        <label class="rte-seg-item"><input type="radio" name="titleDateMode" value="next-sunday" /><span>다음 주일</span></label>
+                        <label class="rte-seg-item"><input type="radio" name="titleDateMode" value="today" /><span>오늘</span></label>
+                        <label class="rte-seg-item"><input type="radio" name="titleDateMode" value="custom" checked /><span>수동</span></label>
+                      </div>
+                      <label class="visually-hidden" for="titleServiceDate">날짜 값</label>
+                      <input id="titleServiceDate" type="date" class="rte-url-input rte-input--date" />
                     </div>
                   </div>
-                  <div class="rte-panel-row">
-                    <label class="rte-row-label" for="titleServiceDate">날짜 값</label>
-                    <input id="titleServiceDate" type="date" class="rte-url-input" />
+                  <div class="rte-panel-row rte-panel-row--content">
+                    <label class="checkbox-row checkbox-row-clickable rte-checkbox-row">
+                      <input id="titleShowDate" type="checkbox" checked />
+                      <span>슬라이드에 날짜 표시</span>
+                    </label>
                   </div>
                   <p class="hint rte-hint">
                     날짜 기본은 오늘이며 수동으로 바꿀 수 있습니다. 절기에 해당하면 부제를 자동으로 제안합니다.
