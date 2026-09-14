@@ -34,6 +34,12 @@ function textMetrics(shape) {
   };
 }
 
+function objectNames(slideXml) {
+  return Array.from(parse(slideXml).getElementsByTagName("p:cNvPr")).map(
+    (node) => node.getAttribute("name") || ""
+  );
+}
+
 async function render(slide) {
   const pptx = new PptxGenJS();
   pptx.layout = "LAYOUT_WIDE";
@@ -179,5 +185,28 @@ describe("appendTitleSlide", () => {
     const longShape = shapeWithText(longXml, longKo);
     assert.ok(longShape);
     assert.equal(textMetrics(longShape).fontSize, 52);
+  });
+
+  it("dispatches every extra id to its own renderer instead of chapel", async () => {
+    const markers = {
+      "easter-dawn": "title-motif:sun",
+      "easter-stained": "title-motif:arch-outer",
+      "christmas-burgundy": "title-motif:star-large",
+      "christmas-evergreen": "title-motif:tree-0",
+      thanksgiving: "title-motif:wheat-left",
+      advent: "title-motif:candle",
+      "midnight-slab": "title-rule:spine",
+      "slate-split": "title-rule:split",
+      "deep-fog": "title-rule:underline",
+    };
+
+    for (const [titleDesign, marker] of Object.entries(markers)) {
+      const xml = await render({
+        titleDesign,
+        churchName: "A",
+        serviceDate: "2026-09-13",
+      });
+      assert.ok(objectNames(xml).includes(marker), titleDesign);
+    }
   });
 });
