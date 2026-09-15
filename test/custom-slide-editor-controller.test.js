@@ -174,6 +174,27 @@ async function settle(times = 6) {
   }
 }
 
+// The layer list also ships with the React chrome. It has to exist before the
+// editor is created, because the first load() renders the rows.
+function addLayerPanel(host) {
+  const panel = host.document.createElement("aside");
+  panel.className = "custom-editor-layers";
+  const list = host.document.createElement("ol");
+  list.className = "custom-editor-layer-list";
+  list.dataset.editorUi = "layers";
+  const empty = host.document.createElement("p");
+  empty.className = "hint";
+  empty.dataset.editorUi = "layers-empty";
+  empty.textContent = "아직 개체가 없습니다.";
+  panel.append(list, empty);
+  host.root.append(panel);
+  return { list, empty };
+}
+
+function layerRows(ctx) {
+  return [...ctx.root.querySelectorAll("[data-editor-ui='layers'] .custom-editor-layer")];
+}
+
 // The floating text toolbar ships with the React chrome, so the plain
 // index.html markup the controller tests boot from has to grow one.
 function addContextToolbar(ctx) {
@@ -1170,4 +1191,84 @@ test("editor sessions transfer model, history, and selected element ids", async 
 
   await target.editor.undo();
   assert.equal(target.editor.serialize().elements[0].text, "처음");
+});
+
+test("a layer row names its object, topmost first, and marks the selection", async () => {
+  const host = createHost();
+  const panel = addLayerPanel(host);
+  const ctx = await createEditor({ host });
+  await ctx.editor.load({
+    elements: [
+      { ...rectSlide("under").elements[0], zIndex: 0 },
+      { ...textSlide("over", { text: "삼일교회  주일예배" }).elements[0], zIndex: 1 },
+    ],
+  });
+
+  // The list reads top-to-bottom like the canvas stacks, so the last element
+  // drawn is the first row.
+  assert.deepEqual(
+    layerRows(ctx).map((row) => row.querySelector(".custom-editor-layer-name").textContent),
+    ["텍스트 · 삼일교회 주일예배", "사각형"]
+  );
+  assert.equal(panel.empty.hidden, true);
+
+  const text = ctx.canvas
+    .getObjects()
+    .find((object) => object.customElementId === "over");
+  select(ctx, text);
+
+  const [first, second] = layerRows(ctx);
+  assert.equal(first.classList.contains("is-active"), true);
+  assert.equal(
+    first.querySelector(".custom-editor-layer-name").getAttribute("aria-current"),
+    "true"
+  );
+  assert.equal(second.classList.contains("is-active"), false);
+});
+
+test("the layer toggles carry their state as labels, not as button text", async () => {
+  const host = createHost();
+  addLayerPanel(host);
+  const ctx = await createEditor({ host });
+  await ctx.editor.load(rectSlide("only"));
+
+  const toggles = () =>
+    [...layerRows(ctx)[0].querySelectorAll(".custom-editor-layer-toggle")];
+  const [visible, lock] = toggles();
+
+  // Icon-only buttons, so the state has to be readable without the glyph.
+  assert.equal(visible.textContent, "");
+  assert.equal(visible.getAttribute("aria-pressed"), "false");
+  assert.equal(visible.getAttribute("aria-label"), "레이어 숨기기");
+  assert.equal(lock.getAttribute("aria-pressed"), "false");
+  assert.equal(lock.getAttribute("aria-label"), "레이어 잠금");
+  assert.ok(visible.querySelector("svg"), "a toggle must render an icon");
+
+  visible.dispatchEvent(new ctx.window.Event("click", { bubbles: true }));
+  const [hiddenToggle] = toggles();
+  assert.equal(hiddenToggle.getAttribute("aria-pressed"), "true");
+  assert.equal(hiddenToggle.getAttribute("aria-label"), "레이어 표시");
+  assert.equal(layerRows(ctx)[0].classList.contains("is-hidden"), true);
+
+  const [, unlocked] = toggles();
+  unlocked.dispatchEvent(new ctx.window.Event("click", { bubbles: true }));
+  const [, locked] = toggles();
+  assert.equal(locked.getAttribute("aria-pressed"), "true");
+  assert.equal(locked.getAttribute("aria-label"), "레이어 잠금 해제");
+});
+
+test("an empty slide shows the layer hint instead of an empty box", async () => {
+  const host = createHost();
+  const panel = addLayerPanel(host);
+  const ctx = await createEditor({ host });
+  await ctx.editor.load({ elements: [] });
+
+  assert.equal(layerRows(ctx).length, 0);
+  assert.equal(panel.empty.hidden, false);
+
+  action(ctx.root, "add-text").click();
+  await settle();
+
+  assert.equal(layerRows(ctx).length, 1);
+  assert.equal(panel.empty.hidden, true);
 });

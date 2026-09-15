@@ -26,6 +26,97 @@ const HISTORY_DEBOUNCE_MS = 220;
 const PASTE_OFFSET = 24;
 const TYPING_TAGS = new Set(["INPUT", "TEXTAREA", "SELECT"]);
 
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+/* Lucide shapes on its 24-unit grid, the same set the React toolbar imports.
+   They are transcribed rather than imported because the layer rows are built
+   imperatively, outside the React chrome. */
+const LAYER_ICON_SHAPES = {
+  grip: [
+    ["circle", { cx: 9, cy: 5, r: 1 }],
+    ["circle", { cx: 9, cy: 12, r: 1 }],
+    ["circle", { cx: 9, cy: 19, r: 1 }],
+    ["circle", { cx: 15, cy: 5, r: 1 }],
+    ["circle", { cx: 15, cy: 12, r: 1 }],
+    ["circle", { cx: 15, cy: 19, r: 1 }],
+  ],
+  eye: [
+    [
+      "path",
+      {
+        d: "M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0",
+      },
+    ],
+    ["circle", { cx: 12, cy: 12, r: 3 }],
+  ],
+  eyeOff: [
+    [
+      "path",
+      {
+        d: "M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49",
+      },
+    ],
+    ["path", { d: "M14.084 14.158a3 3 0 0 1-4.242-4.242" }],
+    [
+      "path",
+      {
+        d: "M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143",
+      },
+    ],
+    ["path", { d: "m2 2 20 20" }],
+  ],
+  lock: [
+    ["rect", { width: 18, height: 11, x: 3, y: 11, rx: 2, ry: 2 }],
+    ["path", { d: "M7 11V7a5 5 0 0 1 10 0v4" }],
+  ],
+  lockOpen: [
+    ["rect", { width: 18, height: 11, x: 3, y: 11, rx: 2, ry: 2 }],
+    ["path", { d: "M7 11V7a5 5 0 0 1 9.9-1" }],
+  ],
+};
+
+const ELEMENT_TYPE_LABELS = {
+  text: "텍스트",
+  image: "이미지",
+  rect: "사각형",
+  roundRect: "둥근 사각형",
+  ellipse: "원",
+  line: "선",
+};
+
+const LAYER_LABEL_MAX = 18;
+
+function createLayerIcon(document, name) {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  for (const [tag, attributes] of LAYER_ICON_SHAPES[name] ?? []) {
+    const shape = document.createElementNS(SVG_NS, tag);
+    for (const [key, value] of Object.entries(attributes)) {
+      shape.setAttribute(key, String(value));
+    }
+    svg.append(shape);
+  }
+  return svg;
+}
+
+/* Six rects all read as "rect", so a text layer carries its own opening words:
+   that is what tells two of them apart at a glance. */
+function layerLabel(object) {
+  const base = ELEMENT_TYPE_LABELS[object.elementType] ?? "개체";
+  if (object.elementType !== "text") {
+    return base;
+  }
+  const text = String(object.text ?? "").replace(/\s+/g, " ").trim();
+  if (!text) {
+    return base;
+  }
+  const clipped =
+    text.length > LAYER_LABEL_MAX ? `${text.slice(0, LAYER_LABEL_MAX)}…` : text;
+  return `${base} · ${clipped}`;
+}
+
 const TEMPLATE_DEFINITIONS = [
   {
     id: "blank",
@@ -3404,55 +3495,110 @@ export async function createCustomSlideEditor(root, options = {}) {
     stopToolbarTracking = autoUpdate(reference, toolbar, () => positionToolbar?.());
   }
 
+  function layerRowButton(document, { className, label, pressed, icon, onClick }) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = className;
+    button.title = label;
+    button.setAttribute("aria-label", label);
+    if (pressed !== undefined) {
+      button.setAttribute("aria-pressed", String(pressed));
+    }
+    button.append(createLayerIcon(document, icon));
+    button.addEventListener("click", onClick);
+    return button;
+  }
+
   function refreshLayerList() {
     const list = root.querySelector("[data-editor-ui='layers']");
     if (!list) {
       return;
     }
+    const document = list.ownerDocument;
     const objects = [...elementObjects()].reverse();
+
+    const empty = root.querySelector("[data-editor-ui='layers-empty']");
+    if (empty) {
+      empty.hidden = objects.length > 0;
+    }
+
     list.replaceChildren();
     for (const object of objects) {
-      const item = list.ownerDocument.createElement("li");
+      const item = document.createElement("li");
       item.draggable = true;
       item.dataset.elementId = object.customElementId;
       item.className = "custom-editor-layer";
-      if (selectedFabricObjects(canvas).includes(object)) {
+      const selected = selectedFabricObjects(canvas).includes(object);
+      if (selected) {
         item.classList.add("is-active");
       }
-      const label = list.ownerDocument.createElement("button");
-      label.type = "button";
-      label.textContent = object.elementType || "개체";
-      label.addEventListener("click", () => {
+      if (object.visible === false) {
+        item.classList.add("is-hidden");
+      }
+
+      const grip = document.createElement("span");
+      grip.className = "custom-editor-layer-grip";
+      grip.append(createLayerIcon(document, "grip"));
+
+      const name = document.createElement("button");
+      name.type = "button";
+      name.className = "custom-editor-layer-name";
+      name.textContent = layerLabel(object);
+      name.title = layerLabel(object);
+      if (selected) {
+        name.setAttribute("aria-current", "true");
+      }
+      name.addEventListener("click", () => {
         canvas.setActiveObject(object);
         canvas.requestRenderAll();
         handleSelectionChange();
       });
-      const vis = list.ownerDocument.createElement("button");
-      vis.type = "button";
-      vis.textContent = object.visible === false ? "숨김" : "표시";
-      vis.addEventListener("click", () => {
-        object.set({ visible: object.visible === false, customVisible: object.visible === false });
-        canvas.requestRenderAll();
-        pushHistory();
-        refreshLayerList();
+
+      const hidden = object.visible === false;
+      const vis = layerRowButton(document, {
+        className: "custom-editor-layer-toggle",
+        label: hidden ? "레이어 표시" : "레이어 숨기기",
+        pressed: hidden,
+        icon: hidden ? "eyeOff" : "eye",
+        onClick: () => {
+          object.set({ visible: hidden, customVisible: hidden });
+          canvas.requestRenderAll();
+          pushHistory();
+          refreshLayerList();
+        },
       });
-      const lock = list.ownerDocument.createElement("button");
-      lock.type = "button";
-      lock.textContent = object.customLocked ? "잠금" : "잠금 해제";
-      lock.addEventListener("click", () => {
-        const locked = !object.customLocked;
-        applyElementChrome(object, { locked, visible: object.visible !== false, shadow: object.shadow }, fabric);
-        canvas.requestRenderAll();
-        pushHistory();
-        refreshLayerList();
+
+      const locked = Boolean(object.customLocked);
+      const lock = layerRowButton(document, {
+        className: "custom-editor-layer-toggle",
+        label: locked ? "레이어 잠금 해제" : "레이어 잠금",
+        pressed: locked,
+        icon: locked ? "lock" : "lockOpen",
+        onClick: () => {
+          applyElementChrome(
+            object,
+            { locked: !locked, visible: object.visible !== false, shadow: object.shadow },
+            fabric
+          );
+          canvas.requestRenderAll();
+          pushHistory();
+          refreshLayerList();
+        },
       });
-      item.append(label, vis, lock);
+
+      item.append(grip, name, vis, lock);
       item.addEventListener("dragstart", (event) => {
         event.dataTransfer.setData("text/plain", object.customElementId);
       });
-      item.addEventListener("dragover", (event) => event.preventDefault());
+      item.addEventListener("dragover", (event) => {
+        event.preventDefault();
+        item.classList.add("is-drop-target");
+      });
+      item.addEventListener("dragleave", () => item.classList.remove("is-drop-target"));
+      item.addEventListener("dragend", () => item.classList.remove("is-drop-target"));
       item.addEventListener("drop", (event) => {
         event.preventDefault();
+        item.classList.remove("is-drop-target");
         const fromId = event.dataTransfer.getData("text/plain");
         const from = elementObjects().find((candidate) => candidate.customElementId === fromId);
         if (!from || from === object) {

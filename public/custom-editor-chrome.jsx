@@ -1,15 +1,23 @@
 import {
-  AlignCenter,
-  AlignLeft,
-  AlignRight,
-  ArrowDownToLine,
-  ArrowUpToLine,
+  AlignHorizontalDistributeCenter,
+  AlignHorizontalJustifyCenter,
+  AlignHorizontalJustifyEnd,
+  AlignHorizontalJustifyStart,
+  AlignStartVertical,
+  AlignVerticalDistributeCenter,
+  AlignVerticalJustifyCenter,
+  AlignVerticalJustifyEnd,
+  AlignVerticalJustifyStart,
   Bold,
+  ChevronDown,
+  ChevronUp,
+  ChevronsDown,
+  ChevronsUp,
   Circle,
   Copy,
   ImagePlus,
   Italic,
-  Layers,
+  Maximize,
   Minus,
   Redo2,
   Square,
@@ -18,6 +26,8 @@ import {
   Type,
   Underline,
   Undo2,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 
 import { ColorPicker } from "./color-picker.jsx";
@@ -93,16 +103,16 @@ export function CustomEditorChrome() {
             ariaLabel="슬라이드 배경색"
           />
         </label>
-        <div className="custom-editor-zoom">
-          <button type="button" className="custom-editor-tool" data-editor-action="zoom-out" aria-label="축소" title="축소">
-            −
-          </button>
-          <button type="button" className="custom-editor-tool" data-editor-action="zoom-fit" aria-label="화면에 맞춤" title="화면에 맞춤">
-            맞춤
-          </button>
-          <button type="button" className="custom-editor-tool" data-editor-action="zoom-in" aria-label="확대" title="확대">
-            +
-          </button>
+        <div className="custom-editor-zoom" role="group" aria-label="확대/축소">
+          <ToolButton action="zoom-out" label="축소">
+            <ZoomOut size={16} />
+          </ToolButton>
+          <ToolButton action="zoom-fit" label="화면에 맞춤">
+            <Maximize size={16} />
+          </ToolButton>
+          <ToolButton action="zoom-in" label="확대">
+            <ZoomIn size={16} />
+          </ToolButton>
         </div>
       </div>
 
@@ -137,48 +147,53 @@ export function CustomEditorChrome() {
         </div>
         <div className="custom-editor-tool-group" role="group" aria-label="슬라이드 기준 정렬">
           <ToolButton action="align-left" label="왼쪽 정렬">
-            <AlignLeft size={16} />
+            <AlignHorizontalJustifyStart size={16} />
           </ToolButton>
           <ToolButton action="align-center" label="가로 가운데 정렬">
-            <AlignCenter size={16} />
+            <AlignHorizontalJustifyCenter size={16} />
           </ToolButton>
           <ToolButton action="align-right" label="오른쪽 정렬">
-            <AlignRight size={16} />
+            <AlignHorizontalJustifyEnd size={16} />
           </ToolButton>
           <ToolButton action="align-top" label="위쪽 정렬">
-            <ArrowUpToLine size={16} />
+            <AlignVerticalJustifyStart size={16} />
           </ToolButton>
           <ToolButton action="align-middle" label="세로 가운데 정렬">
-            <Layers size={16} />
+            <AlignVerticalJustifyCenter size={16} />
           </ToolButton>
           <ToolButton action="align-bottom" label="아래쪽 정렬">
-            <ArrowDownToLine size={16} />
+            <AlignVerticalJustifyEnd size={16} />
           </ToolButton>
         </div>
         <div className="custom-editor-tool-group" role="group" aria-label="개체 간 정렬">
-          <ToolButton action="align-selection-left" label="선택 왼쪽 정렬">
-            선택 왼쪽
+          <ToolButton action="align-selection-left" label="선택 개체 왼쪽 정렬">
+            <AlignStartVertical size={16} />
           </ToolButton>
           <ToolButton action="distribute-x" label="가로 균등 분배">
-            가로 분배
+            <AlignHorizontalDistributeCenter size={16} />
           </ToolButton>
           <ToolButton action="distribute-y" label="세로 균등 분배">
-            세로 분배
+            <AlignVerticalDistributeCenter size={16} />
+          </ToolButton>
+        </div>
+        {/* Top-to-bottom, to match the layer list these four reorder. The two
+            layered-square icons lucide offers for the extremes are hard to
+            tell apart at 16px, so the group reads as one scale instead. */}
+        <div className="custom-editor-tool-group" role="group" aria-label="쌓는 순서">
+          <ToolButton action="to-front" label="맨 앞으로">
+            <ChevronsUp size={16} />
+          </ToolButton>
+          <ToolButton action="forward" label="앞으로 가져오기">
+            <ChevronUp size={16} />
+          </ToolButton>
+          <ToolButton action="backward" label="뒤로 보내기">
+            <ChevronDown size={16} />
+          </ToolButton>
+          <ToolButton action="to-back" label="맨 뒤로">
+            <ChevronsDown size={16} />
           </ToolButton>
         </div>
         <div className="custom-editor-tool-group" role="group" aria-label="개체 관리">
-          <ToolButton action="forward" label="앞으로 가져오기">
-            앞으로
-          </ToolButton>
-          <ToolButton action="backward" label="뒤로 보내기">
-            뒤로
-          </ToolButton>
-          <ToolButton action="to-front" label="맨 앞으로">
-            맨 앞
-          </ToolButton>
-          <ToolButton action="to-back" label="맨 뒤로">
-            맨 뒤
-          </ToolButton>
           <ToolButton action="duplicate" label="개체 복제">
             <Copy size={16} />
           </ToolButton>
@@ -248,7 +263,13 @@ export function CustomEditorChrome() {
       <div className="custom-editor-side" id="customSlideInspector">
       <aside className="custom-editor-layers" aria-label="레이어">
         <div className="custom-editor-panel-label">레이어</div>
+        <p className="hint">
+          겹쳐서 클릭하기 어려운 개체를 골라내고, 숨기거나 잠그고, 끌어서 앞뒤 순서를 바꿉니다.
+        </p>
         <ol data-editor-ui="layers" className="custom-editor-layer-list"></ol>
+        <p className="hint" data-editor-ui="layers-empty">
+          아직 개체가 없습니다. 위 도구로 추가해 보세요.
+        </p>
       </aside>
 
       <aside className="custom-editor-props" aria-label="선택 개체 속성">

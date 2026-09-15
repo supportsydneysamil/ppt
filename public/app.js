@@ -5351,6 +5351,27 @@ const workspaceResizeObserver =
     : null;
 workspaceResizeObserver?.observe(slideEditor);
 
+// On a custom slide the inspector column holds two things stacked in the same
+// grid cell: the form, which keeps only its header and the name/type fields,
+// overlaid on top of the custom editor's own layers/properties column. The
+// lower one has to start below the form, and only the form knows how tall it
+// is, so it reports that here instead of the stylesheet guessing.
+const inspectorOffsetForm = document.getElementById("slideForm");
+const inspectorOffsetObserver =
+  typeof ResizeObserver === "function" && inspectorOffsetForm
+    ? new ResizeObserver(([entry]) => {
+        const height = entry?.borderBoxSize?.[0]?.blockSize ?? entry?.target?.offsetHeight;
+        if (!height) {
+          return;
+        }
+        slideEditor.style.setProperty(
+          "--custom-inspector-offset",
+          `${Math.round(height)}px`
+        );
+      })
+    : null;
+inspectorOffsetObserver?.observe(inspectorOffsetForm);
+
 function loadCustomSlideBridge() {
   if (!customSlideBridgePromise) {
     customSlideBridgePromise = import("./custom-slide-bridge.js").then((module) => {

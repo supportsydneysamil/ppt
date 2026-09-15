@@ -115,7 +115,11 @@ body {
   margin-inline: auto;
 }
 
+/* Column flex so the app shell below can hand .ppt-interface the height the
+   tab bar leaves. applyViewChange() also sets this inline when it reveals the
+   view; declaring it here means the height chain does not depend on that. */
 #view-ppt {
+  display: flex;
   flex-direction: column;
   min-width: 0;
 }
@@ -2051,6 +2055,15 @@ body {
   align-self: start;
 }
 
+/* Both chevrons sit flush against the top of their header, and the inspector's
+   header is the top of a scroll container: the shared `.ghost` hover lift moved
+   the button 1px past that clip edge, which cropped the whole top border off the
+   hover glow. These are pinned controls rather than raised ones, so the border
+   colour carries the hover on its own. */
+.panel-collapse-btn:hover {
+  transform: none;
+}
+
 /* The collapse chevrons are stroked outlines, unlike the filled `.icon-btn`
    glyphs elsewhere. */
 .panel-collapse-btn svg {
@@ -2481,6 +2494,12 @@ body {
   grid-area: inspector;
   display: grid;
   gap: var(--sp-5);
+  /* This grid gets stretched to the full pane height, and stretch alignment
+     would split the slack across every row: the sticky header ballooned to
+     three times its height and the fields drifted apart. Rows keep their own
+     height and the gap stays the one token. A long form is unaffected, since
+     it overflows and has no slack to distribute. */
+  align-content: start;
   min-width: 0;
   max-height: var(--stage-max-h);
   overflow: auto;
@@ -3376,18 +3395,24 @@ body[data-theme="light"] .rte-textarea {
 .custom-editor-toolbar {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--sp-2);
+  align-items: center;
+  /* Wider between groups than within one, so the separators read as the
+     boundary rather than every gap looking the same. */
+  gap: var(--sp-2) var(--sp-3);
   padding: var(--sp-2);
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--panel-soft);
 }
 
+/* A group is one unit. It wraps as a whole instead of splitting its own
+   buttons across two lines, which is what made the rows look ragged. */
 .custom-editor-tool-group {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-1);
-  padding-right: var(--sp-2);
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 2px;
+  padding-right: var(--sp-3);
   border-right: 1px solid var(--border);
 }
 
@@ -3397,6 +3422,9 @@ body[data-theme="light"] .rte-textarea {
 }
 
 .custom-editor-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   height: var(--ctrl-h-sm);
   padding: 0 10px;
   font-size: 12px;
@@ -3405,6 +3433,26 @@ body[data-theme="light"] .rte-textarea {
   border: 1px solid var(--border);
   border-radius: 8px;
   cursor: pointer;
+}
+
+/* Every tool in these rows is a single icon, so they are square on a shared
+   grid instead of each one sized to its own glyph. Scoped to the React chrome:
+   the markup in index.html is the fallback for when that fails to mount, and
+   its buttons still carry text labels that 34px would clip. */
+.custom-editor-chrome .custom-editor-toolbar .custom-editor-tool,
+.custom-editor-chrome .custom-editor-zoom .custom-editor-tool,
+.custom-editor-chrome .custom-editor-context-toolbar .custom-editor-tool {
+  width: var(--ctrl-h-sm);
+  padding: 0;
+}
+
+/* Zoom is a view control, not an object control: it sits apart from the
+   template/theme fields at the far end of the bar. */
+.custom-editor-zoom {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
 }
 
 .custom-editor-tool:hover:not(:disabled) {
@@ -3610,6 +3658,12 @@ body[data-theme="light"] .rte-textarea {
   cursor: pointer;
 }
 
+.custom-editor-layers {
+  display: grid;
+  gap: var(--sp-2);
+  align-content: start;
+}
+
 .custom-editor-layer-list {
   list-style: none;
   margin: 0;
@@ -3618,14 +3672,105 @@ body[data-theme="light"] .rte-textarea {
   gap: 4px;
 }
 
+.custom-editor-layer-list:empty {
+  display: none;
+}
+
+/* One row per object, on the same control grid as the property rows next to
+   it: the grip and the two toggles are fixed, the name takes the rest. */
 .custom-editor-layer {
-  display: flex;
-  gap: 4px;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto auto;
   align-items: center;
+  gap: 2px;
+  padding: 0 4px 0 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.custom-editor-layer:hover {
+  border-color: var(--brand-edge);
 }
 
 .custom-editor-layer.is-active {
-  outline: 1px solid var(--brand-edge);
+  border-color: var(--brand-edge);
+  background: var(--brand-tint);
+}
+
+/* Hidden on the canvas, so it reads as hidden in the list too. */
+.custom-editor-layer.is-hidden .custom-editor-layer-name {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+
+.custom-editor-layer.is-drop-target {
+  border-color: var(--brand-edge);
+  box-shadow: inset 0 2px 0 0 var(--brand-edge);
+}
+
+.custom-editor-layer-grip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  cursor: grab;
+}
+
+.custom-editor-layer-name {
+  height: var(--ctrl-h-sm);
+  min-width: 0;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.custom-editor-layer-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.custom-editor-layer-toggle:hover {
+  background: var(--panel-soft);
+  color: var(--ink);
+}
+
+/* Pressed means the object is hidden or locked — a state worth spotting
+   without reading the icon. */
+.custom-editor-layer-toggle[aria-pressed="true"] {
+  color: var(--ink);
+}
+
+.custom-editor-layer-name:focus-visible,
+.custom-editor-layer-toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.custom-editor-layer svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .font-preview-select option {
@@ -3652,13 +3797,25 @@ body[data-theme="light"] .rte-textarea {
     "tools side"
     "stage side"
     "status side";
+  /* The stage row is the only one allowed to absorb free height. Without this
+     the rows are all auto, and the inspector column — which spans every one of
+     them — distributes its own growth across them: selecting an object made the
+     property panels taller, which grew the bar and tool rows and pushed the
+     stage down the screen. */
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  min-height: 0;
   gap: var(--sp-3) var(--sp-4);
 }
 
 .slide-editor-panel[data-slide-type="custom"] .editor-form {
   grid-area: inspector;
   z-index: 2;
+  /* Only the header and the name/type fields are left, so the form takes its
+     own height and hands the rest of the column to `.custom-editor-side`. The
+     cap is for short viewports, where even that much would outgrow the row and
+     get clipped by the panel; `overflow: auto` on the base rule takes over. */
   align-self: start;
+  max-height: 100%;
 }
 
 .slide-editor-panel[data-slide-type="custom"] .editor-form > :not(.settings-section):not(.inspector-header) {
@@ -3681,10 +3838,20 @@ body[data-theme="light"] .rte-textarea {
   grid-area: side;
   grid-template-columns: minmax(0, 1fr);
   min-width: 0;
-  /* `.editor-form` is overlaid on the top of this same column, so this clears
-     its name/type fields plus the inspector header row now above them, plus
-     the form's row gap between the two. */
-  padding-top: calc(150px + var(--inspector-header-h) + var(--sp-5));
+  min-height: 0;
+  /* Layers and the property panels grow and shrink with the selection, so this
+     column scrolls itself. It also has to: an `auto` minimum size would let the
+     panels count towards the grid's minimum height and shove the stage down. */
+  overflow-y: auto;
+  /* `.editor-form` is overlaid on the top of this same column, showing only its
+     header and the name/type fields. A margin rather than padding, so the
+     cleared strip stays outside the scroll box and nothing slides under the
+     form. --custom-inspector-offset is measured from the form itself; the
+     fallback is the height it has with those two rows. */
+  margin-top: calc(
+    var(--custom-inspector-offset, calc(150px + var(--inspector-header-h))) +
+      var(--sp-5)
+  );
   padding-left: var(--sp-4);
   /* Continues the `.editor-form` divider down the rest of the column. */
   border-left: 1px solid var(--border);
@@ -3927,6 +4094,9 @@ body[data-theme="light"] .rte-textarea {
     width: min(340px, calc(100vw - 80px));
     max-height: calc(100vh - 190px);
     overflow: auto;
+    /* Out of flow and anchored to `top`, so the wide column's clearance for the
+       overlaid form does not apply; the drawer pads it instead. */
+    margin-top: 0;
     padding: calc(164px + var(--inspector-header-h) + var(--sp-5)) 16px 16px;
     border: 1px solid var(--border);
     border-radius: 12px;
@@ -4042,6 +4212,9 @@ body[data-theme="light"] .rte-textarea {
     max-height: none;
     overflow: visible;
     visibility: visible;
+    /* Stacked below the form rather than overlaid by it, so there is nothing
+       to clear and the page owns the scrolling again. */
+    margin-top: 0;
     padding: 0;
   }
 

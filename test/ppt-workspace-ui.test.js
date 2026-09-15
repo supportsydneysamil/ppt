@@ -355,9 +355,80 @@ describe("PPT panel collapse affordances", () => {
     );
   });
 
+  it("lets only the stage row absorb the custom editor's free height", () => {
+    // The inspector column spans all four rows. While they were every one
+    // `auto`, revealing the property panels on a selection grew the bar and
+    // tool rows too, which pushed the stage down the screen.
+    assert.match(
+      css,
+      /\[data-slide-type="custom"\] \.custom-editor\[data-react-chrome="true"\]:not\(\[hidden\]\)\s*\{[^}]*?grid-template-rows:\s*auto auto minmax\(0,\s*1fr\) auto/
+    );
+    assert.match(
+      css,
+      /\[data-slide-type="custom"\] \.custom-editor\[data-react-chrome="true"\]:not\(\[hidden\]\)\s*\{[^}]*?min-height:\s*0/
+    );
+  });
+
+  it("scrolls the custom inspector inside its own column", () => {
+    // Layers plus the property panels outgrow any viewport, and the panel
+    // clips its overflow, so the column has to scroll rather than the page.
+    assert.match(
+      css,
+      /\[data-slide-type="custom"\] \.custom-editor-side\s*\{[^}]*?min-height:\s*0/
+    );
+    assert.match(
+      css,
+      /\[data-slide-type="custom"\] \.custom-editor-side\s*\{[^}]*?overflow-y:\s*auto/
+    );
+    // A margin, not padding: the strip the overlaid form occupies stays
+    // outside the scroll box, so no row slides under it.
+    assert.match(
+      css,
+      /\[data-slide-type="custom"\] \.custom-editor-side\s*\{[^}]*?margin-top:\s*calc\(\s*var\(--custom-inspector-offset/
+    );
+    // Out-of-flow drawers anchor to `top` instead, so both reset it.
+    assert.match(
+      css,
+      /\[data-layout-mode="compact"\] \.custom-editor-side\s*\{[^}]*?margin-top:\s*0/
+    );
+    assert.match(
+      css,
+      /\[data-layout-mode="mobile"\] \.custom-editor-side\s*\{[^}]*?margin-top:\s*0/
+    );
+  });
+
+  it("measures the overlaid form instead of hard-coding its height", () => {
+    assert.match(appSource, /--custom-inspector-offset/);
+    assert.match(appSource, /inspectorOffsetObserver/);
+  });
+
+  it("keeps the ppt view a flex column in the stylesheet", () => {
+    // .ppt-interface claims the leftover height with `flex: 1 1 auto`, which
+    // is inert unless this is a flex container. applyViewChange() also sets it
+    // inline, and the whole app-shell height chain rests on that one line.
+    assert.match(css, /#view-ppt\s*\{[^}]*?display:\s*flex/);
+    assert.match(css, /#view-ppt\s*\{[^}]*?flex-direction:\s*column/);
+  });
+
   it("names the panel and the inspector distinctly", () => {
     assert.match(html, /<div class="editor-header">\s*<h3>슬라이드 편집<\/h3>/);
     assert.match(html, /<div class="inspector-header">\s*<h4>상세 설정<\/h4>/);
+  });
+
+  it("keeps the collapse chevron's hover glow inside the inspector's clip", () => {
+    // `.ghost:hover` lifts by 1px, but the chevron's top sits exactly on
+    // `.editor-form`'s scroll clip edge, so the lift pushed the freshly
+    // brand-coloured top border out of the scrollport and it vanished.
+    assert.match(css, /\.panel-collapse-btn:hover\s*\{[^}]*?transform:\s*none/);
+  });
+
+  it("packs the inspector rows at the top instead of spreading them", () => {
+    // The form is a grid stretched to the pane height in app-shell mode, so
+    // the default stretch alignment hands the slack to every row: the header
+    // grew from 47px to 162px and the fields drifted apart.
+    // `[^}]` keeps the match inside the rule body; `[\s\S]*?` would happily
+    // run past the closing brace and match `.preview-area`'s own start.
+    assert.match(css, /\.editor-form\s*\{[^}]*?align-content:\s*start/);
   });
 
   it("leaves the slide-list header holding only its title and collapse icon", () => {
@@ -381,6 +452,33 @@ describe("PPT panel collapse affordances", () => {
       appSource,
       /"\.slide-list-header, \.slide-list-actions, \.slide-list-toolbar, \.slide-cards"/
     );
+  });
+
+  it("builds the custom toolbar out of one uniform icon set", () => {
+    // Mixed icon and Korean-text buttons is what made the rows look ragged.
+    assert.doesNotMatch(chromeSource, /<ToolButton[^>]*>\s*[가-힣]/);
+    // Vertical-middle used the Layers glyph, which says nothing about align.
+    assert.match(chromeSource, /action="align-middle"[\s\S]{0,80}AlignVerticalJustifyCenter/);
+    assert.match(
+      css,
+      /\.custom-editor-chrome \.custom-editor-toolbar \.custom-editor-tool[\s\S]*?width:\s*var\(--ctrl-h-sm\)/
+    );
+    // A group wraps whole rather than splitting its own buttons across rows.
+    assert.match(css, /\.custom-editor-tool-group\s*\{[^}]*?flex-wrap:\s*nowrap/);
+  });
+
+  it("gives the layer list rows instead of loose buttons", () => {
+    assert.match(chromeSource, /data-editor-ui="layers"/);
+    assert.match(chromeSource, /data-editor-ui="layers-empty"/);
+    // A one-line answer to "what is this panel for".
+    assert.match(chromeSource, /겹쳐서 클릭하기 어려운 개체를/);
+    assert.match(
+      css,
+      /\.custom-editor-layer\s*\{[^}]*?grid-template-columns:\s*16px minmax\(0,\s*1fr\) auto auto/
+    );
+    assert.match(css, /\.custom-editor-layer-name\s*\{[^}]*?height:\s*var\(--ctrl-h-sm\)/);
+    assert.match(css, /\.custom-editor-layer\.is-active\s*\{[^}]*?border-color:\s*var\(--brand-edge\)/);
+    assert.match(css, /\.custom-editor-layer svg\s*\{[^}]*?stroke:\s*currentColor/);
   });
 
   it("states each toggle's label once, in the markup", () => {
