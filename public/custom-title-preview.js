@@ -347,7 +347,8 @@ function addSubtitle(container, subtitle, theme, unit, document) {
       document,
       `position:relative;font-family:${TITLE_SANS};font-weight:700;` +
         `font-size:${pt(subtitleFontSize(subtitle))}px;line-height:1.2;` +
-        `color:${theme.subtitleText};white-space:pre-line;letter-spacing:0.08em;`,
+        `color:${theme.subtitleText};white-space:pre-line;letter-spacing:0.08em;` +
+        "text-align:center;",
       subtitle
     )
   );

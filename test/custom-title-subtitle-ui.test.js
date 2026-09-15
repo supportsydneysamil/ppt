@@ -94,4 +94,32 @@ describe("Custom title subtitle editor wiring", () => {
       assert.equal(halo.querySelectorAll("[data-subtitle-accent]").length, 0);
     }
   });
+
+  it("centers every subtitle line, matching the exported deck", async () => {
+    const { buildCustomTitleSlidePreview } = await import(
+      "../public/custom-title-preview.js"
+    );
+    const { buildHymnSubtitle } = await import("../lib/cover-title-content.js");
+    const document = new JSDOM("<!doctype html><body></body>").window.document;
+
+    for (const designId of ["aurora", "monolith", "ivory", "marquee"]) {
+      const preview = buildCustomTitleSlidePreview(
+        {
+          customTitleDesign: designId,
+          customTitleKo: "찬송",
+          customTitleEn: "HYMN",
+          customTitleSubtitle: buildHymnSubtitle({
+            hymnNumber: 191,
+            hymnKorTitle: "내가 매일 기쁘게",
+            hymnEngTitle: "Sunlight In My Soul",
+          }),
+        },
+        640,
+        { document, catalogApi: null }
+      );
+      const text = preview.querySelector("[data-custom-title-subtitle]")
+        .firstElementChild;
+      assert.equal(text.style.textAlign, "center");
+    }
+  });
 });
