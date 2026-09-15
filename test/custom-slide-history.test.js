@@ -229,4 +229,54 @@ describe("createCustomSlideHistory", () => {
     undone.elements[0].text = "mutated again";
     assert.equal(history.current().elements[0].text, "stable");
   });
+
+  it("exports and imports undo, redo, and saved-baseline state", () => {
+    const source = createCustomSlideHistory(slideWithText("a"));
+    source.push(slideWithText("b"));
+    source.push(slideWithText("c"));
+    source.undo();
+
+    const exported = source.exportState();
+    const restored = createCustomSlideHistory(slideWithText("other"));
+    restored.importState(exported);
+
+    assert.deepEqual(restored.current(), slideWithText("b"));
+    assert.equal(restored.canUndo(), true);
+    assert.equal(restored.canRedo(), true);
+    assert.equal(restored.isDirty(), true);
+    assert.deepEqual(restored.undo(), slideWithText("a"));
+    assert.deepEqual(restored.redo(), slideWithText("b"));
+    assert.deepEqual(restored.redo(), slideWithText("c"));
+  });
+
+  it("keeps exported and imported session snapshots isolated", () => {
+    const source = createCustomSlideHistory(slideWithText("a"));
+    source.push(slideWithText("b"));
+    const exported = source.exportState();
+    exported.current.elements[0].text = "mutated export";
+    exported.undo[0].elements[0].text = "mutated undo";
+    assert.deepEqual(source.current(), slideWithText("b"));
+    assert.deepEqual(source.undo(), slideWithText("a"));
+
+    const restored = createCustomSlideHistory(slideWithText("other"));
+    restored.importState(source.exportState());
+    const imported = restored.exportState();
+    imported.current.elements[0].text = "mutated import";
+    assert.deepEqual(restored.current(), slideWithText("a"));
+  });
+
+  it("normalizes malformed imported collections to empty stacks", () => {
+    const history = createCustomSlideHistory(slideWithText("a"));
+    history.importState({
+      current: slideWithText("restored"),
+      undo: "bad",
+      redo: null,
+      savedKey: 42,
+    });
+
+    assert.deepEqual(history.current(), slideWithText("restored"));
+    assert.equal(history.canUndo(), false);
+    assert.equal(history.canRedo(), false);
+    assert.equal(history.isDirty(), false);
+  });
 });

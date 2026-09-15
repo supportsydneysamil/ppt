@@ -76,5 +76,33 @@ export function createCustomSlideHistory(initialState) {
     isDirty() {
       return snapshotKey(current) !== savedSnapshot;
     },
+
+    exportState() {
+      return {
+        current: cloneSnapshot(current),
+        undo: undoStack.map(cloneSnapshot),
+        redo: redoStack.map(cloneSnapshot),
+        savedKey: savedSnapshot,
+      };
+    },
+
+    importState(state = {}) {
+      current = cloneSnapshot(state.current);
+      undoStack.splice(
+        0,
+        undoStack.length,
+        ...(Array.isArray(state.undo) ? state.undo.map(cloneSnapshot) : [])
+      );
+      redoStack.splice(
+        0,
+        redoStack.length,
+        ...(Array.isArray(state.redo) ? state.redo.map(cloneSnapshot) : [])
+      );
+      savedSnapshot =
+        typeof state.savedKey === "string"
+          ? state.savedKey
+          : snapshotKey(current);
+      return cloneSnapshot(current);
+    },
   };
 }
