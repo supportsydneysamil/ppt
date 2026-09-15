@@ -285,4 +285,24 @@ describe("PPT panel collapse affordances", () => {
       /\[data-inspector-open="false"\]\s*#inspectorPanelCollapseBtn\s*\{[\s\S]*?display:\s*none/
     );
   });
+
+  it("seats the slide-list chevron in the header action row", () => {
+    assert.match(
+      html,
+      /id="duplicateSlideBtn"[\s\S]*?id="slidePanelCollapseBtn"[\s\S]*?<\/div>\s*<\/div>\s*<div class="slide-list-toolbar">/
+    );
+    assert.match(
+      html,
+      /id="slidePanelCollapseBtn"[\s\S]*?class="ghost small icon-btn panel-collapse-btn"/
+    );
+    assert.doesNotMatch(css, /\.slide-panel-collapse/);
+    assert.doesNotMatch(
+      css,
+      /\.slide-list-header\s*\{\s*padding-right:\s*34px/
+    );
+    assert.match(
+      css,
+      /\.panel-collapse-btn svg\s*\{[\s\S]*?stroke:\s*currentColor/
+    );
+  });
 });

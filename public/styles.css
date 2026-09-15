@@ -2051,33 +2051,14 @@ body {
   align-self: start;
 }
 
-.slide-panel-collapse {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  z-index: 2;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--panel-soft);
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.slide-panel-collapse svg {
+/* The collapse chevrons are stroked outlines, unlike the filled `.icon-btn`
+   glyphs elsewhere. */
+.panel-collapse-btn svg {
   width: 16px;
   height: 16px;
   fill: none;
   stroke: currentColor;
   stroke-width: 2;
-}
-
-.slide-list-header {
-  padding-right: 34px;
 }
 
 .slide-list-header {
@@ -3962,7 +3943,7 @@ body[data-theme="light"] .rte-textarea {
     display: none;
   }
 
-  .slide-panel-collapse {
+  #slidePanelCollapseBtn {
     display: none;
   }
 
