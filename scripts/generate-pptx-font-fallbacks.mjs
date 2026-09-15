@@ -10,6 +10,13 @@
 // Latin is deliberately left unadjusted. Malgun/Carlito Latin advances differ
 // per glyph (space 1.60x, period 0.95x, 'B' 0.92x), so no single size-adjust
 // is correct and any value would just overfit one sentence.
+//
+// No local() sources are emitted. A descriptor applies to whichever src loads,
+// so a local Office font would be scaled by a ratio derived for the substitute
+// and end up wrong — and Chrome does not honour declaration order well enough
+// to prefer a local face from a separate unadjusted rule (verified with
+// scripts/font-fallback-order-probe.mjs). Always using the adjusted substitute
+// keeps advances equal to the original and renders the same on every machine.
 import * as fontkit from 'fontkit';
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -29,55 +36,67 @@ const FONT_SEARCH_DIRS = [
   "C:/Windows/Fonts",
 ];
 
-// A Hangul syllable and a Latin letter, used to probe advance widths.
+// A Hangul syllable, used to probe advance widths. Hangul is the one script
+// that can be corrected exactly: every syllable shares a single advance within
+// a font, and it does not vary along the weight axis.
 const HANGUL_SAMPLE = 0xac00;
 
+// The word space was tried as a separate correction, since it is the largest
+// mismatch (Malgun 0.3516em vs Noto 0.2200em) and invisible, so scaling it
+// changes no glyph shapes. It is not emitted: Noto's Latin and punctuation
+// advances move along the variable weight axis, so Chrome lays a space out
+// 1.27x wider than the static tables report and one fixed ratio cannot serve
+// both regular and bold runs. Measured with scripts/dom-advance-probe.mjs.
+const SPACE = 0x20;
+
+// `face` picks a specific font out of a .ttc collection; gulim.ttc holds Gulim,
+// GulimChe, Dotum and DotumChe, and batang.ttc holds Batang and Gungsuh.
+// Aliases with no `file` have no installed original to measure, so they are
+// substituted without adjustment rather than with a guessed ratio.
 const groups = [
   {
     packageName: "@fontsource-variable/noto-sans-kr",
     sourceFamily: "Noto Sans KR Variable",
     aliases: [
-      { family: "Malgun Gothic", file: "malgun.ttf", locals: ["Malgun Gothic", "맑은 고딕", "Apple SD Gothic Neo"] },
-      { family: "맑은 고딕", file: "malgun.ttf", locals: ["맑은 고딕", "Malgun Gothic", "Apple SD Gothic Neo"] },
-      { family: "Gulim", file: "gulim.ttc", locals: ["Gulim", "굴림", "Apple SD Gothic Neo"] },
-      { family: "굴림", file: "gulim.ttc", locals: ["굴림", "Gulim", "Apple SD Gothic Neo"] },
-      { family: "Dotum", file: "dotum.ttc", locals: ["Dotum", "돋움", "Apple SD Gothic Neo"] },
-      { family: "돋움", file: "dotum.ttc", locals: ["돋움", "Dotum", "Apple SD Gothic Neo"] },
-      // No installed original to measure; alias only, so it degrades to plain
-      // substitution instead of a guessed metric.
-      { family: "HY견고딕", locals: ["HY견고딕", "HYGothic-Extra", "Apple SD Gothic Neo"] },
-      { family: "NanumSquare Bold", locals: ["NanumSquare Bold", "NanumSquare", "Apple SD Gothic Neo"] },
+      { family: "Malgun Gothic", file: "malgun.ttf" },
+      { family: "맑은 고딕", file: "malgun.ttf" },
+      { family: "Gulim", file: "gulim.ttc", face: "Gulim" },
+      { family: "굴림", file: "gulim.ttc", face: "Gulim" },
+      { family: "Dotum", file: "gulim.ttc", face: "Dotum" },
+      { family: "돋움", file: "gulim.ttc", face: "Dotum" },
+      { family: "HY견고딕" },
+      { family: "NanumSquare Bold" },
     ],
   },
   {
     packageName: "@fontsource-variable/noto-serif-kr",
     sourceFamily: "Noto Serif KR Variable",
     aliases: [
-      { family: "Batang", file: "batang.ttc", locals: ["Batang", "바탕", "AppleMyungjo"] },
-      { family: "바탕", file: "batang.ttc", locals: ["바탕", "Batang", "AppleMyungjo"] },
+      { family: "Batang", file: "batang.ttc", face: "Batang" },
+      { family: "바탕", file: "batang.ttc", face: "Batang" },
+      { family: "Gungsuh", file: "batang.ttc", face: "Gungsuh" },
+      { family: "궁서", file: "batang.ttc", face: "Gungsuh" },
     ],
   },
   {
     packageName: "@fontsource/carlito",
     sourceFamily: "Carlito",
     aliases: [
-      { family: "Calibri", file: "Calibri.ttf", locals: ["Calibri", "Carlito"] },
-      { family: "Calibri Light", file: "calibril.ttf", locals: ["Calibri Light", "Calibri", "Carlito"] },
-      { family: "Aptos", file: "Aptos.ttf", locals: ["Aptos", "Calibri", "Carlito"] },
-      { family: "Aptos Display", file: "Aptos-Display.ttf", locals: ["Aptos Display", "Aptos", "Calibri", "Carlito"] },
+      { family: "Calibri", file: "Calibri.ttf" },
+      { family: "Calibri Light", file: "calibril.ttf" },
+      { family: "Aptos", file: "Aptos.ttf" },
+      { family: "Aptos Display", file: "Aptos-Display.ttf" },
     ],
   },
   {
     packageName: "@fontsource/arimo",
     sourceFamily: "Arimo",
-    aliases: [{ family: "Arial", file: "arial.ttf", locals: ["Arial", "Arial Unicode MS", "Liberation Sans", "Arimo"] }],
+    aliases: [{ family: "Arial", file: "arial.ttf" }],
   },
   {
     packageName: "@fontsource/tinos",
     sourceFamily: "Tinos",
-    aliases: [
-      { family: "Times New Roman", file: "times.ttf", locals: ["Times New Roman", "Liberation Serif", "Tinos"] },
-    ],
+    aliases: [{ family: "Times New Roman", file: "times.ttf" }],
   },
 ];
 
@@ -95,10 +114,16 @@ async function findFontFile(fileName) {
   return null;
 }
 
-/** fontkit returns a collection for .ttc; the first face is the regular one. */
-async function openFace(filePath) {
+/** fontkit returns a collection for .ttc, so the wanted face is named. */
+async function openFace(filePath, faceName) {
   const opened = await fontkit.open(filePath);
-  return opened.fonts ? opened.fonts[0] : opened;
+  if (!opened.fonts) return opened;
+  if (!faceName) return opened.fonts[0];
+  const match = opened.fonts.find(
+    (f) => f.postscriptName === faceName || f.familyName === faceName
+  );
+  if (!match) throw new Error(`face ${faceName} not found in ${path.basename(filePath)}`);
+  return match;
 }
 
 function verticalMetrics(face) {
@@ -115,7 +140,8 @@ function advanceOf(face, codePoint) {
   return face.glyphForCodePoint(codePoint).advanceWidth / face.unitsPerEm;
 }
 
-/** Finds the subset chunk that actually contains a code point. */
+/** Finds the subset chunk that actually contains a code point. Chunks without
+ *  it return a .notdef advance, which would silently corrupt the ratio. */
 async function advanceAcrossChunks(files, dir, codePoint) {
   for (const file of files) {
     const face = await openFace(path.join(dir, file));
@@ -134,36 +160,86 @@ function isKoreanChunk(url) {
   return /-\d+-wght-normal\.woff2$/.test(url);
 }
 
+/** Drops U+0020 from a unicode-range list so the dedicated space face is the
+ *  only one covering it, instead of relying on declaration-order precedence. */
+function excludeSpace(rangeList) {
+  return rangeList
+    .split(",")
+    .flatMap((entry) => {
+      const token = entry.trim();
+      const [startRaw, endRaw] = token.replace(/^U\+/iu, "").split("-");
+      const start = parseInt(startRaw, 16);
+      const end = endRaw === undefined ? start : parseInt(endRaw, 16);
+      if (Number.isNaN(start) || SPACE < start || SPACE > end) return [token];
+      const kept = [];
+      if (start <= SPACE - 1) kept.push(start === SPACE - 1 ? `U+${start.toString(16)}` : `U+${start.toString(16)}-${(SPACE - 1).toString(16)}`);
+      if (end >= SPACE + 1) kept.push(end === SPACE + 1 ? `U+${end.toString(16)}` : `U+${(SPACE + 1).toString(16)}-${end.toString(16)}`);
+      return kept;
+    })
+    .join(",");
+}
+
 const report = [];
 
 function buildFaces(css, group, alias, measurements) {
   const packageUrl = `../node_modules/${group.packageName}/files/`;
   const blocks = css.match(/@font-face \{[\s\S]*?\}/gu) ?? [];
   const out = [];
+  const hasSpaceFace = measurements.spaceAdjust != null;
+  let spaceSourceBlock = null;
 
-  for (const block of blocks) {
-    const url = /url\(\.\/files\/([^)]+)\)/u.exec(block)?.[1] ?? "";
-    const applySizeAdjust = measurements.sizeAdjust != null && isKoreanChunk(url);
-
+  const metricDescriptors = (sizeAdjust) => {
     const descriptors = [];
-    if (applySizeAdjust) descriptors.push(`  size-adjust: ${percent(measurements.sizeAdjust)};`);
+    if (sizeAdjust != null) descriptors.push(`  size-adjust: ${percent(sizeAdjust)};`);
     if (measurements.vertical) {
-      // Chrome scales metric overrides by size-adjust as well, so divide them
-      // out first; verified with scripts/font-descriptor-probe.mjs.
-      const divisor = applySizeAdjust ? measurements.sizeAdjust : 1;
+      // Chrome scales metric overrides by size-adjust too, so divide them out
+      // first; verified with scripts/font-descriptor-probe.mjs.
+      const divisor = sizeAdjust ?? 1;
       const { ascent, descent, lineGap } = measurements.vertical;
       descriptors.push(`  ascent-override: ${percent(ascent / divisor)};`);
       descriptors.push(`  descent-override: ${percent(descent / divisor)};`);
       descriptors.push(`  line-gap-override: ${percent(lineGap / divisor)};`);
     }
+    return descriptors;
+  };
 
+  for (const block of blocks) {
+    const url = /url\(\.\/files\/([^)]+)\)/u.exec(block)?.[1] ?? "";
+    const range = /unicode-range: ([^;]+);/u.exec(block)?.[1] ?? "";
+    const applySizeAdjust = measurements.sizeAdjust != null && isKoreanChunk(url);
+
+    let rewritten = block
+      .replace(`font-family: '${group.sourceFamily}'`, `font-family: '${alias.family}'`)
+      .replace("font-display: swap", "font-display: block")
+      .replace("url(./files/", `url(${packageUrl}`)
+      // Chrome does not instantiate the weight axis for the legacy
+      // 'woff2-variations' hint; it loads the default (Thin) instance and
+      // synthesises bold, which pads every advance. Plain 'woff2' lets it use
+      // the real weight.
+      .replace("format('woff2-variations')", "format('woff2')")
+      .replace(/\n\}$/u, `\n${metricDescriptors(applySizeAdjust ? measurements.sizeAdjust : null).join("\n")}\n}`);
+
+    if (hasSpaceFace && range) {
+      const withoutSpace = excludeSpace(range);
+      if (withoutSpace !== range) {
+        if (!spaceSourceBlock) spaceSourceBlock = { url, block };
+        // An empty range would match nothing, so drop the face entirely.
+        if (!withoutSpace) continue;
+        rewritten = rewritten.replace(`unicode-range: ${range};`, `unicode-range: ${withoutSpace};`);
+      }
+    }
+
+    out.push(rewritten);
+  }
+
+  if (hasSpaceFace && spaceSourceBlock) {
     out.push(
-      block
+      spaceSourceBlock.block
         .replace(`font-family: '${group.sourceFamily}'`, `font-family: '${alias.family}'`)
         .replace("font-display: swap", "font-display: block")
         .replace("url(./files/", `url(${packageUrl}`)
-        .replace(/ {2}src: /u, `  src: ${alias.locals.map((n) => `local('${n}')`).join(", ")}, `)
-        .replace(/\n\}$/u, `\n${descriptors.join("\n")}\n}`)
+        .replace(/unicode-range: [^;]+;/u, "unicode-range: U+20;")
+        .replace(/\n\}$/u, `\n${metricDescriptors(measurements.spaceAdjust).join("\n")}\n}`)
     );
   }
 
@@ -193,17 +269,24 @@ for (const group of groups) {
   const fallbackHangul = koreanChunks.length
     ? await advanceAcrossChunks(koreanChunks, filesDir, HANGUL_SAMPLE)
     : null;
+  const fallbackSpace = await advanceAcrossChunks(chunkFiles.sort(), filesDir, SPACE);
 
   for (const alias of group.aliases) {
     const originalPath = await findFontFile(alias.file);
-    const measurements = { sizeAdjust: null, vertical: null };
+    const measurements = { sizeAdjust: null, spaceRatio: null, vertical: null };
 
     if (originalPath) {
-      const face = await openFace(originalPath);
+      const face = await openFace(originalPath, alias.face);
       measurements.vertical = verticalMetrics(face);
       const originalHangul = advanceOf(face, HANGUL_SAMPLE);
       if (originalHangul != null && fallbackHangul) {
         measurements.sizeAdjust = originalHangul / fallbackHangul;
+      }
+      const originalSpace = advanceOf(face, SPACE);
+      if (originalSpace != null && fallbackSpace) {
+        // Reported for reference only; see the SPACE comment for why no face
+        // is generated from it.
+        measurements.spaceRatio = originalSpace / fallbackSpace;
       }
     }
 
@@ -211,6 +294,7 @@ for (const group of groups) {
       family: alias.family,
       source: originalPath ? path.basename(originalPath) : "not installed",
       sizeAdjust: measurements.sizeAdjust ? percent(measurements.sizeAdjust) : "-",
+      spaceAdjust: measurements.spaceRatio ? `(${percent(measurements.spaceRatio)})` : "-",
       vertical: measurements.vertical
         ? `asc ${measurements.vertical.ascent.toFixed(4)} desc ${measurements.vertical.descent.toFixed(4)}`
         : "-",
@@ -222,10 +306,11 @@ for (const group of groups) {
 
 await fs.writeFile(outputPath, `${sections.join("\n")}\n`);
 
-console.log("family              measured from      size-adjust   vertical");
+console.log("family              measured from      size-adjust   space        vertical");
 for (const row of report) {
   console.log(
-    `${row.family.padEnd(19)} ${row.source.padEnd(18)} ${row.sizeAdjust.padEnd(13)} ${row.vertical}`
+    `${row.family.padEnd(19)} ${row.source.padEnd(18)} ${row.sizeAdjust.padEnd(13)} ` +
+    `${row.spaceAdjust.padEnd(12)} ${row.vertical}`
   );
 }
 console.log(`\nwrote ${path.relative(rootDir, outputPath)}`);

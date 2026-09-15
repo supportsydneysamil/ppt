@@ -3012,11 +3012,18 @@ body[data-theme="light"] .rte-textarea {
 
 /* PPTX Preview Layout (Vertical Scroll) */
 /* No horizontal padding: the viewer fits slides to the container's clientWidth,
-   which counts padding, so side padding would push slides past the edge. */
+   which counts padding, so side padding would push slides past the edge.
+
+   font-family is not cosmetic here. Each line box also contains the block
+   container's strut, and when the strut font's ascent/descent ratio differs
+   from the run's the two boxes sit at different offsets and the line grows.
+   Inheriting the app UI font added 5px per line; naming the substituted Korean
+   family makes the strut match the body text of these decks exactly. */
 .pptx-deck {
   padding: 20px 0;
   width: 100%;
   box-sizing: border-box;
+  font-family: "Malgun Gothic", sans-serif;
 }
 
 /* Modifier class added by JS when in upload mode */

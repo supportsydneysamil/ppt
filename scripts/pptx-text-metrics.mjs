@@ -54,7 +54,9 @@ const result = await page.evaluate((n) => {
   const chain = [];
   for (let el = host; el && el !== wrapper.parentElement; el = el.parentElement) {
     const s = getComputedStyle(el);
-    chain.unshift(`${el.tagName.toLowerCase()} font:${s.fontSize} lh:${s.lineHeight}`);
+    chain.unshift(
+      `${el.tagName.toLowerCase()} font:${s.fontSize} lh:${s.lineHeight} family:${s.fontFamily}`
+    );
   }
 
   // Walk text nodes and split into visual lines using per-character rects.
@@ -93,7 +95,11 @@ const result = await page.evaluate((n) => {
     lineHeightPerFontSize: Number.isNaN(lineHeightPt)
       ? null
       : +(lineHeightPt / parseFloat(style.fontSize)).toFixed(4),
-    glyphBoxHeightEm: null,
+    // PowerPoint's usable text width here is 801.6pt (816pt box less 7.2pt
+    // insets), so a narrower box would break lines early regardless of fonts.
+    textBoxWidthPt: +toPt(host.parentElement.getBoundingClientRect().width).toFixed(2),
+    textBoxContentWidthPt: +toPt(host.parentElement.clientWidth * (slideBox.width / 1280)).toFixed(2),
+    hostWidthPt: +toPt(host.getBoundingClientRect().width).toFixed(2),
     lines: lines.map((l) => ({
       text: l.text,
       xMinPt: +toPt(l.left - slideBox.left).toFixed(2),
