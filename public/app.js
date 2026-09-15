@@ -1829,15 +1829,23 @@ function buildTemplateThumbStrip(template) {
     thumb.className = "template-card-thumb";
     const thumbSrc = slide.thumbnail || slide.adBgImagePath || null;
 
+    const showLabel = () => {
+      thumb.replaceChildren();
+      thumb.classList.add("is-placeholder");
+      thumb.textContent = getSlideTypeLabel(slide);
+    };
+
     if (thumbSrc) {
       const img = document.createElement("img");
       img.src = thumbSrc;
       img.alt = "";
       img.loading = "lazy";
+      // Templates keep the upload path even after the file is pruned, so a
+      // 404 has to degrade to the label instead of a broken image glyph.
+      img.addEventListener("error", showLabel);
       thumb.appendChild(img);
     } else {
-      thumb.classList.add("is-placeholder");
-      thumb.textContent = getSlideTypeLabel(slide);
+      showLabel();
     }
 
     strip.appendChild(thumb);

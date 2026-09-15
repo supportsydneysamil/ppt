@@ -79,7 +79,7 @@ describe("workspace shell wiring", () => {
   it("keeps navigation in one shell while constraining content surfaces", () => {
     assert.match(css, /\.page\s*\{[\s\S]*--workspace-max:\s*1600px/);
     assert.match(css, /#view-extractor\s*\{[\s\S]*max-width:\s*932px/);
-    assert.match(css, /\.template-gallery\s*\{[\s\S]*max-width:\s*1400px/);
+    assert.doesNotMatch(css, /\.template-gallery\s*\{[^}]*max-width/);
   });
 
   it("syncs layout state from both view and PPT-surface transitions", () => {

@@ -1706,8 +1706,6 @@ body {
 
 .template-gallery {
   width: 100%;
-  max-width: 1400px;
-  margin-inline: auto;
 }
 
 .template-gallery-toolbar {
