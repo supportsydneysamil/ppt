@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { describe, it } from "node:test";
 
 import {
@@ -6,6 +7,12 @@ import {
   pptWorkspaceMode,
   reducePptWorkspaceUi,
 } from "../public/ppt-workspace-ui.js";
+
+const [html, appSource, chromeSource] = await Promise.all([
+  readFile(new URL("../public/index.html", import.meta.url), "utf8"),
+  readFile(new URL("../public/app.js", import.meta.url), "utf8"),
+  readFile(new URL("../public/custom-editor-chrome.jsx", import.meta.url), "utf8"),
+]);
 
 describe("PPT workspace UI state", () => {
   it("uses exact mobile, compact, and wide boundaries", () => {
@@ -110,5 +117,23 @@ describe("PPT workspace UI state", () => {
         inspectorOpen: false,
       }
     );
+  });
+});
+
+describe("PPT workspace controls", () => {
+  it("exposes accessible slides, inspector, and focus controls", () => {
+    assert.match(html, /id="pptSlidesPaneBtn"[\s\S]*aria-controls="slideListPanel"/);
+    assert.match(html, /id="pptInspectorPaneBtn"[\s\S]*aria-controls="slideForm customSlideInspector"/);
+    assert.match(html, /id="pptFocusModeBtn"[\s\S]*aria-pressed="false"/);
+    assert.match(html, /id="slideListPanel"/);
+    assert.match(chromeSource, /id="customSlideInspector"/);
+  });
+
+  it("persists UI state and forces stage reflow without changing slide data", () => {
+    assert.match(appSource, /samil-ppt-workspace-ui-v1/);
+    assert.match(appSource, /function applyPptWorkspaceUi\(/);
+    assert.match(appSource, /workspaceReflow\?\.schedule\(\{ force: true \}\)/);
+    assert.match(appSource, /slideEditor\.dataset\.slideType\s*=\s*type/);
+    assert.match(appSource, /slideEditor\.style\.display\s*=\s*"grid"/);
   });
 });

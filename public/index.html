@@ -244,6 +244,15 @@
           </button>
         </nav>
         <div class="ppt-tabbar-actions" id="pptTabbarActions">
+          <button
+            id="pptSlidesPaneBtn"
+            type="button"
+            class="ghost small ppt-pane-toggle"
+            aria-controls="slideListPanel"
+            aria-expanded="true"
+          >
+            슬라이드
+          </button>
           <button id="bulkActionMenuBtn" class="sub-nav-action-btn" disabled>
             선택 작업 <span class="dropdown-caret">▾</span>
           </button>
@@ -294,7 +303,7 @@
 
       <section class="ppt-interface" id="pptWorkspace">
         <!-- Left: Slide List -->
-        <div class="slide-list-panel">
+        <div class="slide-list-panel" id="slideListPanel">
           <div class="slide-list-header">
             <div class="slide-list-title-wrap">
               <h3>슬라이드 목록</h3>
@@ -351,6 +360,23 @@
           <div class="editor-header">
             <h3>상세 설정</h3>
             <div class="editor-actions">
+              <button
+                id="pptInspectorPaneBtn"
+                type="button"
+                class="ghost small ppt-pane-toggle"
+                aria-controls="slideForm customSlideInspector"
+                aria-expanded="true"
+              >
+                속성
+              </button>
+              <button
+                id="pptFocusModeBtn"
+                type="button"
+                class="ghost small"
+                aria-pressed="false"
+              >
+                집중 모드
+              </button>
               <button id="editorCancelBtn" class="ghost small">취소</button>
               <button id="editorResetBtn" class="ghost small">슬라이드 초기화</button>
               <button id="editorDeleteBtn" class="ghost small danger" style="display:none;">삭제</button>

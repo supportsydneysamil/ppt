@@ -45,6 +45,10 @@ import {
   createWidthReflowCoordinator,
   resolveWorkspaceLayoutState,
 } from "./workspace-layout.js";
+import {
+  createPptWorkspaceUiState,
+  reducePptWorkspaceUi,
+} from "./ppt-workspace-ui.js";
 import { buildHymnSubtitle } from "@lib/cover-title-content.js";
 import {
   TEMPLATE_SCHEMA_ERROR,
@@ -831,7 +835,11 @@ const tabSlidesBtn = document.getElementById("tabSlidesBtn");
 const tabTemplatesBtn = document.getElementById("tabTemplatesBtn");
 const templateCountBadge = document.getElementById("templateCountBadge");
 const pptTabbarActions = document.getElementById("pptTabbarActions");
+const pptSlidesPaneBtn = document.getElementById("pptSlidesPaneBtn");
+const pptInspectorPaneBtn = document.getElementById("pptInspectorPaneBtn");
+const pptFocusModeBtn = document.getElementById("pptFocusModeBtn");
 const pptWorkspace = document.getElementById("pptWorkspace");
+const slideListPanel = document.getElementById("slideListPanel");
 const templateGallery = document.getElementById("templateGallery");
 const templateGalleryGrid = document.getElementById("templateGalleryGrid");
 const templateGalleryEmpty = document.getElementById("templateGalleryEmpty");
@@ -992,6 +1000,92 @@ let guardedTransitionDepth = 0;
 let selectedSlideIds = new Set();
 let draggedSlideId = null;
 let workspaceReflow = null;
+let pptWorkspaceResizeFrame = null;
+const PPT_WORKSPACE_UI_STORAGE_KEY = "samil-ppt-workspace-ui-v1";
+
+function readPptWorkspacePreference() {
+  try {
+    return JSON.parse(localStorage.getItem(PPT_WORKSPACE_UI_STORAGE_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+let pptWorkspaceUi = createPptWorkspaceUiState(
+  window.innerWidth,
+  readPptWorkspacePreference()
+);
+
+function applyPptWorkspaceUi() {
+  if (!pptWorkspace) {
+    return;
+  }
+
+  pptWorkspace.dataset.layoutMode = pptWorkspaceUi.mode;
+  pptWorkspace.dataset.focusMode = String(pptWorkspaceUi.focusMode);
+  pptWorkspace.dataset.slidesOpen = String(pptWorkspaceUi.slidesOpen);
+  pptWorkspace.dataset.inspectorOpen = String(pptWorkspaceUi.inspectorOpen);
+
+  if (pptSlidesPaneBtn) {
+    pptSlidesPaneBtn.setAttribute("aria-expanded", String(pptWorkspaceUi.slidesOpen));
+    pptSlidesPaneBtn.textContent = pptWorkspaceUi.slidesOpen
+      ? "슬라이드 닫기"
+      : "슬라이드 열기";
+  }
+  if (pptInspectorPaneBtn) {
+    pptInspectorPaneBtn.setAttribute(
+      "aria-expanded",
+      String(pptWorkspaceUi.inspectorOpen)
+    );
+    pptInspectorPaneBtn.textContent = pptWorkspaceUi.inspectorOpen
+      ? "속성 닫기"
+      : "속성 열기";
+  }
+  if (pptFocusModeBtn) {
+    pptFocusModeBtn.hidden = pptWorkspaceUi.mode === "mobile";
+    pptFocusModeBtn.setAttribute(
+      "aria-pressed",
+      String(pptWorkspaceUi.focusMode)
+    );
+    pptFocusModeBtn.textContent = pptWorkspaceUi.focusMode
+      ? "집중 모드 종료"
+      : "집중 모드";
+  }
+
+  if (slideListPanel) {
+    slideListPanel.inert =
+      pptWorkspaceUi.mode !== "mobile" && !pptWorkspaceUi.slidesOpen;
+  }
+  const inspectorInert =
+    pptWorkspaceUi.mode !== "mobile" && !pptWorkspaceUi.inspectorOpen;
+  const slideForm = document.getElementById("slideForm");
+  const customInspector = document.getElementById("customSlideInspector");
+  if (slideForm) {
+    slideForm.inert = inspectorInert;
+  }
+  if (customInspector) {
+    customInspector.inert = inspectorInert;
+  }
+
+  try {
+    localStorage.setItem(
+      PPT_WORKSPACE_UI_STORAGE_KEY,
+      JSON.stringify({
+        focusMode: pptWorkspaceUi.focusMode,
+        slidesOpen: pptWorkspaceUi.slidesOpen,
+        inspectorOpen: pptWorkspaceUi.inspectorOpen,
+      })
+    );
+  } catch {
+    // Private browsing can disable storage; layout controls still work.
+  }
+  workspaceReflow?.schedule({ force: true });
+}
+
+function dispatchPptWorkspaceUi(action) {
+  pptWorkspaceUi = reducePptWorkspaceUi(pptWorkspaceUi, action);
+  applyPptWorkspaceUi();
+}
 
 function syncWorkspaceLayoutState(viewName) {
   const currentView =
@@ -2438,6 +2532,25 @@ function applyViewChange(viewName) {
 navExtractor.addEventListener("click", () => switchView("extractor"));
 navPpt.addEventListener("click", () => switchView("ppt"));
 syncWorkspaceLayoutState("extractor");
+pptSlidesPaneBtn?.addEventListener("click", () => {
+  dispatchPptWorkspaceUi({ type: "toggle-slides" });
+});
+pptInspectorPaneBtn?.addEventListener("click", () => {
+  dispatchPptWorkspaceUi({ type: "toggle-inspector" });
+});
+pptFocusModeBtn?.addEventListener("click", () => {
+  dispatchPptWorkspaceUi({ type: "toggle-focus" });
+});
+window.addEventListener("resize", () => {
+  if (pptWorkspaceResizeFrame !== null) {
+    cancelAnimationFrame(pptWorkspaceResizeFrame);
+  }
+  pptWorkspaceResizeFrame = requestAnimationFrame(() => {
+    pptWorkspaceResizeFrame = null;
+    dispatchPptWorkspaceUi({ type: "resize", width: window.innerWidth });
+  });
+});
+applyPptWorkspaceUi();
 tabSlidesBtn.addEventListener("click", () => {
   closeBulkDropdown();
   setPptTab("slides");
@@ -3634,7 +3747,7 @@ function applySlideSelection(id) {
 
   if (slide) {
     emptyEditorState.style.display = "none";
-    slideEditor.style.display = "flex";
+    slideEditor.style.display = "grid";
     slideRuntimeDraft = {};
     slideResetDraft = null;
     populateEditor(slide);
@@ -5239,6 +5352,7 @@ function setHidden(el, hidden) {
 
 function updateSettingsVisibility(overrideMode) {
   const type = slideTypeSelect.value;
+  slideEditor.dataset.slideType = type;
   const sourceType =
     overrideMode ||
     (document.querySelector('input[name="sourceType"]:checked') || {}).value ||

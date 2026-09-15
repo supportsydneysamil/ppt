@@ -245,7 +245,7 @@ export function CustomEditorChrome() {
         </li>
       </ul>
 
-      <div className="custom-editor-side">
+      <div className="custom-editor-side" id="customSlideInspector">
       <aside className="custom-editor-layers" aria-label="레이어">
         <div className="custom-editor-panel-label">레이어</div>
         <ol data-editor-ui="layers" className="custom-editor-layer-list"></ol>
