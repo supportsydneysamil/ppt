@@ -884,6 +884,29 @@ await runScenario(
 );
 
 await runScenario(
+  "leaving a clean custom slide closes its popout",
+  async (page) => {
+    await setup(page, { slides: customCanvasSlides });
+    await selectMainSlide(page, 0);
+    await page
+      .locator("#customSlideEditor [data-custom-editor='status']")
+      .first()
+      .filter({ hasText: "슬라이드를 불러왔습니다" })
+      .waitFor();
+
+    const popupReady = page.waitForEvent("popup");
+    await page.locator("#customEditorPopoutBtn").click();
+    const popup = await popupReady;
+    await popup.getByText("주 창과 연결됨").waitFor({ timeout: 15000 });
+
+    const closed = popup.waitForEvent("close");
+    await page.locator("#addSlideBtn").click();
+    await closed;
+    assert.equal(await page.locator("#customSlideEditor").getAttribute("inert"), null);
+  }
+);
+
+await runScenario(
   "wide PPT workspace supports three panes and canvas-first focus mode",
   async (page) => {
     await page.setViewportSize({ width: 1440, height: 1000 });

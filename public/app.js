@@ -5414,6 +5414,10 @@ function showCustomSlideInEditor(slide, { markSaved = Boolean(slide?.saved) } = 
 }
 
 function releaseCustomEditorSlide() {
+  if (customPopout) {
+    customPopout.popup.close();
+    finishCustomPopout();
+  }
   customEditorModel = null;
   customEditorDirty = false;
   if (customEditorSession) {
