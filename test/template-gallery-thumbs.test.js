@@ -73,3 +73,41 @@ describe("template gallery thumbnails", () => {
     assert.equal(thumb.classList.contains("is-placeholder"), false);
   });
 });
+
+describe("template gallery date", () => {
+  function formatMeta(template) {
+    const formatTemplateGalleryMeta = compileFunction(
+      app,
+      "formatTemplateGalleryMeta",
+      ["template"],
+      {
+        formatTemplateDate: (value) => {
+          if (!value) return "";
+          return value.slice(0, 10);
+        },
+      }
+    );
+    return formatTemplateGalleryMeta(template);
+  }
+
+  it("prefers updatedAt over createdAt", () => {
+    assert.equal(
+      formatMeta({
+        slides: [{}, {}],
+        createdAt: "2026-04-19T04:31:14.731Z",
+        updatedAt: "2026-09-15T05:00:00.000Z",
+      }),
+      "2개 슬라이드 · 2026-09-15"
+    );
+  });
+
+  it("falls back to createdAt when the template has never been updated", () => {
+    assert.equal(
+      formatMeta({
+        slides: [{}],
+        createdAt: "2026-04-19T04:31:14.731Z",
+      }),
+      "1개 슬라이드 · 2026-04-19"
+    );
+  });
+});

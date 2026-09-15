@@ -24,6 +24,7 @@ import {
   insertTemplateSlide,
   removeTemplateSlides,
   replaceTemplateSlide,
+  touchTemplate,
 } from "./lib/template-store.js";
 import { appendCustomSlide } from "./lib/custom-slide-pptx.js";
 import { appendCustomTitleSlide } from "./lib/custom-title-slide.js";
@@ -662,10 +663,12 @@ app.post("/api/templates", async (req, res) => {
     }
 
     const templates = await readTemplates();
+    const now = new Date().toISOString();
     const template = {
       id: createEntityId("template"),
       name,
-      createdAt: new Date().toISOString(),
+      createdAt: now,
+      updatedAt: now,
       slideCount: rawSlides.length,
       slides: await Promise.all(rawSlides.map(cloneSlideWithAssets)),
     };
@@ -699,12 +702,13 @@ async function applyTemplateMutation(templateId, mutate) {
     return result;
   }
 
-  templates[index] = result.template;
+  const template = touchTemplate(result.template);
+  templates[index] = template;
   await writeTemplates(templates);
   await deleteAssetPaths(
-    collectOrphanedAssets(previous.slides || [], result.template.slides || [])
+    collectOrphanedAssets(previous.slides || [], template.slides || [])
   );
-  return result;
+  return { ...result, template };
 }
 
 function respondTemplateMutation(res, result) {

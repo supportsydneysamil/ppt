@@ -7,6 +7,7 @@ import {
   insertTemplateSlide,
   removeTemplateSlides,
   replaceTemplateSlide,
+  touchTemplate,
 } from "../lib/template-store.js";
 
 function slide(id, overrides = {}) {
@@ -286,5 +287,16 @@ describe("collectOrphanedAssets", () => {
     const slides = [slide("a", { serverFilePath: "/uploads/a.pptx" })];
 
     assert.deepEqual(collectOrphanedAssets(slides, slides), []);
+  });
+});
+
+describe("touchTemplate", () => {
+  it("sets updatedAt without changing createdAt", () => {
+    const source = template([slide("a")]);
+    const next = touchTemplate(source, "2026-09-15T00:00:00.000Z");
+
+    assert.equal(next.updatedAt, "2026-09-15T00:00:00.000Z");
+    assert.equal(next.createdAt, source.createdAt);
+    assert.equal(source.updatedAt, undefined);
   });
 });

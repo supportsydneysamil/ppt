@@ -1794,6 +1794,12 @@ function formatTemplateDate(value) {
   });
 }
 
+function formatTemplateGalleryMeta(template) {
+  const slideCount = (template.slides || []).length;
+  const date = formatTemplateDate(template.updatedAt || template.createdAt);
+  return date ? `${slideCount}개 슬라이드 · ${date}` : `${slideCount}개 슬라이드`;
+}
+
 function closeTemplateCardMenus() {
   if (!templateGalleryGrid) {
     return;
@@ -1879,11 +1885,7 @@ function buildTemplateCard(template) {
 
   const meta = document.createElement("p");
   meta.className = "template-card-meta";
-  const slideCount = (template.slides || []).length;
-  const createdAt = formatTemplateDate(template.createdAt);
-  meta.textContent = createdAt
-    ? `${slideCount}개 슬라이드 · ${createdAt}`
-    : `${slideCount}개 슬라이드`;
+  meta.textContent = formatTemplateGalleryMeta(template);
   body.appendChild(meta);
 
   card.appendChild(body);
