@@ -28,9 +28,15 @@
     "lucide-react": "^1.45.0",
     "multer": "^2.0.2",
     "pptx-automizer": "^0.9.3",
+    "pptx-viewer-core": "^3.15.1",
     "pptxgenjs": "^4.0.1",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
+  },
+  "overrides": {
+    "pptx-viewer-core": {
+      "@xmldom/xmldom": "$@xmldom/xmldom"
+    }
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^6.1.1",
