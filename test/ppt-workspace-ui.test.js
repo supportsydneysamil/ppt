@@ -305,4 +305,33 @@ describe("PPT panel collapse affordances", () => {
       /\.panel-collapse-btn svg\s*\{[\s\S]*?stroke:\s*currentColor/
     );
   });
+
+  it("gives the inspector its own header and a real divider", () => {
+    assert.match(
+      html,
+      /<form id="slideForm" class="editor-form">\s*<div class="inspector-header">\s*<h4>상세 설정<\/h4>\s*<button\s*id="inspectorPanelCollapseBtn"/
+    );
+    // Also proves the `@media (max-width: 1279px)` block that hid it is gone.
+    assert.doesNotMatch(css, /\.inspector-panel-collapse/);
+    assert.match(
+      css,
+      /\.inspector-header\s*\{[\s\S]*?position:\s*sticky[\s\S]*?top:\s*0/
+    );
+    assert.match(
+      css,
+      /\.editor-form\s*\{[\s\S]*?border-left:\s*1px solid var\(--border\)/
+    );
+    assert.match(
+      css,
+      /\[data-slide-type="custom"\] \.custom-editor-side\s*\{[\s\S]*?border-left:\s*1px solid var\(--border\)/
+    );
+    assert.match(
+      css,
+      /\[data-slide-type="custom"\] \.editor-form > :not\(\.settings-section\):not\(\.inspector-header\)/
+    );
+    assert.match(
+      css,
+      /--inspector-header-h:\s*calc\(var\(--ctrl-h-sm\) \+ var\(--sp-3\) \+ 1px\)/
+    );
+  });
 });

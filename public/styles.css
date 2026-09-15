@@ -2384,6 +2384,8 @@ body {
      replaces this with the real remaining height. Both read the same token so
      the two panes always stop on the same line. */
   --stage-max-h: calc(100vh - 190px);
+  /* Button height plus the header's own padding-bottom and bottom border. */
+  --inspector-header-h: calc(var(--ctrl-h-sm) + var(--sp-3) + 1px);
   position: relative;
   background: var(--panel);
   border-radius: 16px;
@@ -2400,31 +2402,6 @@ body {
   overflow: hidden;
   /* extra safety */
   align-self: start;
-}
-
-.inspector-panel-collapse {
-  position: absolute;
-  z-index: 30;
-  top: 76px;
-  right: calc(var(--inspector-width) + 8px);
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--panel-soft);
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.inspector-panel-collapse svg {
-  width: 16px;
-  height: 16px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
 }
 
 .editor-header {
@@ -2484,7 +2461,31 @@ body {
   min-width: 0;
   max-height: var(--stage-max-h);
   overflow: auto;
+  /* The collapse chevron used to be anchored to this seam while the seam was
+     invisible, so it read as floating. The divider is what it points at. */
+  border-left: 1px solid var(--border);
+  padding-left: var(--sp-4);
   padding-right: 4px;
+}
+
+.inspector-header {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding-bottom: var(--sp-3);
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.inspector-header h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
 }
 
 .settings-group {
@@ -3637,7 +3638,7 @@ body[data-theme="light"] .rte-textarea {
   align-self: start;
 }
 
-.slide-editor-panel[data-slide-type="custom"] .editor-form > :not(.settings-section) {
+.slide-editor-panel[data-slide-type="custom"] .editor-form > :not(.settings-section):not(.inspector-header) {
   display: none;
 }
 
@@ -3657,7 +3658,13 @@ body[data-theme="light"] .rte-textarea {
   grid-area: side;
   grid-template-columns: minmax(0, 1fr);
   min-width: 0;
-  padding-top: 150px;
+  /* `.editor-form` is overlaid on the top of this same column, so this clears
+     its name/type fields plus the inspector header row now above them, plus
+     the form's row gap between the two. */
+  padding-top: calc(150px + var(--inspector-header-h) + var(--sp-5));
+  padding-left: var(--sp-4);
+  /* Continues the `.editor-form` divider down the rest of the column. */
+  border-left: 1px solid var(--border);
 }
 
 .slide-editor-panel[data-slide-type="custom"] .custom-editor-status,
@@ -3797,12 +3804,6 @@ body[data-theme="light"] .rte-textarea {
 @media (min-width: 1280px) {
   #pptSlidesPaneBtn,
   #pptInspectorPaneBtn {
-    display: none;
-  }
-}
-
-@media (max-width: 1279px) {
-  .inspector-panel-collapse {
     display: none;
   }
 }
