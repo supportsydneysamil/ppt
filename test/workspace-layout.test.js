@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 
 import {
   applyWorkspaceLayoutState,
+  createWidthReflowCoordinator,
   resolveWorkspaceLayoutState,
 } from "../public/workspace-layout.js";
 
@@ -97,5 +98,64 @@ describe("workspace shell wiring", () => {
       appSource,
       /function renderPptScreen\([\s\S]*syncWorkspaceLayoutState\("ppt"\)/
     );
+  });
+});
+
+describe("width reflow coordinator", () => {
+  it("batches requests and skips unchanged widths", () => {
+    let width = 600;
+    let nextFrame = null;
+    const calls = [];
+    const coordinator = createWidthReflowCoordinator({
+      measure: () => width,
+      reflow: (measured) => calls.push(measured),
+      requestFrame: (callback) => {
+        nextFrame = callback;
+        return 1;
+      },
+      cancelFrame: () => {},
+    });
+
+    coordinator.schedule();
+    coordinator.schedule();
+    nextFrame();
+    assert.deepEqual(calls, [600]);
+
+    coordinator.schedule();
+    nextFrame();
+    assert.deepEqual(calls, [600]);
+
+    width = 900;
+    coordinator.schedule();
+    nextFrame();
+    assert.deepEqual(calls, [600, 900]);
+  });
+
+  it("supports a forced reflow and ignores zero-width stages", () => {
+    let width = 0;
+    let nextFrame = null;
+    const calls = [];
+    const coordinator = createWidthReflowCoordinator({
+      measure: () => width,
+      reflow: (measured) => calls.push(measured),
+      requestFrame: (callback) => {
+        nextFrame = callback;
+        return 1;
+      },
+      cancelFrame: () => {},
+    });
+
+    coordinator.schedule({ force: true });
+    nextFrame();
+    assert.deepEqual(calls, []);
+
+    width = 700;
+    coordinator.schedule({ force: true });
+    nextFrame();
+    assert.deepEqual(calls, [700]);
+
+    coordinator.schedule({ force: true });
+    nextFrame();
+    assert.deepEqual(calls, [700, 700]);
   });
 });

@@ -42,6 +42,7 @@ import {
 } from "./custom-title-preview.js";
 import {
   applyWorkspaceLayoutState,
+  createWidthReflowCoordinator,
   resolveWorkspaceLayoutState,
 } from "./workspace-layout.js";
 import { buildHymnSubtitle } from "@lib/cover-title-content.js";
@@ -990,12 +991,13 @@ let duplicateInProgress = false;
 let guardedTransitionDepth = 0;
 let selectedSlideIds = new Set();
 let draggedSlideId = null;
+let workspaceReflow = null;
 
 function syncWorkspaceLayoutState(viewName) {
   const currentView =
     viewName ??
     (navExtractor.classList.contains("active") ? "extractor" : "ppt");
-  return applyWorkspaceLayoutState(
+  const state = applyWorkspaceLayoutState(
     appPage,
     resolveWorkspaceLayoutState({
       viewName: currentView,
@@ -1003,6 +1005,8 @@ function syncWorkspaceLayoutState(viewName) {
       activeTemplateId,
     })
   );
+  workspaceReflow?.schedule({ force: true });
+  return state;
 }
 
 function generateClientId(prefix = "slide") {
@@ -5028,6 +5032,46 @@ let customEditorSession = null;
 let customEditorSessionPromise = null;
 let customEditorModel = null;
 
+function activePptStageWidth() {
+  if (slideTypeSelect.value === "custom") {
+    return (
+      customSlideEditorRoot
+        ?.querySelector('[data-custom-editor="stage"]')
+        ?.clientWidth ?? 0
+    );
+  }
+  return slidePreview?.clientWidth ?? 0;
+}
+
+function reflowActivePptStage() {
+  if (navExtractor.classList.contains("active")) {
+    return;
+  }
+
+  if (slideTypeSelect.value === "custom") {
+    customEditorSession?.resize(currentSlideId);
+    return;
+  }
+
+  // The mounted PPTX viewer owns its own ResizeObserver. Recreating it here
+  // would discard parsing work, zoom, scroll, and lazy-mounted slide state.
+  if (slidePreview?.__pptxPreviewState?.viewer) {
+    return;
+  }
+  renderPreview();
+}
+
+workspaceReflow = createWidthReflowCoordinator({
+  measure: activePptStageWidth,
+  reflow: reflowActivePptStage,
+});
+
+const workspaceResizeObserver =
+  typeof ResizeObserver === "function"
+    ? new ResizeObserver(() => workspaceReflow?.schedule())
+    : null;
+workspaceResizeObserver?.observe(slideEditor);
+
 function loadCustomSlideBridge() {
   if (!customSlideBridgePromise) {
     customSlideBridgePromise = import("./custom-slide-bridge.js").then((module) => {
@@ -5129,6 +5173,7 @@ function showCustomSlideInEditor(slide, { markSaved = Boolean(slide?.saved) } = 
       }
       customEditorModel = copyCustomSlideModel(model);
       customEditorDirty = Boolean(result.dirty);
+      workspaceReflow?.schedule({ force: true });
       refreshSaveState();
     })
     .catch((error) => {
@@ -5222,6 +5267,7 @@ function updateSettingsVisibility(overrideMode) {
       };
   setHidden(customSlideEditorRoot, !customVisibility.showCustomWorkspace);
   setHidden(slidePreviewArea, !customVisibility.showPreview);
+  workspaceReflow?.schedule({ force: true });
 
   if (!isSimpleFamily) return;
 
