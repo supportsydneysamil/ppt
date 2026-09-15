@@ -27,6 +27,35 @@ import {
 
 const CANVAS = { width: 1280, height: 720 };
 
+function templateModel(id) {
+  return CUSTOM_SLIDE_TEMPLATES.find((template) => template.id === id)?.model;
+}
+
+function elementIds(id) {
+  return new Set(templateModel(id)?.elements.map((element) => element.id) ?? []);
+}
+
+function assertElementIds(templateId, requiredIds) {
+  const ids = elementIds(templateId);
+  for (const id of requiredIds) {
+    assert.ok(ids.has(id), `${templateId} is missing ${id}`);
+  }
+}
+
+function assertElementInsideCanvas(templateId, element) {
+  if (element.type === "line") {
+    assert.ok(element.x >= 0 && element.x <= CANVAS.width, `${element.id} x`);
+    assert.ok(element.y >= 0 && element.y <= CANVAS.height, `${element.id} y`);
+    assert.ok(element.x2 >= 0 && element.x2 <= CANVAS.width, `${element.id} x2`);
+    assert.ok(element.y2 >= 0 && element.y2 <= CANVAS.height, `${element.id} y2`);
+    return;
+  }
+  assert.ok(element.x >= 0, `${templateId}/${element.id} x`);
+  assert.ok(element.y >= 0, `${templateId}/${element.id} y`);
+  assert.ok(element.x + element.width <= CANVAS.width, `${templateId}/${element.id} width`);
+  assert.ok(element.y + element.height <= CANVAS.height, `${templateId}/${element.id} height`);
+}
+
 test("templates include fifteen church layouts with roles", () => {
   const expected = [
     ["blank", "빈 슬라이드"],
@@ -57,7 +86,7 @@ test("templates include fifteen church layouts with roles", () => {
   }
 
   const hero = instantiateTemplate("title-hero");
-  assert.equal(hero.background.color, "#0f172a");
+  assert.equal(hero.background.color, "#101c33");
   assert.equal(hero.templateId, "title-hero");
   assert.equal(hero.themeId, "native");
 
@@ -65,7 +94,122 @@ test("templates include fifteen church layouts with roles", () => {
   assert.equal(plainHero.background.color, "#ffffff");
   const title = plainHero.elements.find((element) => element.themeRole === "title");
   assert.equal(title.color, "#111827");
-  assert.equal(title.text, "제목을 입력하세요");
+  assert.equal(title.text, "은혜 위에 세워진 공동체");
+});
+
+test("core message templates use their approved professional structure", () => {
+  assertElementIds("title-hero", ["hero-frame", "hero-kicker", "hero-title", "hero-meta"]);
+  assertElementIds("split-photo", ["photo-panel", "photo-shape-back", "photo-title", "photo-body"]);
+  assertElementIds("quote-card", ["quote-mark", "quote-body", "quote-source"]);
+  assertElementIds("scripture", [
+    "scripture-book",
+    "scripture-chapter",
+    "scripture-verse-number",
+    "scripture-divider",
+    "scripture-body",
+  ]);
+  assertElementIds("sermon-title", [
+    "sermon-kicker",
+    "sermon-heading",
+    "sermon-index-frame",
+    "sermon-index",
+    "sermon-meta",
+  ]);
+});
+
+test("information templates expose independently editable content units", () => {
+  assertElementIds("agenda-list", [
+    "agenda-row-1-number",
+    "agenda-row-1-title",
+    "agenda-row-1-owner",
+    "agenda-row-2-number",
+    "agenda-row-2-title",
+    "agenda-row-2-owner",
+    "agenda-row-3-number",
+    "agenda-row-3-title",
+    "agenda-row-3-owner",
+  ]);
+  assertElementIds("sermon-points", [
+    "sermon-point-1-number",
+    "sermon-point-1-text",
+    "sermon-point-2-number",
+    "sermon-point-2-text",
+    "sermon-point-3-number",
+    "sermon-point-3-text",
+  ]);
+  assertElementIds("announcements", [
+    "announcement-1-date",
+    "announcement-1-title",
+    "announcement-1-detail",
+    "announcement-2-date",
+    "announcement-2-title",
+    "announcement-2-detail",
+    "announcement-3-date",
+    "announcement-3-title",
+    "announcement-3-detail",
+  ]);
+});
+
+test("pastoral templates use approved editable units", () => {
+  assertElementIds("prayer", [
+    "prayer-1-number",
+    "prayer-1-text",
+    "prayer-2-number",
+    "prayer-2-text",
+    "prayer-3-number",
+    "prayer-3-text",
+    "prayer-orbit",
+  ]);
+  assertElementIds("welcome", [
+    "welcome-orbit",
+    "welcome-title",
+    "welcome-newcomer-panel",
+  ]);
+  assertElementIds("offering", [
+    "offering-frame",
+    "offering-title",
+    "offering-scripture",
+  ]);
+  assertElementIds("next-week", [
+    "next-week-day",
+    "next-week-month",
+    "next-week-event",
+    "next-week-cta",
+  ]);
+});
+
+test("professional templates keep non-bleed elements inside the slide", () => {
+  const allowedBleed = new Set(["prayer-orbit", "welcome-orbit"]);
+  for (const template of CUSTOM_SLIDE_TEMPLATES) {
+    for (const element of template.model.elements) {
+      if (!allowedBleed.has(element.id)) {
+        assertElementInsideCanvas(template.id, element);
+      }
+    }
+  }
+});
+
+test("professional templates retain geometry and copy across themes", () => {
+  for (const template of CUSTOM_SLIDE_TEMPLATES.filter(({ id }) => id !== "blank")) {
+    const plain = instantiateTemplate(template.id, undefined, "plain");
+    const dark = instantiateTemplate(template.id, undefined, "deep-black");
+    assert.deepEqual(
+      plain.elements.map(({ x, y, width, height, text }) => ({
+        x,
+        y,
+        width,
+        height,
+        text,
+      })),
+      dark.elements.map(({ x, y, width, height, text }) => ({
+        x,
+        y,
+        width,
+        height,
+        text,
+      }))
+    );
+  }
 });
 
 test("every template model survives normalization unchanged", () => {
