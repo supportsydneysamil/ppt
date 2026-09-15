@@ -7,7 +7,7 @@ const browser = await chromium.launch();
 
 async function run(deviceScaleFactor) {
   const page = await browser.newPage({
-    viewport: { width: 1600, height: 1100 },
+    viewport: { width: 1600, height: 1600 },
     deviceScaleFactor,
   });
   page.on("pageerror", (error) => console.log("[pageerror]", error.message));
