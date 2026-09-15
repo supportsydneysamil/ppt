@@ -5574,6 +5574,9 @@ function updateSettingsVisibility(overrideMode) {
         showPreview: type !== "custom",
       };
   setHidden(customSlideEditorRoot, !customVisibility.showCustomWorkspace);
+  // The layers and object properties render inside the inspector form now, so
+  // hiding the editor section no longer takes them with it.
+  setHidden(customEditorInspectorHost, !customVisibility.showCustomWorkspace);
   setHidden(slidePreviewArea, !customVisibility.showPreview);
   workspaceReflow?.schedule({ force: true });
 

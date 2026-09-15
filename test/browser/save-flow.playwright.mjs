@@ -2446,6 +2446,37 @@ await runScenario(
 );
 
 await runScenario(
+  "layers and object properties show for custom slides only",
+  async (page) => {
+    await setup(page);
+    await page.locator("#addSlideBtn").click();
+    await page.locator("#slideType").selectOption("custom");
+    await page.locator("#customSlideEditor:not([hidden])").waitFor();
+    const inspector = page.locator("#customSlideInspector");
+    assert.equal(await inspector.isVisible(), true);
+
+    for (const type of [
+      "simple",
+      "title",
+      "hymn",
+      "scripture",
+      "ad",
+      "custom-title",
+    ]) {
+      await page.locator("#slideType").selectOption(type);
+      assert.equal(
+        await inspector.isVisible(),
+        false,
+        `the canvas panels leaked into the ${type} inspector`
+      );
+    }
+
+    await page.locator("#slideType").selectOption("custom");
+    assert.equal(await inspector.isVisible(), true);
+  }
+);
+
+await runScenario(
   "closing reset returns focus to an enabled fallback",
   async (page) => {
     await setup(page);

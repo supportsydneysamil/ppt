@@ -411,7 +411,14 @@ describe("PPT panel collapse affordances", () => {
     // panels moved. The form is the one scroll container for all of them now.
     assert.match(
       html,
-      /<div id="customEditorInspectorHost" class="custom-editor-inspector-host">/
+      /<div\s+id="customEditorInspectorHost"\s+class="custom-editor-inspector-host"\s+hidden\s*>/
+    );
+    // Hiding the editor section no longer hides the panels with it, so the
+    // slot has to follow the same visibility switch every other type-specific
+    // group does. Otherwise every slide type grows a layers panel.
+    assert.match(
+      appSource,
+      /setHidden\(\s*customEditorInspectorHost,\s*!customVisibility\.showCustomWorkspace\s*\)/
     );
     assert.match(
       css,
