@@ -16,8 +16,19 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
+import PptxGenJS from "pptxgenjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+
+const pptxFixture = new PptxGenJS();
+pptxFixture.layout = "LAYOUT_WIDE";
+pptxFixture.addSlide().addText("Browser fixture", {
+  x: 1,
+  y: 1,
+  w: 4,
+  h: 1,
+});
+const validPptxBuffer = await pptxFixture.write({ outputType: "nodebuffer" });
 
 // A fixed port makes the run depend on whatever else is listening, so the
 // default is whatever the OS hands out.
@@ -813,6 +824,129 @@ async function waitForAlert(diagnostics, text) {
   );
 }
 
+await runScenario(
+  "workspace width follows the active product without widening scripture",
+  async (page) => {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await setup(page, { slides: customCanvasSlides });
+    await page.locator("#navExtractor").click();
+
+    const extractorShellWidth = await page.locator(".page").evaluate(
+      (node) => Math.round(node.getBoundingClientRect().width)
+    );
+    assert.equal(extractorShellWidth, 980);
+    assert.equal(
+      await page.locator(".page").getAttribute("data-workspace"),
+      "extractor"
+    );
+
+    await page.locator("#navPpt").click();
+    assert.equal(
+      await page.locator(".page").getAttribute("data-ppt-surface"),
+      "editor"
+    );
+    const pptShellWidth = await page.locator(".page").evaluate(
+      (node) => Math.round(node.getBoundingClientRect().width)
+    );
+    assert.ok(pptShellWidth >= 1390, `PPT shell stayed narrow: ${pptShellWidth}`);
+
+    await page.locator("#tabTemplatesBtn").click();
+    assert.equal(
+      await page.locator(".page").getAttribute("data-ppt-surface"),
+      "gallery"
+    );
+    await page.locator("#tabSlidesBtn").click();
+
+    for (const width of [1024, 1440, 1920]) {
+      await page.setViewportSize({ width, height: 1000 });
+      const overflow = await page.evaluate(
+        () =>
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth
+      );
+      assert.ok(overflow <= 1, `${width}px viewport overflowed by ${overflow}px`);
+    }
+
+    await page.locator("#navExtractor").click();
+    assert.equal(
+      await page.locator(".page").getAttribute("data-workspace"),
+      "extractor"
+    );
+  }
+);
+
+await runScenario(
+  "custom canvas grows with the browser and recovers after a hidden view",
+  async (page) => {
+    await page.setViewportSize({ width: 1024, height: 900 });
+    await setup(page, { slides: customCanvasSlides });
+    await selectMainSlide(page, 0);
+    const status = page
+      .locator("#customSlideEditor [data-custom-editor='status']")
+      .first();
+    await status.filter({ hasText: "슬라이드를 불러왔습니다" }).waitFor();
+
+    const narrowWidth = await page.locator(
+      "#customSlideEditor .canvas-container"
+    ).evaluate((node) => Math.round(node.getBoundingClientRect().width));
+
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.waitForFunction(
+      (before) =>
+        document.querySelector("#customSlideEditor .canvas-container")
+          ?.getBoundingClientRect().width > before + 200,
+      narrowWidth
+    );
+
+    const wideWidth = await page.locator(
+      "#customSlideEditor .canvas-container"
+    ).evaluate((node) => Math.round(node.getBoundingClientRect().width));
+    assert.ok(wideWidth >= 900, `custom canvas stayed narrow: ${wideWidth}`);
+
+    await page.locator("#navExtractor").click();
+    await page.locator("#navPpt").click();
+    await page.waitForFunction(
+      (expected) =>
+        Math.abs(
+          document.querySelector("#customSlideEditor .canvas-container")
+            ?.getBoundingClientRect().width - expected
+        ) <= 2,
+      wideWidth
+    );
+  }
+);
+
+await runScenario(
+  "title preview rerenders at the current stage width",
+  async (page) => {
+    await page.setViewportSize({ width: 1024, height: 900 });
+    await setup(page);
+    await selectMainSlide(page, 0);
+    await page.locator("#slideType").selectOption("title");
+    await page.locator("#titleKo").fill("주일예배");
+
+    const initial = await page.locator("#slidePreview > div").evaluate(
+      (node) => Math.round(node.getBoundingClientRect().width)
+    );
+
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.waitForFunction(
+      (before) =>
+        document.querySelector("#slidePreview > div")
+          ?.getBoundingClientRect().width > before + 200,
+      initial
+    );
+
+    const resized = await page.locator("#slidePreview > div").evaluate(
+      (node) => Math.round(node.getBoundingClientRect().width)
+    );
+    const host = await page.locator("#slidePreview").evaluate(
+      (node) => Math.round(node.getBoundingClientRect().width)
+    );
+    assert.ok(Math.abs(resized - host) <= 2, `${resized} did not fit ${host}`);
+  }
+);
+
 await runScenario("save buttons across saved types and main success", async (page) => {
   const state = await setup(page, { slides: allTypeSlides });
   for (let index = 0; index < allTypeSlides.length; index += 1) {
@@ -1216,7 +1350,7 @@ await runScenario(
       name: "retry.pptx",
       mimeType:
         "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-      buffer: Buffer.from("fixture"),
+      buffer: validPptxBuffer,
     });
     await page.locator("#slideListContainer .slide-card").first().click();
     await page.locator("#unsavedSaveBtn").click();
@@ -1774,7 +1908,7 @@ await runScenario(
       name: "reset-me.pptx",
       mimeType:
         "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-      buffer: Buffer.from("fixture"),
+      buffer: validPptxBuffer,
     });
 
     await page.locator("#editorResetBtn").click();
