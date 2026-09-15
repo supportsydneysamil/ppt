@@ -3412,49 +3412,299 @@ body[data-theme="light"] .rte-textarea {
   display: none;
 }
 
-.custom-editor-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: var(--sp-3);
-}
-
-.custom-editor-field {
+.custom-editor-ribbon {
+  grid-area: ribbon;
+  container-type: inline-size;
   display: grid;
-  gap: var(--sp-1);
-}
-
-.custom-editor-field select {
-  min-width: 180px;
-}
-
-.custom-editor-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  /* Wider between groups than within one, so the separators read as the
-     boundary rather than every gap looking the same. */
-  gap: var(--sp-2) var(--sp-3);
-  padding: var(--sp-2);
+  grid-template-rows: auto auto;
+  min-width: 0;
+  overflow: visible;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--panel-soft);
 }
 
-/* A group is one unit. It wraps as a whole instead of splitting its own
-   buttons across two lines, which is what made the rows look ragged. */
-.custom-editor-tool-group {
+.custom-editor-bar,
+.custom-editor-design-row {
   display: flex;
-  flex-wrap: nowrap;
   align-items: center;
-  gap: 2px;
-  padding-right: var(--sp-3);
-  border-right: 1px solid var(--border);
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: var(--sp-2);
 }
 
-.custom-editor-tool-group:last-child {
-  border-right: none;
-  padding-right: 0;
+.custom-editor-design-row {
+  border-bottom: 1px solid var(--border);
+}
+
+.custom-editor-field {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.custom-editor-design-row .custom-editor-field > .field-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.custom-editor-field select {
+  min-width: 0;
+  height: var(--ctrl-h-sm);
+}
+
+.custom-editor-design-row select[data-custom-editor="template"] {
+  width: clamp(72px, 24cqw, 170px);
+  min-width: 72px;
+}
+
+.custom-editor-design-row select[data-custom-editor="theme"] {
+  width: clamp(70px, 18cqw, 140px);
+}
+
+.custom-editor-toolbar,
+.custom-editor-tools-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: var(--sp-2);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.custom-editor-tool-group {
+  flex-wrap: nowrap;
+}
+
+.custom-editor-tool-group,
+.custom-editor-tool-cluster {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel) 58%, transparent);
+}
+
+.custom-editor-group-label {
+  margin: 0 4px 0 3px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.custom-editor-object-tools {
+  margin-left: auto;
+}
+
+.custom-editor-overflow {
+  position: relative;
+  display: none;
+  flex: none;
+}
+
+.custom-editor-overflow-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: var(--ctrl-h-sm);
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.custom-editor-overflow-trigger:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.custom-editor-overflow-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  right: 0;
+  display: grid;
+  gap: var(--sp-2);
+  min-width: max-content;
+  padding: var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.custom-editor-overflow-menu[hidden] {
+  display: none;
+}
+
+.custom-editor-overflow-section {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.custom-editor-design-overflow {
+  display: contents;
+}
+
+.custom-editor-design-overflow > .custom-editor-overflow-trigger {
+  display: none;
+}
+
+.custom-editor-design-overflow > .custom-editor-overflow-menu {
+  position: static;
+  display: contents;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.custom-editor-apply-label--compact {
+  display: none;
+}
+
+.custom-editor-design-row .custom-color-picker-value {
+  width: 72px;
+}
+
+@container (max-width: 1080px) {
+  .custom-editor-layout-tools {
+    display: none;
+  }
+
+  .custom-editor-layout-overflow {
+    display: block;
+  }
+}
+
+@container (max-width: 560px) {
+  .custom-editor-design-row,
+  .custom-editor-tools-row {
+    gap: var(--sp-1);
+    padding: var(--sp-1);
+  }
+
+  .custom-editor-design-row select {
+    max-width: 96px;
+  }
+
+  .custom-editor-design-overflow {
+    position: relative;
+    display: block;
+    flex: none;
+  }
+
+  .custom-editor-design-overflow > .custom-editor-overflow-trigger {
+    display: inline-flex;
+  }
+
+  .custom-editor-design-overflow > .custom-editor-overflow-menu {
+    position: absolute;
+    display: none;
+    grid-template-columns: minmax(112px, 1fr) auto;
+    align-items: center;
+    gap: var(--sp-2);
+    min-width: 190px;
+    padding: var(--sp-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--panel);
+    box-shadow: var(--shadow);
+  }
+
+  .custom-editor-design-overflow
+    > .custom-editor-overflow-menu[data-open="true"] {
+    display: grid;
+  }
+
+  .custom-editor-apply-label {
+    display: none;
+  }
+
+  .custom-editor-apply-label--compact {
+    display: inline;
+  }
+
+  .custom-editor-tool-cluster {
+    padding: 2px;
+  }
+
+  .custom-editor-tools-row .custom-editor-tool {
+    width: var(--ctrl-h-xs);
+    height: var(--ctrl-h-xs);
+  }
+
+  .custom-editor-tools-row .custom-editor-group-label {
+    display: none;
+  }
+
+  .custom-editor-add-tools {
+    display: none;
+  }
+
+  .custom-editor-add-overflow {
+    display: block;
+  }
+
+  .custom-editor-zoom [data-editor-action="zoom-out"],
+  .custom-editor-zoom [data-editor-action="zoom-in"] {
+    display: none;
+  }
+
+  .custom-editor-view-overflow {
+    display: block;
+  }
+}
+
+@container (max-width: 420px) {
+  .custom-editor-layout-overflow .custom-editor-overflow-trigger {
+    width: var(--ctrl-h-sm);
+    padding: 0;
+    font-size: 0;
+  }
+}
+
+@supports not (container-type: inline-size) {
+  @media (max-width: 1480px) {
+    .custom-editor-layout-tools {
+      display: none;
+    }
+
+    .custom-editor-layout-overflow {
+      display: block;
+    }
+  }
+
+  @media (max-width: 899px) {
+    .custom-editor-zoom [data-editor-action="zoom-out"],
+    .custom-editor-zoom [data-editor-action="zoom-in"] {
+      display: none;
+    }
+
+    .custom-editor-view-overflow {
+      display: block;
+    }
+  }
 }
 
 .custom-editor-tool {
@@ -3891,15 +4141,13 @@ body[data-theme="light"] .rte-textarea {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-template-areas:
-    "bar"
-    "tools"
+    "ribbon"
     "stage"
     "side";
   gap: var(--sp-3);
 }
 
-.custom-editor[data-react-chrome="true"] > .custom-editor-bar,
-.custom-editor[data-react-chrome="true"] > .custom-editor-toolbar,
+.custom-editor[data-react-chrome="true"] > .custom-editor-ribbon--fallback,
 .custom-editor[data-react-chrome="true"] > .custom-editor-body > .custom-editor-props {
   display: none;
 }
@@ -3912,12 +4160,8 @@ body[data-theme="light"] .rte-textarea {
   display: contents;
 }
 
-.custom-editor[data-react-chrome="true"] .custom-editor-bar {
-  grid-area: bar;
-}
-
-.custom-editor[data-react-chrome="true"] .custom-editor-toolbar {
-  grid-area: tools;
+.custom-editor[data-react-chrome="true"] .custom-editor-ribbon {
+  grid-area: ribbon;
 }
 
 .custom-editor[data-react-chrome="true"] .custom-editor-body {
@@ -4168,13 +4412,12 @@ body[data-theme="light"] .rte-textarea {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-template-areas:
-    "bar"
-    "tools"
+    "ribbon"
     "stage"
     "status";
   /* The stage row is the only one allowed to absorb free height, so a tall
      toolbar wrap cannot push it down the screen. */
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   min-height: 0;
   gap: var(--sp-3);
 }
@@ -4189,12 +4432,8 @@ body[data-theme="light"] .rte-textarea {
   display: none;
 }
 
-.slide-editor-panel[data-slide-type="custom"] .custom-editor-bar {
-  grid-area: bar;
-}
-
-.slide-editor-panel[data-slide-type="custom"] .custom-editor-toolbar {
-  grid-area: tools;
+.slide-editor-panel[data-slide-type="custom"] .custom-editor-ribbon {
+  grid-area: ribbon;
 }
 
 .slide-editor-panel[data-slide-type="custom"] .custom-editor-body {
@@ -4423,10 +4662,10 @@ body[data-theme="light"] .rte-textarea {
     grid-row: 2;
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
-      "bar"
-      "tools"
+      "ribbon"
       "stage"
       "status";
+    grid-template-rows: auto minmax(0, 1fr) auto;
   }
 
   .ppt-interface[data-layout-mode="compact"][data-inspector-open="false"]
@@ -4514,10 +4753,10 @@ body[data-theme="light"] .rte-textarea {
     grid-row: 2;
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
-      "bar"
-      "tools"
+      "ribbon"
       "stage"
       "status";
+    grid-template-rows: auto minmax(0, 1fr) auto;
   }
 
   .custom-editor-props {

@@ -802,6 +802,26 @@ async function fillName(page, value) {
   await page.locator("#slideName").fill(value);
 }
 
+async function fillCustomBackground(page, value) {
+  const input = page
+    .locator("#customSlideEditor [data-custom-editor='background']")
+    .first();
+  let openedDesign = false;
+  if (!(await input.isVisible())) {
+    await page
+      .locator(
+        "#customSlideEditor .custom-editor-design-overflow:visible [aria-haspopup='dialog']"
+      )
+      .click();
+    openedDesign = true;
+  }
+  await input.fill(value);
+  if (openedDesign) {
+    await page.keyboard.press("Escape");
+    await input.waitFor({ state: "hidden" });
+  }
+}
+
 async function expectToastOnce(page, text) {
   const matching = page.locator("#appToastRegion .app-toast", { hasText: text });
   await matching.first().waitFor({ state: "visible" });
@@ -912,7 +932,7 @@ await runScenario(
     assert.equal(await popup.locator("[data-custom-editor='canvas']").count(), 1);
     assert.equal(await page.locator("#customSlideEditor").getAttribute("inert"), "");
 
-    await popup.locator("[data-editor-action='add-text']").click();
+    await popup.locator("[data-editor-action='add-text']:visible").click();
     await page.locator("#editorSaveBtn:not([disabled])").waitFor();
     await popup.getByRole("button", { name: "저장" }).click();
     await popup.getByText("저장됨").waitFor();
@@ -1052,6 +1072,113 @@ await runScenario(
     assert.equal(await workspace.getAttribute("data-focus-mode"), "false");
     assert.equal(await page.locator(".slide-cards").getAttribute("inert"), null);
     assert.equal(await page.locator("#slideForm").getAttribute("inert"), null);
+  }
+);
+
+await runScenario(
+  "custom editor ribbon stays two rows and overflow actions remain wired",
+  async (page) => {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await setup(page, { slides: customCanvasSlides });
+    await selectMainSlide(page, 0);
+    await page
+      .locator("#customSlideEditor [data-custom-editor='status']")
+      .first()
+      .filter({ hasText: "슬라이드를 불러왔습니다" })
+      .waitFor();
+
+    const ribbon = page.locator(
+      "#customSlideEditor .custom-editor-ribbon:not(.custom-editor-ribbon--fallback)"
+    );
+    const header = page.locator(".editor-header");
+    const headerControls = await header.evaluate((node) =>
+      Array.from(node.querySelectorAll("button"), (button) => ({
+        id: button.id,
+        className: button.className.replace(/\bis-dirty\b/g, "").trim(),
+      }))
+    );
+    assert.equal(
+      await ribbon
+        .locator(
+          ":scope > .custom-editor-design-row, :scope > .custom-editor-tools-row"
+        )
+        .count(),
+      2
+    );
+
+    const beforeHeight = await ribbon.evaluate((node) =>
+      Math.round(node.getBoundingClientRect().height)
+    );
+    await page.locator("[data-editor-action='add-rect']:visible").click();
+
+    const overflow = page.locator(
+      "#customSlideEditor .custom-editor-layout-overflow:visible"
+    );
+    await overflow.locator("[aria-haspopup='menu']").click();
+    const menu = overflow.locator("[role='menu']");
+    await menu.waitFor();
+    const afterHeight = await ribbon.evaluate((node) =>
+      Math.round(node.getBoundingClientRect().height)
+    );
+    assert.equal(afterHeight, beforeHeight);
+
+    await menu.locator("[data-editor-action='align-left']").click();
+    await menu.waitFor({ state: "hidden" });
+    assert.equal(await page.locator("#editorSaveBtn").isDisabled(), false);
+    assert.deepEqual(
+      await header.evaluate((node) =>
+        Array.from(node.querySelectorAll("button"), (button) => ({
+          id: button.id,
+          className: button.className.replace(/\bis-dirty\b/g, "").trim(),
+        }))
+      ),
+      headerControls
+    );
+
+    await overflow.locator("[aria-haspopup='menu']").click();
+    await page.keyboard.press("Escape");
+    await menu.waitFor({ state: "hidden" });
+    assert.equal(
+      await overflow.locator("[aria-haspopup='menu']").getAttribute("aria-expanded"),
+      "false"
+    );
+
+    for (const width of [560, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.waitForTimeout(100);
+      const overflowByRow = await ribbon.evaluate((node) =>
+        Array.from(node.children, (row) => row.scrollWidth - row.clientWidth)
+      );
+      assert.deepEqual(
+        overflowByRow,
+        [0, 0],
+        `${width}px ribbon rows must keep every control reachable`
+      );
+    }
+
+    const designOverflow = page.locator(
+      "#customSlideEditor .custom-editor-design-overflow:visible"
+    );
+    const themeSelect = page.locator(
+      "#customSlideEditor .custom-editor-ribbon:not(.custom-editor-ribbon--fallback) [data-custom-editor='theme']"
+    );
+    assert.equal(await themeSelect.count(), 1);
+    assert.equal(await themeSelect.isVisible(), false);
+    assert.ok(
+      (await page
+        .locator(
+          "#customSlideEditor .custom-editor-ribbon:not(.custom-editor-ribbon--fallback) [data-custom-editor='template']"
+        )
+        .evaluate((node) => node.getBoundingClientRect().width)) >= 72
+    );
+    await designOverflow.locator("[aria-haspopup='dialog']").click();
+    await themeSelect.waitFor({ state: "visible" });
+    await page.keyboard.press("Escape");
+    await themeSelect.waitFor({ state: "hidden" });
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.waitForFunction(
+      () => document.querySelector("#pptWorkspace")?.dataset.layoutMode === "wide"
+    );
   }
 );
 
@@ -1475,10 +1602,7 @@ await runScenario(
       .filter({ hasText: "슬라이드를 불러왔습니다" })
       .waitFor();
 
-    await page
-      .locator("#customSlideEditor [data-custom-editor='background']")
-      .first()
-      .fill("#000000");
+    await fillCustomBackground(page, "#000000");
     await page.locator("#editorSaveBtn:not([disabled])").waitFor();
 
     await page.locator("#slideListContainer .slide-card").nth(1).click();
@@ -2353,10 +2477,7 @@ await runScenario(
       .first();
     await editorStatus.filter({ hasText: "슬라이드를 불러왔습니다" }).waitFor();
 
-    await page
-      .locator("#customSlideEditor [data-custom-editor='background']")
-      .first()
-      .fill("#000000");
+    await fillCustomBackground(page, "#000000");
     const undoButton = page.locator(
       "#customSlideEditor [data-editor-action='undo']"
     ).first();

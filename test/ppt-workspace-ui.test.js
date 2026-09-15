@@ -462,12 +462,11 @@ describe("PPT panel collapse affordances", () => {
   });
 
   it("lets only the stage row absorb the custom editor's free height", () => {
-    // The inspector column spans all four rows. While they were every one
-    // `auto`, revealing the property panels on a selection grew the bar and
-    // tool rows too, which pushed the stage down the screen.
+    // The design and tool bands now share one ribbon row. Only the stage may
+    // absorb free height, so revealing property panels cannot grow the ribbon.
     assert.match(
       css,
-      /\[data-slide-type="custom"\] \.custom-editor\[data-react-chrome="true"\]:not\(\[hidden\]\)\s*\{[^}]*?grid-template-rows:\s*auto auto minmax\(0,\s*1fr\) auto/
+      /\[data-slide-type="custom"\] \.custom-editor\[data-react-chrome="true"\]:not\(\[hidden\]\)\s*\{[^}]*?grid-template-rows:\s*auto minmax\(0,\s*1fr\) auto/
     );
     assert.match(
       css,
@@ -568,6 +567,74 @@ describe("PPT panel collapse affordances", () => {
     );
     // A group wraps whole rather than splitting its own buttons across rows.
     assert.match(css, /\.custom-editor-tool-group\s*\{[^}]*?flex-wrap:\s*nowrap/);
+    assert.match(
+      chromeSource,
+      /className="custom-editor-ribbon"[\s\S]*className="custom-editor-bar custom-editor-design-row"[\s\S]*className="custom-editor-toolbar custom-editor-tools-row"/
+    );
+    assert.match(
+      chromeSource,
+      /<span className="custom-editor-group-label">추가<\/span>/
+    );
+    assert.match(
+      chromeSource,
+      /<span className="custom-editor-group-label">기록<\/span>/
+    );
+    assert.match(
+      chromeSource,
+      /<span className="custom-editor-group-label">정렬<\/span>/
+    );
+    assert.match(
+      chromeSource,
+      /<span className="custom-editor-group-label">배치<\/span>/
+    );
+    assert.match(
+      css,
+      /\.custom-editor-ribbon\s*\{[^}]*?display:\s*grid[^}]*?grid-template-rows:\s*auto auto/
+    );
+    assert.doesNotMatch(
+      css,
+      /\.custom-editor-tool-group\s*\{[^}]*?border-right:/
+    );
+  });
+
+  it("leaves the first-band editor header outside the custom ribbon", () => {
+    const headerEnd = html.indexOf('<form id="slideForm"');
+    const header = html.slice(html.indexOf('<div class="editor-header">'), headerEnd);
+    assert.match(header, /<h3>슬라이드 편집<\/h3>/);
+    assert.match(header, /id="editorSaveBtn"/);
+    assert.doesNotMatch(header, /custom-editor-ribbon/);
+  });
+
+  it("moves lower-priority ribbon actions into accessible overflow menus", () => {
+    assert.match(chromeSource, /function RibbonOverflowMenu\(/);
+    assert.match(chromeSource, /label="정렬·배치"/);
+    assert.match(chromeSource, /label="보기"/);
+    assert.match(chromeSource, /aria-haspopup="menu"/);
+    assert.match(chromeSource, /aria-expanded=\{open\}/);
+    assert.match(chromeSource, /event\.key === "Escape"/);
+    assert.match(
+      chromeSource,
+      /requestAnimationFrame\(\(\) => setOpen\(false\)\)/
+    );
+    assert.match(css, /@container\s*\(max-width:\s*1080px\)/);
+    assert.match(css, /@container\s*\(max-width:\s*560px\)/);
+    assert.equal(
+      (chromeSource.match(/<ColorPicker[\s\S]*?background/g) ?? []).length,
+      1
+    );
+  });
+
+  it("keeps the ribbon in one column in compact and mobile layouts", () => {
+    const compactRule =
+      /@media\s*\(min-width:\s*900px\)\s*and\s*\(max-width:\s*1279px\)[\s\S]*?\.slide-editor-panel\[data-slide-type="custom"\][\s\S]*?grid-template-areas:\s*"ribbon"\s*"stage"\s*"status"/;
+    const mobileRule =
+      /@media\s*\(max-width:\s*899px\)[\s\S]*?\.slide-editor-panel\[data-slide-type="custom"\][\s\S]*?grid-template-areas:\s*"ribbon"\s*"stage"\s*"status"/;
+    assert.match(css, compactRule);
+    assert.match(css, mobileRule);
+    assert.doesNotMatch(
+      css,
+      /grid-template-areas:\s*"bar"\s*"tools"\s*"stage"\s*"status"/
+    );
   });
 
   it("gives the layer list rows instead of loose buttons", () => {

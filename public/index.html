@@ -1113,7 +1113,8 @@
             hidden
           >
             <div id="customEditorReactRoot" class="custom-editor-react-root"></div>
-            <div class="custom-editor-bar">
+            <div class="custom-editor-ribbon custom-editor-ribbon--fallback">
+            <div class="custom-editor-bar custom-editor-design-row">
               <label class="custom-editor-field">
                 <span class="field-label">템플릿</span>
                 <select
@@ -1157,8 +1158,9 @@
               </label>
             </div>
 
-            <div class="custom-editor-toolbar" role="toolbar" aria-label="커스텀 슬라이드 도구">
-              <div class="custom-editor-tool-group" role="group" aria-label="개체 추가">
+            <div class="custom-editor-toolbar custom-editor-tools-row" role="toolbar" aria-label="커스텀 슬라이드 도구">
+              <div class="custom-editor-tool-group custom-editor-tool-cluster" role="group" aria-label="개체 추가">
+                <span class="custom-editor-group-label">추가</span>
                 <button type="button" class="custom-editor-tool" data-editor-action="add-text" title="텍스트 추가" aria-label="텍스트 추가">텍스트</button>
                 <button type="button" class="custom-editor-tool" data-editor-action="add-image" title="이미지 추가" aria-label="이미지 추가">이미지</button>
                 <button type="button" class="custom-editor-tool" data-editor-action="add-rect" title="사각형 추가" aria-label="사각형 추가">사각형</button>
@@ -1167,12 +1169,14 @@
                 <button type="button" class="custom-editor-tool" data-editor-action="add-line" title="선 추가" aria-label="선 추가">선</button>
               </div>
 
-              <div class="custom-editor-tool-group" role="group" aria-label="편집 이력">
+              <div class="custom-editor-tool-group custom-editor-tool-cluster" role="group" aria-label="편집 이력">
+                <span class="custom-editor-group-label">기록</span>
                 <button type="button" class="custom-editor-tool" data-editor-action="undo" title="실행 취소" aria-label="실행 취소" disabled>되돌리기</button>
                 <button type="button" class="custom-editor-tool" data-editor-action="redo" title="다시 실행" aria-label="다시 실행" disabled>다시 실행</button>
               </div>
 
-              <div class="custom-editor-tool-group" role="group" aria-label="슬라이드 기준 정렬">
+              <div class="custom-editor-tool-group custom-editor-tool-cluster custom-editor-layout-tools" role="group" aria-label="슬라이드 기준 정렬">
+                <span class="custom-editor-group-label">정렬</span>
                 <button type="button" class="custom-editor-tool" data-editor-action="align-left" title="왼쪽 정렬" aria-label="왼쪽 정렬" disabled>왼쪽</button>
                 <button type="button" class="custom-editor-tool" data-editor-action="align-center" title="가로 가운데 정렬" aria-label="가로 가운데 정렬" disabled>가로 가운데</button>
                 <button type="button" class="custom-editor-tool" data-editor-action="align-right" title="오른쪽 정렬" aria-label="오른쪽 정렬" disabled>오른쪽</button>
@@ -1181,12 +1185,13 @@
                 <button type="button" class="custom-editor-tool" data-editor-action="align-bottom" title="아래쪽 정렬" aria-label="아래쪽 정렬" disabled>아래쪽</button>
               </div>
 
-              <div class="custom-editor-tool-group" role="group" aria-label="개체 관리">
+              <div class="custom-editor-tool-group custom-editor-tool-cluster custom-editor-object-tools" role="group" aria-label="개체 관리">
                 <button type="button" class="custom-editor-tool" data-editor-action="forward" title="앞으로 가져오기" aria-label="앞으로 가져오기" disabled>앞으로</button>
                 <button type="button" class="custom-editor-tool" data-editor-action="backward" title="뒤로 보내기" aria-label="뒤로 보내기" disabled>뒤로</button>
                 <button type="button" class="custom-editor-tool" data-editor-action="duplicate" title="개체 복제" aria-label="개체 복제" disabled>복제</button>
                 <button type="button" class="custom-editor-tool danger" data-editor-action="delete" title="개체 삭제" aria-label="개체 삭제" disabled>삭제</button>
               </div>
+            </div>
             </div>
 
             <div class="custom-editor-body">

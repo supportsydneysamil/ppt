@@ -25,6 +25,7 @@ import {
   Layers,
   Lock,
   Maximize,
+  MoreHorizontal,
   MousePointerClick,
   Minus,
   Redo2,
@@ -39,13 +40,14 @@ import {
   ZoomOut,
 } from "lucide-react";
 import { createPortal } from "react-dom";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { ColorPicker } from "./color-picker.jsx";
 import { CUSTOM_SLIDE_TEMPLATES } from "./custom-slide-editor.js";
 import { CUSTOM_SLIDE_THEMES } from "./custom-slide-themes.js";
 import { SAFE_SLIDE_FONTS } from "./custom-slide-fonts.js";
 
-function ToolButton({ action, label, children, danger = false }) {
+function ToolButton({ action, label, children, danger = false, ...props }) {
   return (
     <button
       type="button"
@@ -53,9 +55,76 @@ function ToolButton({ action, label, children, danger = false }) {
       data-editor-action={action}
       title={label}
       aria-label={label}
+      {...props}
     >
       {children}
     </button>
+  );
+}
+
+function RibbonOverflowMenu({
+  label,
+  menuLabel,
+  className = "",
+  children,
+  inlineOnWide = false,
+  panelRole = "menu",
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
+  const menuId = useId();
+
+  useEffect(() => {
+    if (!open) return undefined;
+
+    const closeOutside = (event) => {
+      if (!rootRef.current?.contains(event.target)) setOpen(false);
+    };
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setOpen(false);
+        rootRef.current?.querySelector('[aria-haspopup="menu"]')?.focus();
+      }
+    };
+
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  return (
+    <div ref={rootRef} className={`custom-editor-overflow ${className}`.trim()}>
+      <button
+        type="button"
+        className="custom-editor-overflow-trigger"
+        aria-haspopup={panelRole === "menu" ? "menu" : "dialog"}
+        aria-controls={menuId}
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        {label}
+        <MoreHorizontal size={14} aria-hidden="true" />
+      </button>
+      <div
+        id={menuId}
+        className="custom-editor-overflow-menu"
+        role={panelRole}
+        aria-label={menuLabel}
+        data-open={open}
+        hidden={inlineOnWide ? undefined : !open}
+        onClick={(event) => {
+          if (panelRole === "menu" && event.target.closest("[data-editor-action]")) {
+            requestAnimationFrame(() => setOpen(false));
+          }
+        }}
+      >
+        {children}
+      </div>
+    </div>
   );
 }
 
@@ -108,6 +177,120 @@ function CheckChip({ field, label, defaultChecked = false, children }) {
         {label}
       </span>
     </label>
+  );
+}
+
+function ribbonToolGroupClass(inMenu) {
+  return inMenu
+    ? "custom-editor-overflow-section"
+    : "custom-editor-tool-group custom-editor-tool-cluster custom-editor-layout-tools";
+}
+
+function AddTools({ inMenu = false }) {
+  const menuProps = inMenu ? { role: "menuitem" } : {};
+  const className = inMenu
+    ? "custom-editor-overflow-section"
+    : "custom-editor-tool-group custom-editor-tool-cluster custom-editor-add-tools";
+  return (
+    <div className={className} role="group" aria-label="개체 추가">
+      <span className="custom-editor-group-label">추가</span>
+      <ToolButton action="add-text" label="텍스트 추가" {...menuProps}>
+        <Type size={16} />
+      </ToolButton>
+      <ToolButton action="add-image" label="이미지 추가" {...menuProps}>
+        <ImagePlus size={16} />
+      </ToolButton>
+      <ToolButton action="add-rect" label="사각형 추가" {...menuProps}>
+        <Square size={16} />
+      </ToolButton>
+      <ToolButton action="add-roundRect" label="둥근 사각형 추가" {...menuProps}>
+        <SquareDashed size={16} />
+      </ToolButton>
+      <ToolButton action="add-ellipse" label="원 추가" {...menuProps}>
+        <Circle size={16} />
+      </ToolButton>
+      <ToolButton action="add-line" label="선 추가" {...menuProps}>
+        <Minus size={16} />
+      </ToolButton>
+    </div>
+  );
+}
+
+function SlideAlignmentTools({ inMenu = false }) {
+  const menuProps = inMenu ? { role: "menuitem" } : {};
+  return (
+    <div
+      className={ribbonToolGroupClass(inMenu)}
+      role="group"
+      aria-label="슬라이드 기준 정렬"
+    >
+      <span className="custom-editor-group-label">정렬</span>
+      <ToolButton action="align-left" label="왼쪽 정렬" {...menuProps}>
+        <AlignHorizontalJustifyStart size={16} />
+      </ToolButton>
+      <ToolButton action="align-center" label="가로 가운데 정렬" {...menuProps}>
+        <AlignHorizontalJustifyCenter size={16} />
+      </ToolButton>
+      <ToolButton action="align-right" label="오른쪽 정렬" {...menuProps}>
+        <AlignHorizontalJustifyEnd size={16} />
+      </ToolButton>
+      <ToolButton action="align-top" label="위쪽 정렬" {...menuProps}>
+        <AlignVerticalJustifyStart size={16} />
+      </ToolButton>
+      <ToolButton action="align-middle" label="세로 가운데 정렬" {...menuProps}>
+        <AlignVerticalJustifyCenter size={16} />
+      </ToolButton>
+      <ToolButton action="align-bottom" label="아래쪽 정렬" {...menuProps}>
+        <AlignVerticalJustifyEnd size={16} />
+      </ToolButton>
+    </div>
+  );
+}
+
+function SelectionAlignmentTools({ inMenu = false }) {
+  const menuProps = inMenu ? { role: "menuitem" } : {};
+  return (
+    <div
+      className={ribbonToolGroupClass(inMenu)}
+      role="group"
+      aria-label="개체 간 정렬"
+    >
+      <span className="visually-hidden">개체 간 정렬</span>
+      <ToolButton action="align-selection-left" label="선택 개체 왼쪽 정렬" {...menuProps}>
+        <AlignStartVertical size={16} />
+      </ToolButton>
+      <ToolButton action="distribute-x" label="가로 균등 분배" {...menuProps}>
+        <AlignHorizontalDistributeCenter size={16} />
+      </ToolButton>
+      <ToolButton action="distribute-y" label="세로 균등 분배" {...menuProps}>
+        <AlignVerticalDistributeCenter size={16} />
+      </ToolButton>
+    </div>
+  );
+}
+
+function LayerOrderTools({ inMenu = false }) {
+  const menuProps = inMenu ? { role: "menuitem" } : {};
+  return (
+    <div
+      className={ribbonToolGroupClass(inMenu)}
+      role="group"
+      aria-label="쌓는 순서"
+    >
+      <span className="custom-editor-group-label">배치</span>
+      <ToolButton action="to-front" label="맨 앞으로" {...menuProps}>
+        <ChevronsUp size={16} />
+      </ToolButton>
+      <ToolButton action="forward" label="앞으로 가져오기" {...menuProps}>
+        <ChevronUp size={16} />
+      </ToolButton>
+      <ToolButton action="backward" label="뒤로 보내기" {...menuProps}>
+        <ChevronDown size={16} />
+      </ToolButton>
+      <ToolButton action="to-back" label="맨 뒤로" {...menuProps}>
+        <ChevronsDown size={16} />
+      </ToolButton>
+    </div>
   );
 }
 
@@ -308,7 +491,8 @@ export function CustomEditorChrome({ inspectorHost = null }) {
 
   return (
     <div className="custom-editor-chrome">
-      <div className="custom-editor-bar">
+      <div className="custom-editor-ribbon">
+      <div className="custom-editor-bar custom-editor-design-row">
         <label className="custom-editor-field">
           <span className="field-label">템플릿</span>
           <select data-custom-editor="template" aria-label="커스텀 슬라이드 템플릿" title="커스텀 슬라이드 템플릿">
@@ -326,27 +510,38 @@ export function CustomEditorChrome({ inspectorHost = null }) {
           title="선택한 템플릿 적용"
           aria-label="선택한 템플릿 적용"
         >
-          템플릿 적용
+          <span className="custom-editor-apply-label">템플릿 적용</span>
+          <span className="custom-editor-apply-label--compact" aria-hidden="true">
+            적용
+          </span>
         </button>
-        <label className="custom-editor-field">
-          <span className="field-label">테마</span>
-          <select data-custom-editor="theme" aria-label="커스텀 슬라이드 테마" title="커스텀 슬라이드 테마">
-            {CUSTOM_SLIDE_THEMES.map((theme) => (
-              <option key={theme.id} value={theme.id}>
-                {theme.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="custom-editor-field">
-          <span className="field-label">배경색</span>
-          <ColorPicker
-            value="#ffffff"
-            background
-            title="슬라이드 배경색"
-            ariaLabel="슬라이드 배경색"
-          />
-        </label>
+        <RibbonOverflowMenu
+          label="디자인"
+          menuLabel="테마 및 배경색"
+          className="custom-editor-design-overflow"
+          inlineOnWide
+          panelRole="group"
+        >
+          <label className="custom-editor-field">
+            <span className="field-label">테마</span>
+            <select data-custom-editor="theme" aria-label="커스텀 슬라이드 테마" title="커스텀 슬라이드 테마">
+              {CUSTOM_SLIDE_THEMES.map((theme) => (
+                <option key={theme.id} value={theme.id}>
+                  {theme.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="custom-editor-field">
+            <span className="field-label">배경색</span>
+            <ColorPicker
+              value="#ffffff"
+              background
+              title="슬라이드 배경색"
+              ariaLabel="슬라이드 배경색"
+            />
+          </label>
+        </RibbonOverflowMenu>
         <div className="custom-editor-zoom" role="group" aria-label="확대/축소">
           <ToolButton action="zoom-out" label="축소">
             <ZoomOut size={16} />
@@ -358,30 +553,33 @@ export function CustomEditorChrome({ inspectorHost = null }) {
             <ZoomIn size={16} />
           </ToolButton>
         </div>
+        <RibbonOverflowMenu
+          label="보기"
+          menuLabel="확대 및 축소 도구"
+          className="custom-editor-view-overflow"
+        >
+          <div className="custom-editor-overflow-section" role="group" aria-label="확대 및 축소">
+            <ToolButton action="zoom-out" label="축소" role="menuitem">
+              <ZoomOut size={16} />
+            </ToolButton>
+            <ToolButton action="zoom-in" label="확대" role="menuitem">
+              <ZoomIn size={16} />
+            </ToolButton>
+          </div>
+        </RibbonOverflowMenu>
       </div>
 
-      <div className="custom-editor-toolbar" role="toolbar" aria-label="커스텀 슬라이드 도구">
-        <div className="custom-editor-tool-group" role="group" aria-label="개체 추가">
-          <ToolButton action="add-text" label="텍스트 추가">
-            <Type size={16} />
-          </ToolButton>
-          <ToolButton action="add-image" label="이미지 추가">
-            <ImagePlus size={16} />
-          </ToolButton>
-          <ToolButton action="add-rect" label="사각형 추가">
-            <Square size={16} />
-          </ToolButton>
-          <ToolButton action="add-roundRect" label="둥근 사각형 추가">
-            <SquareDashed size={16} />
-          </ToolButton>
-          <ToolButton action="add-ellipse" label="원 추가">
-            <Circle size={16} />
-          </ToolButton>
-          <ToolButton action="add-line" label="선 추가">
-            <Minus size={16} />
-          </ToolButton>
-        </div>
-        <div className="custom-editor-tool-group" role="group" aria-label="편집 이력">
+      <div className="custom-editor-toolbar custom-editor-tools-row" role="toolbar" aria-label="커스텀 슬라이드 도구">
+        <AddTools />
+        <RibbonOverflowMenu
+          label="추가"
+          menuLabel="개체 추가 도구"
+          className="custom-editor-add-overflow"
+        >
+          <AddTools inMenu />
+        </RibbonOverflowMenu>
+        <div className="custom-editor-tool-group custom-editor-tool-cluster" role="group" aria-label="편집 이력">
+          <span className="custom-editor-group-label">기록</span>
           <ToolButton action="undo" label="실행 취소">
             <Undo2 size={16} />
           </ToolButton>
@@ -389,55 +587,19 @@ export function CustomEditorChrome({ inspectorHost = null }) {
             <Redo2 size={16} />
           </ToolButton>
         </div>
-        <div className="custom-editor-tool-group" role="group" aria-label="슬라이드 기준 정렬">
-          <ToolButton action="align-left" label="왼쪽 정렬">
-            <AlignHorizontalJustifyStart size={16} />
-          </ToolButton>
-          <ToolButton action="align-center" label="가로 가운데 정렬">
-            <AlignHorizontalJustifyCenter size={16} />
-          </ToolButton>
-          <ToolButton action="align-right" label="오른쪽 정렬">
-            <AlignHorizontalJustifyEnd size={16} />
-          </ToolButton>
-          <ToolButton action="align-top" label="위쪽 정렬">
-            <AlignVerticalJustifyStart size={16} />
-          </ToolButton>
-          <ToolButton action="align-middle" label="세로 가운데 정렬">
-            <AlignVerticalJustifyCenter size={16} />
-          </ToolButton>
-          <ToolButton action="align-bottom" label="아래쪽 정렬">
-            <AlignVerticalJustifyEnd size={16} />
-          </ToolButton>
-        </div>
-        <div className="custom-editor-tool-group" role="group" aria-label="개체 간 정렬">
-          <ToolButton action="align-selection-left" label="선택 개체 왼쪽 정렬">
-            <AlignStartVertical size={16} />
-          </ToolButton>
-          <ToolButton action="distribute-x" label="가로 균등 분배">
-            <AlignHorizontalDistributeCenter size={16} />
-          </ToolButton>
-          <ToolButton action="distribute-y" label="세로 균등 분배">
-            <AlignVerticalDistributeCenter size={16} />
-          </ToolButton>
-        </div>
-        {/* Top-to-bottom, to match the layer list these four reorder. The two
-            layered-square icons lucide offers for the extremes are hard to
-            tell apart at 16px, so the group reads as one scale instead. */}
-        <div className="custom-editor-tool-group" role="group" aria-label="쌓는 순서">
-          <ToolButton action="to-front" label="맨 앞으로">
-            <ChevronsUp size={16} />
-          </ToolButton>
-          <ToolButton action="forward" label="앞으로 가져오기">
-            <ChevronUp size={16} />
-          </ToolButton>
-          <ToolButton action="backward" label="뒤로 보내기">
-            <ChevronDown size={16} />
-          </ToolButton>
-          <ToolButton action="to-back" label="맨 뒤로">
-            <ChevronsDown size={16} />
-          </ToolButton>
-        </div>
-        <div className="custom-editor-tool-group" role="group" aria-label="개체 관리">
+        <SlideAlignmentTools />
+        <SelectionAlignmentTools />
+        <LayerOrderTools />
+        <RibbonOverflowMenu
+          label="정렬·배치"
+          menuLabel="정렬 및 배치 도구"
+          className="custom-editor-layout-overflow"
+        >
+          <SlideAlignmentTools inMenu />
+          <SelectionAlignmentTools inMenu />
+          <LayerOrderTools inMenu />
+        </RibbonOverflowMenu>
+        <div className="custom-editor-tool-group custom-editor-tool-cluster custom-editor-object-tools" role="group" aria-label="개체 관리">
           <ToolButton action="duplicate" label="개체 복제">
             <Copy size={16} />
           </ToolButton>
@@ -445,6 +607,7 @@ export function CustomEditorChrome({ inspectorHost = null }) {
             <Trash2 size={16} />
           </ToolButton>
         </div>
+      </div>
       </div>
 
       <div className="custom-editor-context-toolbar" data-editor-ui="context-toolbar" hidden>
