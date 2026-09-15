@@ -1,4 +1,8 @@
 :root {
+  /* Names the theme to the browser, so the parts of the UI it draws itself —
+     scrollbars above all — come out dark instead of the light default sitting
+     bright against these panels. */
+  color-scheme: dark;
   --bg: #0f0f0f;
   --bg-accent: #1b1b1b;
   --ink: #f3f0ea;
@@ -37,6 +41,7 @@
 }
 
 body[data-theme="light"] {
+  color-scheme: light;
   --bg: #f6efe6;
   --bg-accent: #fce6c7;
   --ink: #1d1b16;
@@ -799,7 +804,6 @@ body {
   gap: 6px;
   max-height: 72px;
   overflow-y: auto;
-  scrollbar-width: thin;
 }
 
 .custom-title-category-button {
@@ -1518,6 +1522,11 @@ body {
   gap: 16px;
   border-bottom: 1px solid var(--border);
   margin-bottom: 24px;
+  /* The actions on the right belong to the slide list alone, and they stand a
+     couple of pixels taller than the tabs. Letting the row shrink to the tabs
+     when they go away moved the tabs, and everything under them, on every tab
+     switch, so the row holds the taller height either way. */
+  min-height: calc(var(--ctrl-h-sm) + var(--sp-2) + 1px);
 }
 
 .ppt-tabs {
@@ -2527,22 +2536,35 @@ body {
   padding: 0 var(--sp-4) var(--sp-4);
 }
 
-/* The workspace panes scroll without a bar of their own. Where the OS draws
-   classic scrollbars — any Mac with a mouse attached — an `overflow: auto` pane
-   reserves a gutter for the bar, which shifts the rows sideways the moment the
-   content grows past the pane. On the stage that gutter also feeds back into
-   the canvas fit: the bar narrows the stage, the canvas refits smaller, the bar
-   leaves, and the stage shakes between the two. Hiding the bars costs an
-   affordance the panes already show through their own scrolled content. */
+/* Every region here scrolls without a bar of its own. Where the OS draws
+   classic scrollbars — any Mac with a mouse attached — an `overflow: auto`
+   region reserves a gutter for the bar, which shifts its rows sideways the
+   moment the content grows past it. On the stage that gutter also feeds back
+   into the canvas fit: the bar narrows the stage, the canvas refits smaller,
+   the bar leaves, and the stage shakes between the two.
+
+   This is a deliberate trade. A hidden bar is one less cue that a region
+   scrolls, and every region below leans on its own clipped content to say so
+   instead. Wheel, trackpad, touch and keyboard scrolling are untouched. */
 .slide-cards,
 .editor-form,
-.custom-editor-stage {
+.custom-editor-stage,
+.custom-title-category-group,
+.preview-stage,
+.custom-editor-body,
+#view-extractor,
+.template-gallery {
   scrollbar-width: none;
 }
 
 .slide-cards::-webkit-scrollbar,
 .editor-form::-webkit-scrollbar,
-.custom-editor-stage::-webkit-scrollbar {
+.custom-editor-stage::-webkit-scrollbar,
+.custom-title-category-group::-webkit-scrollbar,
+.preview-stage::-webkit-scrollbar,
+.custom-editor-body::-webkit-scrollbar,
+#view-extractor::-webkit-scrollbar,
+.template-gallery::-webkit-scrollbar {
   width: 0;
   height: 0;
 }
@@ -2653,6 +2675,14 @@ body {
   margin: 0;
   font-size: 14px;
   color: var(--muted);
+}
+
+/* The row the box lives in. It exists so the box can measure itself against the
+   height actually left for it: the "미리보기" label shares the stage, and a box
+   measured against the whole stage overshoots by the label's height. */
+.preview-stage {
+  display: grid;
+  min-height: 0;
 }
 
 .slide-preview-box {
@@ -4500,36 +4530,85 @@ body[data-theme="light"] .rte-textarea {
   grid-template-columns: 44px minmax(0, 1fr);
 }
 
-/* --- App shell: the slide editor owns the viewport ---
+/* --- App shell: every view owns the viewport ---
 
-   Everywhere else this app is a document that scrolls. The slide editor is not:
-   you change a setting on the right and check the result on the left, so both
-   panes need to be on screen at once. Letting the page scroll underneath them
-   means two scrollbars moving the same way, and it wastes the height the panes
-   could have used.
+   The slide editor has to be a shell: you change a setting on the right and
+   check the result on the left, so both panes need to be on screen at once,
+   and a page scrolling underneath them would mean two scrollbars moving the
+   same way.
 
-   So on wide enough viewports the page claims exactly one viewport, and every
-   region that can grow — the slide rail, the stage, the inspector — scrolls
-   inside its own box. minmax(0, ...) and min-height: 0 appear at every level
-   because a grid or flex item defaults to min-height: auto, which refuses to
-   shrink below its content and would push the overflow back out to the page.
+   The other views have no such need, but they cannot stay documents either.
+   A document view is taller than the viewport and a shell view is exactly as
+   tall, so the page's own scrollbar appeared and vanished as you moved between
+   them. Where that bar takes layout width — any Mac with a mouse attached, and
+   every Windows machine — it narrows the viewport, and `.page` is centred, so
+   the nav and everything under it jumped sideways by half the bar on every
+   view switch. Reserving the bar's width instead only trades the jump for an
+   empty groove down the side of every screen, and hiding the bar trades away
+   the scroll affordance. The mismatch itself is the bug.
 
-   Vertical space is the scarce resource here, so the editor surface also runs
-   tighter page padding and gaps than the reading-oriented extractor view.
+   So on wide enough viewports the page claims exactly one viewport in every
+   view, and each region that can grow scrolls inside its own box: the reading
+   view, the template gallery, and the editor's rail, stage, and inspector.
+   The page never scrolls, so it never has a bar to give or take, and the
+   scrollbars that remain belong to the regions they scroll.
+
+   minmax(0, ...) and min-height: 0 appear at every level because a grid or
+   flex item defaults to min-height: auto, which refuses to shrink below its
+   content and would push the overflow back out to the page.
+
+   The chrome above the views — the nav and the settings button — is the shell's
+   own, so it renders in one place for every view. Giving the editor tighter
+   page padding bought it vertical space but moved that chrome 24px up whenever
+   you opened it, which is the jump you see when switching views. The editor
+   reclaims its space at the bottom of the page instead, where nothing is
+   anchored.
 
    Below 900px the panes stack and there is nothing to keep side by side, so the
    page goes back to being a document. */
 @media (min-width: 900px) {
-  .page[data-ppt-surface="editor"] {
+  html,
+  body {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .page {
     height: 100dvh;
-    padding-top: 24px;
-    padding-bottom: 16px;
-    gap: 16px;
     grid-template-rows: auto minmax(0, 1fr);
   }
 
-  .page[data-ppt-surface="editor"] #view-ppt {
+  #view-extractor,
+  #view-ppt {
     min-height: 0;
+  }
+
+  /* The page's own bottom padding would end the scrolling regions short of the
+     window and leave their content looking sheared off in mid-air, so the
+     shell keeps a thin gutter and the regions carry the rest inside, where it
+     reads as the end of the content. */
+  .page {
+    padding-bottom: 16px;
+  }
+
+  /* The reading view scrolls itself. It spans the shell rather than the column
+     it used to be, so the column's width moves one level in. */
+  #view-extractor {
+    max-width: none;
+    overflow-y: auto;
+    padding-bottom: 48px;
+  }
+
+  #view-extractor > * {
+    max-width: 932px;
+    margin-inline: auto;
+  }
+
+  .page[data-ppt-surface="gallery"] .template-gallery {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding-bottom: 48px;
   }
 
   .page[data-ppt-surface="editor"] .ppt-tabbar {
@@ -4574,6 +4653,31 @@ body[data-theme="light"] .rte-textarea {
     align-self: stretch;
     align-content: start;
     min-height: 0;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  /* The preview keeps the size its column gives it — it is the thing being
+     judged, so shrinking it with the window would defeat the point. When the
+     shell has less height than the box needs, the stage scrolls the way the
+     inspector beside it does, rather than cutting the box off. */
+  .page[data-ppt-surface="editor"] .preview-stage {
+    overflow-y: auto;
+  }
+
+  .page[data-ppt-surface="editor"] .custom-editor-body {
+    min-height: 0;
+    overflow-y: auto;
+  }
+}
+
+/* Below the shell the page is a document again, and a view that happens to fit
+   the viewport still drops the bar and shifts the layout. There is no region to
+   hand the scrolling to here, so the page holds the bar's width open instead.
+   Touch browsers overlay their bars and reserve nothing, so this costs them
+   nothing; it only shows up on a desktop window narrowed past the breakpoint. */
+@media (max-width: 899px) {
+  html {
+    scrollbar-gutter: stable;
   }
 }
 

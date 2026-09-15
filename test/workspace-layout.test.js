@@ -88,10 +88,14 @@ describe("workspace shell wiring", () => {
       appSource,
       /function applyViewChange\([\s\S]*syncWorkspaceLayoutState\(viewName\)/
     );
+    // renderPptScreen draws the PPT screen whether or not that screen is the
+    // one on display — at startup it runs under the extractor — so it asks for
+    // the visible view rather than naming one.
     assert.match(
       appSource,
-      /function renderPptScreen\([\s\S]*syncWorkspaceLayoutState\("ppt"\)/
+      /function renderPptScreen\([\s\S]*syncWorkspaceLayoutState\(\)/
     );
+    assert.doesNotMatch(appSource, /syncWorkspaceLayoutState\("ppt"\)/);
   });
 });
 

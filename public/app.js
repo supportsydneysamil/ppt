@@ -1715,7 +1715,11 @@ function renderPptScreen() {
   }
 
   updateTemplateManagementUi();
-  syncWorkspaceLayoutState("ppt");
+  // Which view is showing is not this function's to decide: it renders the PPT
+  // screen whether or not that screen is the one on display, and at startup it
+  // runs while the extractor is. Naming the view here left the page wearing the
+  // editor's layout under the extractor until the first trip through the tabs.
+  syncWorkspaceLayoutState();
 }
 
 // By the time a transition body runs, the guard has already saved or

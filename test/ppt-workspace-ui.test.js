@@ -412,13 +412,33 @@ describe("PPT panel collapse affordances", () => {
   it("keeps the scrolling panes from reserving a scrollbar gutter", () => {
     // A classic bar would take layout width from all three, shifting the rows
     // sideways and, on the stage, oscillating the canvas fit.
-    assert.match(
+    const hides = css.match(/([^}]*?)\{\s*scrollbar-width:\s*none;?\s*\}/);
+    const hidesWebkit = css.match(/([^}]*?)::-webkit-scrollbar\s*\{\s*width:\s*0;\s*height:\s*0/);
+    assert.ok(hides && hidesWebkit, "the panes should share one hiding rule");
+    for (const region of [
+      ".slide-cards",
+      ".editor-form",
+      ".custom-editor-stage",
+      ".custom-title-category-group",
+      ".preview-stage",
+      ".custom-editor-body",
+      "#view-extractor",
+      ".template-gallery",
+    ]) {
+      assert.ok(
+        hides[1].includes(region),
+        `${region} is missing from the scrollbar-width rule`
+      );
+      assert.ok(
+        hidesWebkit[1].includes(region),
+        `${region} is missing from the webkit rule`
+      );
+    }
+    // The chip row used to keep a thin bar, which reserved a gutter inside the
+    // inspector and shifted its rows.
+    assert.doesNotMatch(
       css,
-      /\.slide-cards,\s*\.editor-form,\s*\.custom-editor-stage\s*\{\s*scrollbar-width:\s*none/
-    );
-    assert.match(
-      css,
-      /\.slide-cards::-webkit-scrollbar,\s*\.editor-form::-webkit-scrollbar,\s*\.custom-editor-stage::-webkit-scrollbar\s*\{\s*width:\s*0;\s*height:\s*0/
+      /\.custom-title-category-group\s*\{[^}]*scrollbar-width:\s*thin/
     );
     // An inline canvas leaves a descender under itself, which scrolls the stage
     // by those few pixels no matter how well the canvas is fitted.
@@ -426,6 +446,109 @@ describe("PPT panel collapse affordances", () => {
       css,
       /\.custom-editor-stage \.canvas-container canvas\s*\{\s*display:\s*block/
     );
+  });
+
+  it("gives every view the same shell so the page never scrolls", () => {
+    // A document view and a shell view disagree about the page's scrollbar, and
+    // that disagreement shifted the centred layout on every view switch.
+    assert.match(css, /@media \(min-width: 900px\) \{\s*html,\s*body\s*\{\s*height:\s*100%;\s*overflow:\s*hidden/);
+    assert.match(
+      css,
+      /\.page\s*\{\s*height:\s*100dvh;\s*grid-template-rows:\s*auto minmax\(0, 1fr\)/
+    );
+    // The surface rule keeps only what is specific to the editor now.
+    assert.doesNotMatch(
+      css,
+      /\.page\[data-ppt-surface="editor"\]\s*\{[^}]*height:\s*100dvh/
+    );
+  });
+
+  it("hands each view a region that scrolls in the page's place", () => {
+    assert.match(css, /#view-extractor \{\s*max-width:\s*none;\s*overflow-y:\s*auto/);
+    assert.match(css, /#view-extractor > \*\s*\{\s*max-width:\s*932px;\s*margin-inline:\s*auto/);
+    assert.match(
+      css,
+      /\.page\[data-ppt-surface="gallery"\] \.template-gallery\s*\{[\s\S]*?overflow-y:\s*auto/
+    );
+  });
+
+  it("holds the bar's width open where the page is still a document", () => {
+    assert.match(
+      css,
+      /@media \(max-width: 899px\) \{\s*html\s*\{\s*scrollbar-gutter:\s*stable/
+    );
+  });
+
+  it("renders the shell's chrome in one place for every view", () => {
+    // Tighter page padding on the editor moved the nav 24px up whenever you
+    // opened it, which read as the page jumping on every view switch.
+    assert.doesNotMatch(
+      css,
+      /\.page\[data-ppt-surface="editor"\]\s*\{[^}]*padding-top/
+    );
+    assert.doesNotMatch(css, /\.page\[data-ppt-surface="editor"\]\s*\{[^}]*gap:/);
+    // The regions carry the page's bottom margin inside themselves, so their
+    // content scrolls to the window rather than stopping short of it.
+    assert.match(css, /#view-extractor \{[\s\S]*?padding-bottom:\s*48px/);
+  });
+
+  it("scrolls the stage rather than shrinking or cutting the preview", () => {
+    // The box takes its height from its width through the 16:9 ratio, so a
+    // short window used to cut it off. It keeps that size — it is the thing
+    // being judged — and the row around it scrolls when the shell runs short.
+    assert.match(
+      html,
+      /<div class="preview-stage">\s*<div id="slidePreview" class="slide-preview-box">/
+    );
+    assert.match(
+      css,
+      /\.page\[data-ppt-surface="editor"\] \.preview-stage \{\s*overflow-y:\s*auto/
+    );
+    assert.match(
+      css,
+      /\.page\[data-ppt-surface="editor"\] \.custom-editor-body \{[\s\S]*?overflow-y:\s*auto/
+    );
+    assert.match(css, /\.slide-preview-box \{[\s\S]*?width:\s*100%;\s*aspect-ratio:\s*16 \/ 9/);
+  });
+
+  it("keeps the shell's rules in the breakpoint that needs them", () => {
+    // Inserting a rule between the two blocks once swallowed the whole editor
+    // shell into the narrow one, which left the panes measuring themselves
+    // against the document cap and running off the bottom of the window.
+    const shell = css.match(
+      /App shell: every view owns the viewport[\s\S]*?@media \(min-width: 900px\) \{([\s\S]*?)\n\}/
+    );
+    const narrow = css.match(/@media \(max-width: 899px\) \{([\s\S]*?)\n\}/);
+    assert.ok(shell && narrow, "both breakpoint blocks should exist");
+    assert.match(shell[1], /\.page\[data-ppt-surface="editor"\] \.slide-editor-panel/);
+    assert.match(shell[1], /--stage-max-h:\s*none/);
+    assert.doesNotMatch(narrow[1], /data-ppt-surface/);
+  });
+
+  it("keeps the tab row one height whether or not its actions are there", () => {
+    // The bulk actions show on the slide list only and stand taller than the
+    // tabs, so the bottom-aligned row shrank on the gallery tab and nudged the
+    // tabs and the content under them.
+    assert.match(
+      css,
+      /\.ppt-tabbar \{[\s\S]*?min-height:\s*calc\(var\(--ctrl-h-sm\) \+ var\(--sp-2\) \+ 1px\)/
+    );
+  });
+
+  it("lets the visible view decide the page's layout state", () => {
+    // renderPptScreen runs at startup while the extractor is showing, so
+    // naming the view there left the page wearing the editor's layout — and
+    // its scrollbar — under the extractor until the first trip through the tabs.
+    assert.doesNotMatch(appSource, /syncWorkspaceLayoutState\("ppt"\)/);
+    assert.match(
+      appSource,
+      /const currentView =\s*viewName \?\?\s*\(navExtractor\.classList\.contains\("active"\) \? "extractor" : "ppt"\)/
+    );
+  });
+
+  it("names the theme to the browser so it draws its own parts to match", () => {
+    assert.match(css, /:root \{[\s\S]*?color-scheme:\s*dark/);
+    assert.match(css, /body\[data-theme="light"\] \{\s*color-scheme:\s*light/);
   });
 
   it("keeps the inspector card stacked and unpins its header", () => {
