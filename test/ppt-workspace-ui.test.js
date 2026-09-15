@@ -709,6 +709,18 @@ describe("PPT panel collapse affordances", () => {
     assert.match(css, /\.custom-editor-ribbon-tablist\s*\{/);
     assert.match(css, /\.custom-editor-ribbon-panel\s*\{/);
     assert.match(css, /\.custom-editor-ribbon-group-label\s*\{/);
+    assert.match(
+      css,
+      /\.custom-editor-ribbon-field select,\s*\.custom-editor-ribbon-panel \.custom-color-picker-value\s*\{[^}]*?border:\s*1px solid var\(--border\)[^}]*?border-radius:\s*9px[^}]*?background:\s*var\(--panel\)/
+    );
+    assert.match(
+      css,
+      /\.custom-editor-ribbon-field select:focus-visible,\s*\.custom-editor-ribbon-panel \.custom-color-picker-value:focus-visible\s*\{[^}]*?box-shadow:\s*var\(--focus-ring\)/
+    );
+    assert.match(
+      css,
+      /\.custom-editor-ribbon-panel \.pickr \.pcr-button\s*\{[^}]*?border-radius:\s*9px/
+    );
     assert.equal(
       (chromeSource.match(/<ColorPicker[\s\S]*?background/g) ?? []).length,
       1

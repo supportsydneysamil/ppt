@@ -3618,6 +3618,55 @@ body[data-theme="light"] .rte-textarea {
   height: var(--ctrl-h-sm);
 }
 
+.custom-editor-ribbon-field select,
+.custom-editor-ribbon-panel .custom-color-picker-value {
+  box-sizing: border-box;
+  height: var(--ctrl-h-sm);
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  transition: border-color 160ms ease, background-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.custom-editor-ribbon-field select:hover,
+.custom-editor-ribbon-panel .custom-color-picker-value:hover {
+  border-color: var(--brand-edge);
+  background: color-mix(in srgb, var(--panel) 86%, var(--brand-tint));
+}
+
+.custom-editor-ribbon-field select:focus-visible,
+.custom-editor-ribbon-panel .custom-color-picker-value:focus-visible {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: var(--focus-ring);
+}
+
+.custom-editor-ribbon-panel .custom-color-picker {
+  gap: 6px;
+}
+
+.custom-editor-ribbon-panel .pickr .pcr-button {
+  width: var(--ctrl-h-sm);
+  height: var(--ctrl-h-sm);
+  padding: 0;
+  border-radius: 9px;
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.custom-editor-ribbon-panel .pickr .pcr-button::before,
+.custom-editor-ribbon-panel .pickr .pcr-button::after {
+  border-radius: 9px;
+}
+
+.custom-editor-ribbon-panel .pickr .pcr-button:focus-visible {
+  box-shadow: 0 0 0 1px var(--brand), var(--focus-ring);
+}
+
 .custom-editor-ribbon-panel select[data-custom-editor="template"] {
   width: 145px;
 }
