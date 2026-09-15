@@ -850,6 +850,8 @@ const slidePanelCollapseBtn = document.getElementById("slidePanelCollapseBtn");
 const inspectorPanelCollapseBtn = document.getElementById(
   "inspectorPanelCollapseBtn"
 );
+const slideListRailBtn = document.getElementById("slideListRailBtn");
+const inspectorRailBtn = document.getElementById("inspectorRailBtn");
 const templateGallery = document.getElementById("templateGallery");
 const templateGalleryGrid = document.getElementById("templateGalleryGrid");
 const templateGalleryEmpty = document.getElementById("templateGalleryEmpty");
@@ -2600,6 +2602,12 @@ pptInspectorPaneBtn?.addEventListener("click", () => {
 inspectorPanelCollapseBtn?.addEventListener("click", () => {
   dispatchPptWorkspaceUi({ type: "toggle-inspector" });
 });
+slideListRailBtn?.addEventListener("click", () => {
+  dispatchPptWorkspaceUi({ type: "toggle-slides" });
+});
+inspectorRailBtn?.addEventListener("click", () => {
+  dispatchPptWorkspaceUi({ type: "toggle-inspector" });
+});
 pptFocusModeBtn?.addEventListener("click", () => {
   dispatchPptWorkspaceUi({ type: "toggle-focus" });
 });
@@ -2607,7 +2615,7 @@ customEditorPopoutBtn?.addEventListener("click", openCustomEditorPopout);
 slideEditor?.addEventListener("pointerdown", (event) => {
   if (
     event.target.closest?.(
-      ".editor-form, .custom-editor-side, .editor-actions, .custom-editor-context-toolbar"
+      ".editor-form, .custom-editor-side, .editor-actions, .custom-editor-context-toolbar, .panel-rail-btn"
     )
   ) {
     return;

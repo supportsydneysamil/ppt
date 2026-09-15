@@ -305,6 +305,20 @@
         <!-- Left: Slide List -->
         <div class="slide-list-panel" id="slideListPanel">
           <button
+            id="slideListRailBtn"
+            type="button"
+            class="panel-rail-btn"
+            aria-controls="slideListPanel"
+            aria-expanded="false"
+            aria-label="슬라이드 목록 열기"
+            title="슬라이드 목록 열기"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m9 18 6-6-6-6"></path>
+            </svg>
+            <span class="panel-rail-label">슬라이드 목록</span>
+          </button>
+          <button
             id="slidePanelCollapseBtn"
             type="button"
             class="slide-panel-collapse"
@@ -1290,6 +1304,21 @@
               <div class="preview-placeholder">설정을 변경하면 미리보기가 표시됩니다.</div>
             </div>
           </div>
+
+          <button
+            id="inspectorRailBtn"
+            type="button"
+            class="panel-rail-btn"
+            aria-controls="slideForm customSlideInspector"
+            aria-expanded="false"
+            aria-label="속성 패널 열기"
+            title="속성 패널 열기"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m15 18-6-6 6-6"></path>
+            </svg>
+            <span class="panel-rail-label">상세 설정</span>
+          </button>
         </div>
 
         <div id="emptyEditorState" class="empty-state">

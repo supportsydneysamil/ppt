@@ -249,3 +249,40 @@ describe("PPT workspace controls", () => {
     assert.match(appSource, /slideEditor\.style\.display\s*=\s*"grid"/);
   });
 });
+
+describe("PPT panel collapse affordances", () => {
+  it("expands a collapsed pane from a full-rail button", () => {
+    assert.match(
+      html,
+      /id="slideListRailBtn"[\s\S]*?aria-controls="slideListPanel"/
+    );
+    assert.match(
+      html,
+      /id="inspectorRailBtn"[\s\S]*?aria-controls="slideForm customSlideInspector"/
+    );
+    assert.match(html, /id="slideListRailBtn"[\s\S]*?슬라이드 목록 열기/);
+    assert.match(html, /id="inspectorRailBtn"[\s\S]*?속성 패널 열기/);
+    assert.match(css, /\.panel-rail-btn\s*\{[\s\S]*?display:\s*none/);
+    assert.match(
+      css,
+      /\[data-layout-mode="wide"\]\[data-slides-open="false"\]\s*#slideListRailBtn[\s\S]*?display:\s*flex/
+    );
+    assert.match(
+      css,
+      /\.panel-rail-label\s*\{[\s\S]*?writing-mode:\s*vertical-rl/
+    );
+    assert.match(appSource, /slideListRailBtn\?\.addEventListener/);
+    assert.match(appSource, /inspectorRailBtn\?\.addEventListener/);
+  });
+
+  it("hides the collapse chevrons while collapsed so the rail owns the target", () => {
+    assert.match(
+      css,
+      /\[data-slides-open="false"\]\s*#slidePanelCollapseBtn\s*\{[\s\S]*?display:\s*none/
+    );
+    assert.match(
+      css,
+      /\[data-inspector-open="false"\]\s*#inspectorPanelCollapseBtn\s*\{[\s\S]*?display:\s*none/
+    );
+  });
+});
