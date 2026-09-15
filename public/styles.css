@@ -3450,25 +3450,130 @@ body[data-theme="light"] .rte-textarea {
   grid-area: ribbon;
   container-type: inline-size;
   display: grid;
-  grid-template-rows: auto auto;
+  grid-template-rows: auto minmax(80px, auto);
   min-width: 0;
-  overflow: visible;
+  overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--panel-soft);
 }
 
-.custom-editor-bar,
-.custom-editor-design-row {
+.custom-editor-ribbon-tabbar {
   display: flex;
-  align-items: center;
-  gap: var(--sp-2);
+  align-items: end;
+  gap: 2px;
   min-width: 0;
-  padding: var(--sp-2);
+  padding: 5px 7px 0;
+  background: color-mix(in srgb, var(--panel) 72%, transparent);
 }
 
-.custom-editor-design-row {
-  border-bottom: 1px solid var(--border);
+.custom-editor-ribbon-tablist {
+  display: flex;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.custom-editor-ribbon-tablist::-webkit-scrollbar,
+.custom-editor-ribbon-panel::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.custom-editor-ribbon-tab {
+  flex: none;
+  height: var(--ctrl-h-xs);
+  padding: 0 12px;
+  border: 0;
+  border-radius: 7px 7px 0 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.custom-editor-ribbon-tab:hover {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--panel-soft) 72%, transparent);
+}
+
+.custom-editor-ribbon-tab[aria-selected="true"] {
+  color: var(--ink);
+  background: var(--panel-soft);
+  box-shadow: inset 0 -2px 0 var(--brand);
+}
+
+.custom-editor-ribbon-tab:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: none;
+  box-shadow: inset 0 -2px 0 var(--brand), var(--focus-ring);
+}
+
+.custom-editor-ribbon-quick-access {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  padding-bottom: 3px;
+}
+
+.custom-editor-ribbon-panel {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  min-height: 80px;
+  padding: var(--sp-2);
+  overflow-x: hidden;
+}
+
+.custom-editor-ribbon-panel[hidden] {
+  display: none;
+}
+
+.custom-editor-ribbon-group {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: none;
+  min-width: 0;
+  padding: 2px 12px 18px;
+}
+
+.custom-editor-ribbon-group:first-child {
+  padding-left: 4px;
+}
+
+.custom-editor-ribbon-group + .custom-editor-ribbon-group {
+  border-left: 1px solid var(--border);
+}
+
+.custom-editor-ribbon-group-controls {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.custom-editor-ribbon-group-label {
+  position: absolute;
+  right: 8px;
+  bottom: 1px;
+  left: 8px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.035em;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.custom-editor-ribbon-view-group {
+  margin-left: auto;
 }
 
 .custom-editor-field {
@@ -3477,267 +3582,32 @@ body[data-theme="light"] .rte-textarea {
   min-width: 0;
 }
 
-.custom-editor-design-row .custom-editor-field > .field-label {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
 .custom-editor-field select {
   min-width: 0;
   height: var(--ctrl-h-sm);
 }
 
-.custom-editor-design-row select[data-custom-editor="template"] {
-  width: clamp(72px, 24cqw, 170px);
-  min-width: 72px;
+.custom-editor-ribbon-panel select[data-custom-editor="template"] {
+  width: 145px;
 }
 
-.custom-editor-design-row select[data-custom-editor="theme"] {
-  width: clamp(70px, 18cqw, 140px);
+.custom-editor-ribbon-panel select[data-custom-editor="theme"] {
+  width: 110px;
 }
 
-.custom-editor-toolbar,
-.custom-editor-tools-row {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  min-width: 0;
-  padding: var(--sp-2);
-  border: 0;
-  border-radius: 0;
-  background: transparent;
+.custom-editor-ribbon-panel .custom-color-picker-value {
+  width: 60px;
 }
 
-.custom-editor-tool-group {
-  flex-wrap: nowrap;
-}
-
-.custom-editor-tool-group,
-.custom-editor-tool-cluster {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 3px;
-  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--panel) 58%, transparent);
-}
-
-.custom-editor-group-label {
-  margin: 0 4px 0 3px;
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  white-space: nowrap;
-}
-
-.custom-editor-object-tools {
-  margin-left: auto;
-}
-
-.custom-editor-overflow {
-  position: relative;
-  display: none;
-  flex: none;
-}
-
-.custom-editor-overflow-trigger {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  height: var(--ctrl-h-sm);
-  padding: 0 9px;
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  background: var(--panel);
-  color: var(--ink);
-  font: inherit;
-  font-size: 11px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.custom-editor-overflow-trigger:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-
-.custom-editor-overflow-menu {
-  position: absolute;
-  z-index: 20;
-  top: calc(100% + 6px);
-  right: 0;
-  display: grid;
-  gap: var(--sp-2);
-  min-width: max-content;
-  padding: var(--sp-2);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--panel);
-  box-shadow: var(--shadow);
-}
-
-.custom-editor-overflow-menu[hidden] {
-  display: none;
-}
-
-.custom-editor-overflow-section {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.custom-editor-design-overflow {
-  display: contents;
-}
-
-.custom-editor-design-overflow > .custom-editor-overflow-trigger {
-  display: none;
-}
-
-.custom-editor-design-overflow > .custom-editor-overflow-menu {
-  position: static;
-  display: contents;
-  min-width: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.custom-editor-apply-label--compact {
-  display: none;
-}
-
-.custom-editor-design-row .custom-color-picker-value {
-  width: 72px;
-}
-
-@container (max-width: 1080px) {
-  .custom-editor-layout-tools {
-    display: none;
-  }
-
-  .custom-editor-layout-overflow {
-    display: block;
-  }
-}
-
-@container (max-width: 560px) {
-  .custom-editor-design-row,
-  .custom-editor-tools-row {
-    gap: var(--sp-1);
-    padding: var(--sp-1);
-  }
-
-  .custom-editor-design-row select {
-    max-width: 96px;
-  }
-
-  .custom-editor-design-overflow {
-    position: relative;
-    display: block;
-    flex: none;
-  }
-
-  .custom-editor-design-overflow > .custom-editor-overflow-trigger {
-    display: inline-flex;
-  }
-
-  .custom-editor-design-overflow > .custom-editor-overflow-menu {
-    position: absolute;
-    display: none;
-    grid-template-columns: minmax(112px, 1fr) auto;
-    align-items: center;
-    gap: var(--sp-2);
-    min-width: 190px;
-    padding: var(--sp-2);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    background: var(--panel);
-    box-shadow: var(--shadow);
-  }
-
-  .custom-editor-design-overflow
-    > .custom-editor-overflow-menu[data-open="true"] {
-    display: grid;
-  }
-
-  .custom-editor-apply-label {
-    display: none;
-  }
-
-  .custom-editor-apply-label--compact {
-    display: inline;
-  }
-
-  .custom-editor-tool-cluster {
-    padding: 2px;
-  }
-
-  .custom-editor-tools-row .custom-editor-tool {
-    width: var(--ctrl-h-xs);
-    height: var(--ctrl-h-xs);
-  }
-
-  .custom-editor-tools-row .custom-editor-group-label {
-    display: none;
-  }
-
-  .custom-editor-add-tools {
-    display: none;
-  }
-
-  .custom-editor-add-overflow {
-    display: block;
-  }
-
-  .custom-editor-zoom [data-editor-action="zoom-out"],
-  .custom-editor-zoom [data-editor-action="zoom-in"] {
-    display: none;
-  }
-
-  .custom-editor-view-overflow {
-    display: block;
-  }
-}
-
-@container (max-width: 420px) {
-  .custom-editor-layout-overflow .custom-editor-overflow-trigger {
-    width: var(--ctrl-h-sm);
-    padding: 0;
-    font-size: 0;
-  }
-}
-
-@supports not (container-type: inline-size) {
-  @media (max-width: 1480px) {
-    .custom-editor-layout-tools {
-      display: none;
-    }
-
-    .custom-editor-layout-overflow {
-      display: block;
-    }
-  }
-
-  @media (max-width: 899px) {
-    .custom-editor-zoom [data-editor-action="zoom-out"],
-    .custom-editor-zoom [data-editor-action="zoom-in"] {
-      display: none;
-    }
-
-    .custom-editor-view-overflow {
-      display: block;
-    }
+@container (max-width: 559px) {
+  .custom-editor-ribbon-panel {
+    overflow-x: auto;
+    scrollbar-width: none;
+    mask-image: linear-gradient(
+      to right,
+      #000 calc(100% - 24px),
+      transparent
+    );
   }
 }
 
@@ -3759,8 +3629,7 @@ body[data-theme="light"] .rte-textarea {
    grid instead of each one sized to its own glyph. Scoped to the React chrome:
    the markup in index.html is the fallback for when that fails to mount, and
    its buttons still carry text labels that 34px would clip. */
-.custom-editor-chrome .custom-editor-toolbar .custom-editor-tool,
-.custom-editor-chrome .custom-editor-zoom .custom-editor-tool,
+.custom-editor-chrome .custom-editor-ribbon .custom-editor-tool,
 .custom-editor-chrome .custom-editor-context-toolbar .custom-editor-tool {
   width: var(--ctrl-h-sm);
   padding: 0;

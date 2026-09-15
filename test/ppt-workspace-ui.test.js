@@ -386,7 +386,7 @@ describe("PPT panel collapse affordances", () => {
     );
     assert.doesNotMatch(
       css,
-      /\.editor-form\s*\{[\s\S]*?border-left:\s*1px solid var\(--border\)/
+      /\.editor-form\s*\{[^}]*?border-left:\s*1px solid var\(--border\)/
     );
     // The sticky header pads the top, so scrolled rows cannot appear above it.
     assert.match(
@@ -679,44 +679,39 @@ describe("PPT panel collapse affordances", () => {
     );
   });
 
-  it("builds the custom toolbar out of one uniform icon set", () => {
-    // Mixed icon and Korean-text buttons is what made the rows look ragged.
-    assert.doesNotMatch(chromeSource, /<ToolButton[^>]*>\s*[가-힣]/);
-    // Vertical-middle used the Layers glyph, which says nothing about align.
-    assert.match(chromeSource, /action="align-middle"[\s\S]{0,80}AlignVerticalJustifyCenter/);
-    assert.match(
-      css,
-      /\.custom-editor-chrome \.custom-editor-toolbar \.custom-editor-tool[\s\S]*?width:\s*var\(--ctrl-h-sm\)/
-    );
-    // A group wraps whole rather than splitting its own buttons across rows.
-    assert.match(css, /\.custom-editor-tool-group\s*\{[^}]*?flex-wrap:\s*nowrap/);
-    assert.match(
-      chromeSource,
-      /className="custom-editor-ribbon"[\s\S]*className="custom-editor-bar custom-editor-design-row"[\s\S]*className="custom-editor-toolbar custom-editor-tools-row"/
-    );
+  it("builds a Word-style ribbon with stable named categories", () => {
+    assert.match(chromeSource, /role="tablist"/);
+    assert.match(chromeSource, /role="tab"/);
+    assert.match(chromeSource, /role="tabpanel"/);
+    assert.match(chromeSource, /CUSTOM_EDITOR_RIBBON_TABS\.map/);
+    assert.match(chromeSource, /ribbonTabIndexForKey/);
+    assert.match(chromeSource, /custom-editor-ribbon-quick-access/);
+    assert.doesNotMatch(chromeSource, /RibbonOverflowMenu/);
+    assert.doesNotMatch(chromeSource, /MoreHorizontal/);
+    assert.doesNotMatch(chromeSource, /label="정렬·배치"/);
     assert.match(
       chromeSource,
-      /<span className="custom-editor-group-label">추가<\/span>/
+      /action="align-middle"[\s\S]{0,80}AlignVerticalJustifyCenter/
     );
-    assert.match(
-      chromeSource,
-      /<span className="custom-editor-group-label">기록<\/span>/
-    );
-    assert.match(
-      chromeSource,
-      /<span className="custom-editor-group-label">정렬<\/span>/
-    );
-    assert.match(
-      chromeSource,
-      /<span className="custom-editor-group-label">배치<\/span>/
-    );
-    assert.match(
-      css,
-      /\.custom-editor-ribbon\s*\{[^}]*?display:\s*grid[^}]*?grid-template-rows:\s*auto auto/
-    );
-    assert.doesNotMatch(
-      css,
-      /\.custom-editor-tool-group\s*\{[^}]*?border-right:/
+    for (const label of [
+      "템플릿",
+      "테마 및 배경",
+      "보기",
+      "콘텐츠",
+      "도형",
+      "슬라이드에 맞춤",
+      "선택 개체에 맞춤",
+      "쌓는 순서",
+      "개체 관리",
+    ]) {
+      assert.match(chromeSource, new RegExp(`label="${label}"`));
+    }
+    assert.match(css, /\.custom-editor-ribbon-tablist\s*\{/);
+    assert.match(css, /\.custom-editor-ribbon-panel\s*\{/);
+    assert.match(css, /\.custom-editor-ribbon-group-label\s*\{/);
+    assert.equal(
+      (chromeSource.match(/<ColorPicker[\s\S]*?background/g) ?? []).length,
+      1
     );
   });
 
@@ -726,25 +721,6 @@ describe("PPT panel collapse affordances", () => {
     assert.match(header, /<h3>슬라이드 편집<\/h3>/);
     assert.match(header, /id="editorSaveBtn"/);
     assert.doesNotMatch(header, /custom-editor-ribbon/);
-  });
-
-  it("moves lower-priority ribbon actions into accessible overflow menus", () => {
-    assert.match(chromeSource, /function RibbonOverflowMenu\(/);
-    assert.match(chromeSource, /label="정렬·배치"/);
-    assert.match(chromeSource, /label="보기"/);
-    assert.match(chromeSource, /aria-haspopup="menu"/);
-    assert.match(chromeSource, /aria-expanded=\{open\}/);
-    assert.match(chromeSource, /event\.key === "Escape"/);
-    assert.match(
-      chromeSource,
-      /requestAnimationFrame\(\(\) => setOpen\(false\)\)/
-    );
-    assert.match(css, /@container\s*\(max-width:\s*1080px\)/);
-    assert.match(css, /@container\s*\(max-width:\s*560px\)/);
-    assert.equal(
-      (chromeSource.match(/<ColorPicker[\s\S]*?background/g) ?? []).length,
-      1
-    );
   });
 
   it("keeps the ribbon in one column in compact and mobile layouts", () => {
