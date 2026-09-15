@@ -2050,6 +2050,55 @@ export function clampLineIntoCanvas(line, canvasSize = {}) {
 }
 
 /**
+ * The stage's content box, fraction included. `clientWidth`/`clientHeight`
+ * round, and rounding up is what leaves the canvas overflowing by a sliver, so
+ * the rect supplies the fraction while the client sizes keep any visible
+ * scrollbar out of the box.
+ */
+function stageContentBox(host) {
+  const client = { width: host.clientWidth, height: host.clientHeight };
+  const style = host.ownerDocument?.defaultView?.getComputedStyle?.(host);
+  const rect = host.getBoundingClientRect?.();
+  // Nothing to refine the client sizes with: an unlaid-out stage reports no
+  // rect, and the client sizes are all the popout window's stage offers.
+  if (!style || !rect?.width) {
+    return client;
+  }
+  const inset = (...sides) =>
+    sides.reduce((total, side) => total + (parseFloat(style[side]) || 0), 0);
+  return {
+    width: Math.min(
+      rect.width - inset("borderLeftWidth", "borderRightWidth", "paddingLeft", "paddingRight"),
+      client.width
+    ),
+    height: Math.min(
+      rect.height - inset("borderTopWidth", "borderBottomWidth", "paddingTop", "paddingBottom"),
+      client.height
+    ),
+  };
+}
+
+/**
+ * Sizes the canvas for the box the stage gives it. Both sides of the box bind:
+ * the stage is a fixed 16:9 frame with a border, so its content box is a
+ * fraction shorter than its width implies, and a canvas measured off the width
+ * alone ends up a sliver too tall. That sliver is enough for the stage to hand
+ * itself a scrollbar, and where scrollbars take layout width the stage then
+ * oscillates — bar appears, stage narrows, canvas refits, bar leaves.
+ * Zoom is applied after the fit, so zooming in still overflows on purpose.
+ */
+export function fitCanvasToStage(available = {}, zoom = 1) {
+  const width = Number(available.width) || 0;
+  const height = Number(available.height) || 0;
+  if (width <= 0) {
+    return null;
+  }
+  const widthForHeight = height > 0 ? (height * SLIDE_WIDTH) / SLIDE_HEIGHT : Infinity;
+  const fitted = Math.min(width, widthForHeight, SLIDE_WIDTH) * zoom;
+  return { width: fitted, height: (fitted * SLIDE_HEIGHT) / SLIDE_WIDTH };
+}
+
+/**
  * Caps a scale pair so the rotated extent still fits the slide; without this a
  * drag can grow an object past the canvas and normalization then shrinks it,
  * making the object jump on serialize.
@@ -4291,13 +4340,14 @@ export async function createCustomSlideEditor(root, options = {}) {
       return false;
     }
     const host = dom.stage ?? root;
-    const available = host.clientWidth;
-    if (!available) {
+    const fit = fitCanvasToStage(stageContentBox(host), zoom);
+    if (!fit) {
       return false;
     }
-    const width = Math.min(available, SLIDE_WIDTH) * zoom;
-    const height = (width * SLIDE_HEIGHT) / SLIDE_WIDTH;
-    canvas.setDimensions({ width: `${width}px`, height: `${height}px` }, { cssOnly: true });
+    canvas.setDimensions(
+      { width: `${fit.width}px`, height: `${fit.height}px` },
+      { cssOnly: true }
+    );
     positionToolbar?.();
     return true;
   }

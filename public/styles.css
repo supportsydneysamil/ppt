@@ -2527,6 +2527,25 @@ body {
   padding: 0 var(--sp-4) var(--sp-4);
 }
 
+/* The workspace panes scroll without a bar of their own. Where the OS draws
+   classic scrollbars — any Mac with a mouse attached — an `overflow: auto` pane
+   reserves a gutter for the bar, which shifts the rows sideways the moment the
+   content grows past the pane. On the stage that gutter also feeds back into
+   the canvas fit: the bar narrows the stage, the canvas refits smaller, the bar
+   leaves, and the stage shakes between the two. Hiding the bars costs an
+   affordance the panes already show through their own scrolled content. */
+.slide-cards,
+.editor-form,
+.custom-editor-stage {
+  scrollbar-width: none;
+}
+
+.slide-cards::-webkit-scrollbar,
+.editor-form::-webkit-scrollbar,
+.custom-editor-stage::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
 .inspector-header {
   position: sticky;
   top: 0;
@@ -3515,6 +3534,13 @@ body[data-theme="light"] .rte-textarea {
 
 .custom-editor-stage .canvas-container {
   margin: 0 auto;
+}
+
+/* Fabric leaves its canvases inline, and an inline box sits on the text
+   baseline: the line box adds a descender's worth of height under the canvas,
+   which is enough for the stage to scroll even when the canvas fits it. */
+.custom-editor-stage .canvas-container canvas {
+  display: block;
 }
 
 /* --- Custom editor inspector -------------------------------------------------

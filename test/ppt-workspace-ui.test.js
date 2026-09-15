@@ -409,6 +409,25 @@ describe("PPT panel collapse affordances", () => {
     );
   });
 
+  it("keeps the scrolling panes from reserving a scrollbar gutter", () => {
+    // A classic bar would take layout width from all three, shifting the rows
+    // sideways and, on the stage, oscillating the canvas fit.
+    assert.match(
+      css,
+      /\.slide-cards,\s*\.editor-form,\s*\.custom-editor-stage\s*\{\s*scrollbar-width:\s*none/
+    );
+    assert.match(
+      css,
+      /\.slide-cards::-webkit-scrollbar,\s*\.editor-form::-webkit-scrollbar,\s*\.custom-editor-stage::-webkit-scrollbar\s*\{\s*width:\s*0;\s*height:\s*0/
+    );
+    // An inline canvas leaves a descender under itself, which scrolls the stage
+    // by those few pixels no matter how well the canvas is fitted.
+    assert.match(
+      css,
+      /\.custom-editor-stage \.canvas-container canvas\s*\{\s*display:\s*block/
+    );
+  });
+
   it("keeps the inspector card stacked and unpins its header", () => {
     // Stacked, the card is the same card; only the pinned header would follow
     // the page scroll instead of the form's, so that is all mobile undoes.

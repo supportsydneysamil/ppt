@@ -18,6 +18,7 @@ import {
   buildFabricImage,
   fabricObjectToDescriptor,
   bakeTextScale,
+  fitCanvasToStage,
 } from "../public/custom-slide-editor.js";
 import * as fakeFabric from "./fixtures/fake-fabric.js";
 import {
@@ -811,4 +812,44 @@ test("baking keeps the font size inside the range the model accepts", () => {
   tiny.set({ scaleX: 0.1, scaleY: 0.1 });
   assert.equal(bakeTextScale(tiny), true);
   assert.equal(tiny.fontSize, 1);
+});
+
+// The stage is a 16:9 box with a 1px border, so its content box is a hair
+// shorter than its width implies. Sizing the canvas from the width alone left
+// it ~0.9px too tall at every width, and that sliver is what handed the stage a
+// scrollbar: where the bar takes layout width it shrinks the stage, the canvas
+// refits smaller, the bar goes away, and the stage shakes between the two.
+test("fitting the canvas keeps it inside a stage that is shorter than its width implies", () => {
+  const fit = fitCanvasToStage({ width: 639, height: 358.671875 }, 1);
+
+  assert.ok(fit.height <= 358.671875, `${fit.height} overflowed the stage`);
+  assert.ok(fit.width <= 639);
+  assert.equal(Math.round((fit.width / fit.height) * 1000), Math.round((1280 / 720) * 1000));
+});
+
+test("fitting the canvas fills the stage when the box is taller than 16:9", () => {
+  const fit = fitCanvasToStage({ width: 640, height: 900 }, 1);
+
+  assert.equal(fit.width, 640);
+  assert.equal(fit.height, 360);
+});
+
+test("fitting the canvas never upscales past the slide's own size at 1x", () => {
+  const fit = fitCanvasToStage({ width: 4000, height: 4000 }, 1);
+
+  assert.equal(fit.width, 1280);
+  assert.equal(fit.height, 720);
+});
+
+test("fitting the canvas lets zoom overflow the stage on purpose", () => {
+  const fit = fitCanvasToStage({ width: 640, height: 360 }, 2);
+
+  assert.equal(fit.width, 1280);
+  assert.equal(fit.height, 720);
+});
+
+test("fitting the canvas ignores a stage that has not been laid out yet", () => {
+  assert.equal(fitCanvasToStage({ width: 0, height: 0 }, 1), null);
+  // A hidden ancestor reports no height; the width still describes the stage.
+  assert.equal(fitCanvasToStage({ width: 640, height: 0 }, 1).width, 640);
 });
