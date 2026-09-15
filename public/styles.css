@@ -2061,12 +2061,18 @@ body {
   stroke-width: 2;
 }
 
+/* The header carries the panel's identity and its collapse control, nothing
+   else. At 280px the title only fits on one line once the action buttons move
+   to their own row. The rule below it mirrors `.inspector-header`, so both
+   panels frame their headers the same way. */
 .slide-list-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
   gap: 12px;
+  margin-bottom: var(--sp-3);
+  padding-bottom: var(--sp-3);
+  border-bottom: 1px solid var(--border);
 }
 
 .slide-list-title-wrap {
@@ -2074,28 +2080,44 @@ body {
   align-items: center;
   gap: 8px;
   min-width: 0;
+  overflow: hidden;
 }
 
 .slide-list-actions {
   display: flex;
   align-items: center;
   gap: 8px;
+  margin-bottom: 10px;
 }
 
 .slide-list-header h3 {
   margin: 0;
   font-size: 16px;
   color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
+/* 추가 is the primary action in its row, so it takes the free space and 복제
+   stays at its natural width on the right. */
 .add-slide-control {
   position: relative;
-  flex: 0 0 auto;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .split-btn {
-  display: inline-flex;
+  display: flex;
   align-items: stretch;
+}
+
+.split-btn > .ghost:first-child {
+  flex: 1 1 auto;
+}
+
+.slide-list-actions > #duplicateSlideBtn {
+  flex: 0 0 auto;
 }
 
 .split-btn > .ghost:first-child {
@@ -2116,6 +2138,7 @@ body {
 }
 
 .split-btn-caret {
+  flex: 0 0 auto;
   min-width: var(--ctrl-h-sm);
   padding: 0 8px;
   color: var(--muted);

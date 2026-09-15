@@ -1080,7 +1080,7 @@ function applyPptWorkspaceUi() {
     const listContentInert =
       pptWorkspaceUi.mode !== "mobile" && !pptWorkspaceUi.slidesOpen;
     for (const region of slideListPanel.querySelectorAll(
-      ".slide-list-header, .slide-list-toolbar, .slide-cards"
+      ".slide-list-header, .slide-list-actions, .slide-list-toolbar, .slide-cards"
     )) {
       region.inert = listContentInert;
     }

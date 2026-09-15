@@ -286,10 +286,12 @@ describe("PPT panel collapse affordances", () => {
     );
   });
 
-  it("seats the slide-list chevron in the header action row", () => {
+  it("seats the slide-list chevron in the header flow", () => {
+    // Directly after the title, in normal flow — not absolutely positioned
+    // over the panel with the header padded out of its way.
     assert.match(
       html,
-      /id="duplicateSlideBtn"[\s\S]*?id="slidePanelCollapseBtn"[\s\S]*?<\/div>\s*<\/div>\s*<div class="slide-list-toolbar">/
+      /<div class="slide-list-title-wrap">\s*<h3>슬라이드 목록<\/h3>\s*<\/div>\s*<button\s*id="slidePanelCollapseBtn"/
     );
     assert.match(
       html,
@@ -356,6 +358,29 @@ describe("PPT panel collapse affordances", () => {
   it("names the panel and the inspector distinctly", () => {
     assert.match(html, /<div class="editor-header">\s*<h3>슬라이드 편집<\/h3>/);
     assert.match(html, /<div class="inspector-header">\s*<h4>상세 설정<\/h4>/);
+  });
+
+  it("leaves the slide-list header holding only its title and collapse icon", () => {
+    assert.match(
+      html,
+      /<div class="slide-list-header">[\s\S]*?id="slidePanelCollapseBtn"[\s\S]*?<\/button>\s*<\/div>\s*<div class="slide-list-actions">/
+    );
+    assert.match(
+      css,
+      /\.slide-list-header\s*\{[\s\S]*?border-bottom:\s*1px solid var\(--border\)/
+    );
+    // At 280px the title only fits once the action buttons leave the row.
+    assert.match(
+      css,
+      /\.slide-list-header h3\s*\{[\s\S]*?white-space:\s*nowrap/
+    );
+    // 추가 is the primary action, so it takes the row's free space.
+    assert.match(css, /\.add-slide-control\s*\{[\s\S]*?flex:\s*1 1 auto/);
+    // The row left the header, so it needs its own inert coverage.
+    assert.match(
+      appSource,
+      /"\.slide-list-header, \.slide-list-actions, \.slide-list-toolbar, \.slide-cards"/
+    );
   });
 
   it("states each toggle's label once, in the markup", () => {
