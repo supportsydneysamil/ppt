@@ -713,31 +713,28 @@ Then delete this whole media block (around `:3763-3766`), which only existed to 
 
 - [ ] **Step 6: Declare the header height on the editor panel**
 
-In `public/styles.css`, find the `.slide-editor-panel` rule (around `:2340`). It already opens with a block of custom properties:
+In `public/styles.css`, find the `.slide-editor-panel` rule (around `:2337`). It opens with a block of custom properties:
 
 ```css
 .slide-editor-panel {
   --inspector-width: clamp(360px, 27vw, 400px);
-  /* Stage and inspector scroll independently, so they have to stop at the same
-     line or the taller one drags the page scrollbar along with it. */
+  /* Document mode (stacked, narrow viewports): the stage and inspector cannot
+     know their own offset from the top of the viewport, so they share one
+     conservative cap and the page scrolls around them. The app shell below
+     replaces this with the real remaining height. Both read the same token so
+     the two panes always stop on the same line. */
   --stage-max-h: calc(100vh - 190px);
   position: relative;
 ```
 
-Add the header height alongside them, because two separate `padding-top` values further down have to clear this exact height:
+Add one more custom property immediately after `--stage-max-h`, because two separate `padding-top` values further down have to clear this exact height:
 
 ```css
-.slide-editor-panel {
-  --inspector-width: clamp(360px, 27vw, 400px);
-  /* Stage and inspector scroll independently, so they have to stop at the same
-     line or the taller one drags the page scrollbar along with it. */
-  --stage-max-h: calc(100vh - 190px);
   /* Button height plus the header's own padding-bottom and bottom border. */
   --inspector-header-h: calc(var(--ctrl-h-sm) + var(--sp-3) + 1px);
-  position: relative;
 ```
 
-Leave the rest of the rule untouched.
+Leave the rest of the rule untouched, including the `--stage-max-h` comment.
 
 - [ ] **Step 7: Give the inspector a boundary and a header**
 

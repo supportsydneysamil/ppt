@@ -983,7 +983,11 @@ await runScenario(
     );
     assert.equal(await workspace.getAttribute("data-slides-open"), "false");
     assert.equal(await workspace.getAttribute("data-inspector-open"), "true");
-    await page.locator("#slidePanelCollapseBtn").click();
+    // The header chevron goes inert with the rest of the collapsed panel, so
+    // the rail is the only way back.
+    assert.equal(await page.locator("#slidePanelCollapseBtn").isVisible(), false);
+    assert.equal(await page.locator("#slideListRailBtn").isVisible(), true);
+    await page.locator("#slideListRailBtn").click();
     await page.waitForFunction(
       (expected) =>
         Math.abs(
@@ -992,6 +996,32 @@ await runScenario(
         ) <= 2,
       normalWidth
     );
+    assert.equal(await workspace.getAttribute("data-slides-open"), "true");
+
+    await page.locator("#inspectorPanelCollapseBtn").click();
+    await page.waitForFunction(
+      (before) =>
+        document.querySelector("#customSlideEditor .canvas-container")
+          ?.getBoundingClientRect().width > before + 180,
+      normalWidth
+    );
+    assert.equal(await workspace.getAttribute("data-inspector-open"), "false");
+    assert.equal(
+      await page.locator("#inspectorPanelCollapseBtn").isVisible(),
+      false
+    );
+    assert.equal(await page.locator("#inspectorRailBtn").isVisible(), true);
+    await page.locator("#inspectorRailBtn").click();
+    await page.waitForFunction(
+      (expected) =>
+        Math.abs(
+          document.querySelector("#customSlideEditor .canvas-container")
+            ?.getBoundingClientRect().width - expected
+        ) <= 2,
+      normalWidth
+    );
+    assert.equal(await workspace.getAttribute("data-inspector-open"), "true");
+    assert.equal(await page.locator("#editorSaveBtn").isDisabled(), true);
 
     await page.locator("#pptFocusModeBtn").click();
     await page.waitForFunction(
