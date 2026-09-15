@@ -1554,7 +1554,10 @@ async function discardPendingChanges() {
   } else if (plan.repopulateSlide && current) {
     slideRuntimeDraft = {};
     slideResetDraft = null;
-    populateEditor(current);
+    // A custom slide's artwork is restored on the canvas, which reports itself
+    // clean only after that load lands, so the restore is awaited before the
+    // discard is judged complete.
+    await populateEditor(current);
     slideBaselineSnapshot = createSnapshot(collectCurrentSlideDraft());
     renderPreview(current);
     updateButtonsState(current);
@@ -3900,9 +3903,11 @@ function populateEditor(
     releaseCustomEditorSlide();
   }
 
+  let customCanvasLoad = null;
+
   if (slide.type === 'custom') {
     if (reloadCustomCanvas) {
-      showCustomSlideInEditor(slide);
+      customCanvasLoad = showCustomSlideInEditor(slide);
     }
   } else if (slide.type === 'scripture') {
     populateScriptureEditor(slide);
@@ -4009,6 +4014,10 @@ function populateEditor(
 
   // Clear file input to avoid showing stale filename from previous slide
   userPptxFile.value = '';
+
+  // The canvas restores asynchronously and only clears its dirty flag once
+  // that lands, so callers that judge the workspace clean have to wait on it.
+  return customCanvasLoad;
 }
 
 function syncBgTabs(value) {

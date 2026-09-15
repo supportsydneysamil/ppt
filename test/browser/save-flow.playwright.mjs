@@ -1462,6 +1462,38 @@ await runScenario("discard removes new and restores existing slide", async (page
   );
 });
 
+await runScenario(
+  "one discard click restores a dirty custom canvas and moves on",
+  async (page) => {
+    await setup(page, {
+      slides: [...clone(customCanvasSlides), slide("main-plain", "단순 슬라이드")],
+    });
+    await selectMainSlide(page, 0);
+    await page
+      .locator("#customSlideEditor [data-custom-editor='status']")
+      .first()
+      .filter({ hasText: "슬라이드를 불러왔습니다" })
+      .waitFor();
+
+    await page
+      .locator("#customSlideEditor [data-custom-editor='background']")
+      .first()
+      .fill("#000000");
+    await page.locator("#editorSaveBtn:not([disabled])").waitFor();
+
+    await page.locator("#slideListContainer .slide-card").nth(1).click();
+    await page.locator("#unsavedChangesModal").waitFor({ state: "visible" });
+    await page.locator("#unsavedDiscardBtn").click();
+    await page.locator("#unsavedChangesModal").waitFor({ state: "hidden" });
+
+    assert.equal(
+      await page.locator(".slide-card.active").getAttribute("data-slide-id"),
+      "main-plain"
+    );
+    assert.equal(await page.locator("#editorSaveBtn").isDisabled(), true);
+  }
+);
+
 await runScenario("discard restores a template slide from its record", async (page) => {
   const state = await setup(page);
   await openTemplate(page);
