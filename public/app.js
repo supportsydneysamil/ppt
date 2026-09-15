@@ -1106,6 +1106,9 @@ function applyPptWorkspaceUi() {
         focusMode: pptWorkspaceUi.focusMode,
         slidesOpen: pptWorkspaceUi.slidesOpen,
         inspectorOpen: pptWorkspaceUi.inspectorOpen,
+        // The panes the user chose, which a narrow window overrules without
+        // replacing, so a reload at any width restores what they asked for.
+        prefer: pptWorkspaceUi.prefer,
       })
     );
   } catch {

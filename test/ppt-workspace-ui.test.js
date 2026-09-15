@@ -29,7 +29,51 @@ describe("PPT workspace UI state", () => {
       focusMode: false,
       slidesOpen: true,
       inspectorOpen: true,
+      prefer: { slidesOpen: true, inspectorOpen: true },
     });
+  });
+
+  it("reopens a pane compact had no room for once the window grows", () => {
+    // Compact shows one drawer at a time, so widening the slide list closes the
+    // inspector. That is the width talking, not the user, and wide must not
+    // read it back as a collapse they asked for.
+    const wide = createPptWorkspaceUiState(1440);
+    const compact = reducePptWorkspaceUi(wide, { type: "resize", width: 1024 });
+    assert.equal(compact.inspectorOpen, false);
+    assert.deepEqual(compact.prefer, { slidesOpen: true, inspectorOpen: true });
+
+    const back = reducePptWorkspaceUi(compact, { type: "resize", width: 1440 });
+    assert.equal(back.inspectorOpen, true);
+    assert.equal(back.slidesOpen, true);
+  });
+
+  it("keeps a collapse the user asked for across a width round trip", () => {
+    const collapsed = reducePptWorkspaceUi(createPptWorkspaceUiState(1440), {
+      type: "toggle-inspector",
+    });
+    assert.equal(collapsed.inspectorOpen, false);
+    assert.equal(collapsed.prefer.inspectorOpen, false);
+
+    const compact = reducePptWorkspaceUi(collapsed, {
+      type: "resize",
+      width: 1024,
+    });
+    const back = reducePptWorkspaceUi(compact, { type: "resize", width: 1440 });
+    assert.equal(back.inspectorOpen, false);
+  });
+
+  it("restores the panes a stored preference asked for", () => {
+    // Older stored state has no `prefer` of its own, so the flat fields it does
+    // have are the choice to carry forward.
+    assert.deepEqual(
+      createPptWorkspaceUiState(1440, { slidesOpen: false, inspectorOpen: true })
+        .prefer,
+      { slidesOpen: false, inspectorOpen: true }
+    );
+    assert.equal(
+      createPptWorkspaceUiState(1440, { slidesOpen: false }).slidesOpen,
+      false
+    );
   });
 
   it("opens at most one drawer in compact mode", () => {
@@ -43,6 +87,7 @@ describe("PPT workspace UI state", () => {
         focusMode: false,
         slidesOpen: true,
         inspectorOpen: false,
+        prefer: { slidesOpen: true, inspectorOpen: true },
       }
     );
 
@@ -66,6 +111,7 @@ describe("PPT workspace UI state", () => {
         focusMode: false,
         slidesOpen: true,
         inspectorOpen: true,
+        prefer: { slidesOpen: false, inspectorOpen: false },
       }
     );
   });
@@ -78,6 +124,7 @@ describe("PPT workspace UI state", () => {
       focusMode: true,
       slidesOpen: false,
       inspectorOpen: false,
+      prefer: { slidesOpen: true, inspectorOpen: true },
     });
     assert.deepEqual(reducePptWorkspaceUi(focused, { type: "toggle-focus" }), wide);
   });
@@ -93,6 +140,7 @@ describe("PPT workspace UI state", () => {
       focusMode: false,
       slidesOpen: true,
       inspectorOpen: false,
+      prefer: { slidesOpen: true, inspectorOpen: true },
     });
 
     const mobile = reducePptWorkspaceUi(compact, {
@@ -104,6 +152,7 @@ describe("PPT workspace UI state", () => {
       focusMode: false,
       slidesOpen: true,
       inspectorOpen: true,
+      prefer: { slidesOpen: true, inspectorOpen: true },
     });
   });
 
@@ -116,6 +165,7 @@ describe("PPT workspace UI state", () => {
         focusMode: false,
         slidesOpen: false,
         inspectorOpen: false,
+        prefer: { slidesOpen: true, inspectorOpen: true },
       }
     );
   });
@@ -129,6 +179,7 @@ describe("PPT workspace UI state", () => {
         focusMode: false,
         slidesOpen: false,
         inspectorOpen: true,
+        prefer: { slidesOpen: true, inspectorOpen: true },
       }
     );
   });
