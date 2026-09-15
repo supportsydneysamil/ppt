@@ -27,6 +27,35 @@ import {
 
 const CANVAS = { width: 1280, height: 720 };
 
+function templateModel(id) {
+  return CUSTOM_SLIDE_TEMPLATES.find((template) => template.id === id)?.model;
+}
+
+function elementIds(id) {
+  return new Set(templateModel(id)?.elements.map((element) => element.id) ?? []);
+}
+
+function assertElementIds(templateId, requiredIds) {
+  const ids = elementIds(templateId);
+  for (const id of requiredIds) {
+    assert.ok(ids.has(id), `${templateId} is missing ${id}`);
+  }
+}
+
+function assertElementInsideCanvas(templateId, element) {
+  if (element.type === "line") {
+    assert.ok(element.x >= 0 && element.x <= CANVAS.width, `${element.id} x`);
+    assert.ok(element.y >= 0 && element.y <= CANVAS.height, `${element.id} y`);
+    assert.ok(element.x2 >= 0 && element.x2 <= CANVAS.width, `${element.id} x2`);
+    assert.ok(element.y2 >= 0 && element.y2 <= CANVAS.height, `${element.id} y2`);
+    return;
+  }
+  assert.ok(element.x >= 0, `${templateId}/${element.id} x`);
+  assert.ok(element.y >= 0, `${templateId}/${element.id} y`);
+  assert.ok(element.x + element.width <= CANVAS.width, `${templateId}/${element.id} width`);
+  assert.ok(element.y + element.height <= CANVAS.height, `${templateId}/${element.id} height`);
+}
+
 test("templates include fifteen church layouts with roles", () => {
   const expected = [
     ["blank", "빈 슬라이드"],
@@ -57,7 +86,7 @@ test("templates include fifteen church layouts with roles", () => {
   }
 
   const hero = instantiateTemplate("title-hero");
-  assert.equal(hero.background.color, "#0f172a");
+  assert.equal(hero.background.color, "#101c33");
   assert.equal(hero.templateId, "title-hero");
   assert.equal(hero.themeId, "native");
 
@@ -65,7 +94,27 @@ test("templates include fifteen church layouts with roles", () => {
   assert.equal(plainHero.background.color, "#ffffff");
   const title = plainHero.elements.find((element) => element.themeRole === "title");
   assert.equal(title.color, "#111827");
-  assert.equal(title.text, "제목을 입력하세요");
+  assert.equal(title.text, "은혜 위에 세워진 공동체");
+});
+
+test("core message templates use their approved professional structure", () => {
+  assertElementIds("title-hero", ["hero-frame", "hero-kicker", "hero-title", "hero-meta"]);
+  assertElementIds("split-photo", ["photo-panel", "photo-shape-back", "photo-title", "photo-body"]);
+  assertElementIds("quote-card", ["quote-mark", "quote-body", "quote-source"]);
+  assertElementIds("scripture", [
+    "scripture-book",
+    "scripture-chapter",
+    "scripture-verse-number",
+    "scripture-divider",
+    "scripture-body",
+  ]);
+  assertElementIds("sermon-title", [
+    "sermon-kicker",
+    "sermon-heading",
+    "sermon-index-frame",
+    "sermon-index",
+    "sermon-meta",
+  ]);
 });
 
 test("every template model survives normalization unchanged", () => {
