@@ -624,6 +624,19 @@ describe("PPT panel collapse affordances", () => {
     );
   });
 
+  it("keeps the ribbon in one column in compact and mobile layouts", () => {
+    const compactRule =
+      /@media\s*\(min-width:\s*900px\)\s*and\s*\(max-width:\s*1279px\)[\s\S]*?\.slide-editor-panel\[data-slide-type="custom"\][\s\S]*?grid-template-areas:\s*"ribbon"\s*"stage"\s*"status"/;
+    const mobileRule =
+      /@media\s*\(max-width:\s*899px\)[\s\S]*?\.slide-editor-panel\[data-slide-type="custom"\][\s\S]*?grid-template-areas:\s*"ribbon"\s*"stage"\s*"status"/;
+    assert.match(css, compactRule);
+    assert.match(css, mobileRule);
+    assert.doesNotMatch(
+      css,
+      /grid-template-areas:\s*"bar"\s*"tools"\s*"stage"\s*"status"/
+    );
+  });
+
   it("gives the layer list rows instead of loose buttons", () => {
     assert.match(chromeSource, /data-editor-ui="layers"/);
     assert.match(chromeSource, /data-editor-ui="layers-empty"/);

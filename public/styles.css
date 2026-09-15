@@ -3458,6 +3458,15 @@ body[data-theme="light"] .rte-textarea {
   height: var(--ctrl-h-sm);
 }
 
+.custom-editor-design-row select[data-custom-editor="template"] {
+  width: clamp(72px, 24cqw, 170px);
+  min-width: 72px;
+}
+
+.custom-editor-design-row select[data-custom-editor="theme"] {
+  width: clamp(70px, 18cqw, 140px);
+}
+
 .custom-editor-toolbar,
 .custom-editor-tools-row {
   display: flex;
@@ -3551,14 +3560,31 @@ body[data-theme="light"] .rte-textarea {
   gap: 2px;
 }
 
-.custom-editor-design-row .custom-color-picker-value {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
+.custom-editor-design-overflow {
+  display: contents;
+}
+
+.custom-editor-design-overflow > .custom-editor-overflow-trigger {
+  display: none;
+}
+
+.custom-editor-design-overflow > .custom-editor-overflow-menu {
+  position: static;
+  display: contents;
+  min-width: 0;
   padding: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.custom-editor-apply-label--compact {
+  display: none;
+}
+
+.custom-editor-design-row .custom-color-picker-value {
+  width: 72px;
 }
 
 @container (max-width: 1080px) {
@@ -3582,6 +3608,43 @@ body[data-theme="light"] .rte-textarea {
     max-width: 96px;
   }
 
+  .custom-editor-design-overflow {
+    position: relative;
+    display: block;
+    flex: none;
+  }
+
+  .custom-editor-design-overflow > .custom-editor-overflow-trigger {
+    display: inline-flex;
+  }
+
+  .custom-editor-design-overflow > .custom-editor-overflow-menu {
+    position: absolute;
+    display: none;
+    grid-template-columns: minmax(112px, 1fr) auto;
+    align-items: center;
+    gap: var(--sp-2);
+    min-width: 190px;
+    padding: var(--sp-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--panel);
+    box-shadow: var(--shadow);
+  }
+
+  .custom-editor-design-overflow
+    > .custom-editor-overflow-menu[data-open="true"] {
+    display: grid;
+  }
+
+  .custom-editor-apply-label {
+    display: none;
+  }
+
+  .custom-editor-apply-label--compact {
+    display: inline;
+  }
+
   .custom-editor-tool-cluster {
     padding: 2px;
   }
@@ -3593,6 +3656,14 @@ body[data-theme="light"] .rte-textarea {
 
   .custom-editor-tools-row .custom-editor-group-label {
     display: none;
+  }
+
+  .custom-editor-add-tools {
+    display: none;
+  }
+
+  .custom-editor-add-overflow {
+    display: block;
   }
 
   .custom-editor-zoom [data-editor-action="zoom-out"],
@@ -4591,10 +4662,10 @@ body[data-theme="light"] .rte-textarea {
     grid-row: 2;
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
-      "bar"
-      "tools"
+      "ribbon"
       "stage"
       "status";
+    grid-template-rows: auto minmax(0, 1fr) auto;
   }
 
   .ppt-interface[data-layout-mode="compact"][data-inspector-open="false"]
@@ -4682,10 +4753,10 @@ body[data-theme="light"] .rte-textarea {
     grid-row: 2;
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
-      "bar"
-      "tools"
+      "ribbon"
       "stage"
       "status";
+    grid-template-rows: auto minmax(0, 1fr) auto;
   }
 
   .custom-editor-props {

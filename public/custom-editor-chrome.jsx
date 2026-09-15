@@ -62,7 +62,14 @@ function ToolButton({ action, label, children, danger = false, ...props }) {
   );
 }
 
-function RibbonOverflowMenu({ label, menuLabel, className = "", children }) {
+function RibbonOverflowMenu({
+  label,
+  menuLabel,
+  className = "",
+  children,
+  inlineOnWide = false,
+  panelRole = "menu",
+}) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
   const menuId = useId();
@@ -94,7 +101,7 @@ function RibbonOverflowMenu({ label, menuLabel, className = "", children }) {
       <button
         type="button"
         className="custom-editor-overflow-trigger"
-        aria-haspopup="menu"
+        aria-haspopup={panelRole === "menu" ? "menu" : "dialog"}
         aria-controls={menuId}
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
@@ -105,11 +112,12 @@ function RibbonOverflowMenu({ label, menuLabel, className = "", children }) {
       <div
         id={menuId}
         className="custom-editor-overflow-menu"
-        role="menu"
+        role={panelRole}
         aria-label={menuLabel}
-        hidden={!open}
+        data-open={open}
+        hidden={inlineOnWide ? undefined : !open}
         onClick={(event) => {
-          if (event.target.closest("[data-editor-action]")) {
+          if (panelRole === "menu" && event.target.closest("[data-editor-action]")) {
             requestAnimationFrame(() => setOpen(false));
           }
         }}
@@ -176,6 +184,36 @@ function ribbonToolGroupClass(inMenu) {
   return inMenu
     ? "custom-editor-overflow-section"
     : "custom-editor-tool-group custom-editor-tool-cluster custom-editor-layout-tools";
+}
+
+function AddTools({ inMenu = false }) {
+  const menuProps = inMenu ? { role: "menuitem" } : {};
+  const className = inMenu
+    ? "custom-editor-overflow-section"
+    : "custom-editor-tool-group custom-editor-tool-cluster custom-editor-add-tools";
+  return (
+    <div className={className} role="group" aria-label="개체 추가">
+      <span className="custom-editor-group-label">추가</span>
+      <ToolButton action="add-text" label="텍스트 추가" {...menuProps}>
+        <Type size={16} />
+      </ToolButton>
+      <ToolButton action="add-image" label="이미지 추가" {...menuProps}>
+        <ImagePlus size={16} />
+      </ToolButton>
+      <ToolButton action="add-rect" label="사각형 추가" {...menuProps}>
+        <Square size={16} />
+      </ToolButton>
+      <ToolButton action="add-roundRect" label="둥근 사각형 추가" {...menuProps}>
+        <SquareDashed size={16} />
+      </ToolButton>
+      <ToolButton action="add-ellipse" label="원 추가" {...menuProps}>
+        <Circle size={16} />
+      </ToolButton>
+      <ToolButton action="add-line" label="선 추가" {...menuProps}>
+        <Minus size={16} />
+      </ToolButton>
+    </div>
+  );
 }
 
 function SlideAlignmentTools({ inMenu = false }) {
@@ -472,27 +510,38 @@ export function CustomEditorChrome({ inspectorHost = null }) {
           title="선택한 템플릿 적용"
           aria-label="선택한 템플릿 적용"
         >
-          템플릿 적용
+          <span className="custom-editor-apply-label">템플릿 적용</span>
+          <span className="custom-editor-apply-label--compact" aria-hidden="true">
+            적용
+          </span>
         </button>
-        <label className="custom-editor-field">
-          <span className="field-label">테마</span>
-          <select data-custom-editor="theme" aria-label="커스텀 슬라이드 테마" title="커스텀 슬라이드 테마">
-            {CUSTOM_SLIDE_THEMES.map((theme) => (
-              <option key={theme.id} value={theme.id}>
-                {theme.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="custom-editor-field">
-          <span className="field-label">배경색</span>
-          <ColorPicker
-            value="#ffffff"
-            background
-            title="슬라이드 배경색"
-            ariaLabel="슬라이드 배경색"
-          />
-        </label>
+        <RibbonOverflowMenu
+          label="디자인"
+          menuLabel="테마 및 배경색"
+          className="custom-editor-design-overflow"
+          inlineOnWide
+          panelRole="group"
+        >
+          <label className="custom-editor-field">
+            <span className="field-label">테마</span>
+            <select data-custom-editor="theme" aria-label="커스텀 슬라이드 테마" title="커스텀 슬라이드 테마">
+              {CUSTOM_SLIDE_THEMES.map((theme) => (
+                <option key={theme.id} value={theme.id}>
+                  {theme.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="custom-editor-field">
+            <span className="field-label">배경색</span>
+            <ColorPicker
+              value="#ffffff"
+              background
+              title="슬라이드 배경색"
+              ariaLabel="슬라이드 배경색"
+            />
+          </label>
+        </RibbonOverflowMenu>
         <div className="custom-editor-zoom" role="group" aria-label="확대/축소">
           <ToolButton action="zoom-out" label="축소">
             <ZoomOut size={16} />
@@ -521,27 +570,14 @@ export function CustomEditorChrome({ inspectorHost = null }) {
       </div>
 
       <div className="custom-editor-toolbar custom-editor-tools-row" role="toolbar" aria-label="커스텀 슬라이드 도구">
-        <div className="custom-editor-tool-group custom-editor-tool-cluster" role="group" aria-label="개체 추가">
-          <span className="custom-editor-group-label">추가</span>
-          <ToolButton action="add-text" label="텍스트 추가">
-            <Type size={16} />
-          </ToolButton>
-          <ToolButton action="add-image" label="이미지 추가">
-            <ImagePlus size={16} />
-          </ToolButton>
-          <ToolButton action="add-rect" label="사각형 추가">
-            <Square size={16} />
-          </ToolButton>
-          <ToolButton action="add-roundRect" label="둥근 사각형 추가">
-            <SquareDashed size={16} />
-          </ToolButton>
-          <ToolButton action="add-ellipse" label="원 추가">
-            <Circle size={16} />
-          </ToolButton>
-          <ToolButton action="add-line" label="선 추가">
-            <Minus size={16} />
-          </ToolButton>
-        </div>
+        <AddTools />
+        <RibbonOverflowMenu
+          label="추가"
+          menuLabel="개체 추가 도구"
+          className="custom-editor-add-overflow"
+        >
+          <AddTools inMenu />
+        </RibbonOverflowMenu>
         <div className="custom-editor-tool-group custom-editor-tool-cluster" role="group" aria-label="편집 이력">
           <span className="custom-editor-group-label">기록</span>
           <ToolButton action="undo" label="실행 취소">
