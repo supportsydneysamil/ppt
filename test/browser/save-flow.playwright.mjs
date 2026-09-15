@@ -834,6 +834,24 @@ async function waitForAlert(diagnostics, text) {
 }
 
 await runScenario(
+  "blocked custom editor popup leaves inline editing available",
+  async (page) => {
+    await setup(page);
+    await page.locator("#addSlideBtn").click();
+    await page.locator("#slideType").selectOption("custom");
+    await page.locator("#customSlideEditor:not([hidden])").waitFor();
+    await page.evaluate(() => {
+      window.open = () => null;
+    });
+
+    await page.locator("#customEditorPopoutBtn").click();
+    await expectToast(page, "팝업 차단");
+    assert.equal(await page.locator("#customSlideEditor").getAttribute("inert"), null);
+    assert.equal(await page.locator("#customEditorPopoutBtn").isEnabled(), true);
+  }
+);
+
+await runScenario(
   "custom editor popout mirrors edits and restores inline ownership",
   async (page) => {
     await page.setViewportSize({ width: 1440, height: 1000 });

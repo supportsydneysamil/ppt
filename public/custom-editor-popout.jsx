@@ -104,11 +104,26 @@ function PopoutEditor() {
     editorRoot.current.__sendFinal?.();
   }
 
+  async function reset() {
+    if (
+      !ready ||
+      !editor.current ||
+      !window.confirm("커스텀 슬라이드 편집 내용을 초기화할까요?")
+    ) {
+      return;
+    }
+    await editor.current.reset();
+    setStatus("초기화됨 · 저장 전");
+  }
+
   return (
     <main className="popout-shell">
       <header className="popout-header">
         <h1>{slideName}</h1>
         <span className="popout-status" role="status">{status}</span>
+        <button type="button" className="ghost small" onClick={reset} disabled={!ready}>
+          초기화
+        </button>
         <button type="button" className="ghost small" onClick={mergeBack} disabled={!ready}>
           주 창으로 합치기
         </button>
