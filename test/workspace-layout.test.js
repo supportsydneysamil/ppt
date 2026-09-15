@@ -1,10 +1,16 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { describe, it } from "node:test";
 
 import {
   applyWorkspaceLayoutState,
   resolveWorkspaceLayoutState,
 } from "../public/workspace-layout.js";
+
+const [css, appSource] = await Promise.all([
+  readFile(new URL("../public/styles.css", import.meta.url), "utf8"),
+  readFile(new URL("../public/app.js", import.meta.url), "utf8"),
+]);
 
 describe("workspace layout state", () => {
   it("keeps the extractor on the reading-width surface", () => {
@@ -65,5 +71,31 @@ describe("workspace layout state", () => {
     });
     assert.equal(element.dataset.workspace, "extractor");
     assert.equal("pptSurface" in element.dataset, false);
+  });
+});
+
+describe("workspace shell wiring", () => {
+  it("declares distinct extractor, gallery, and editor maximum widths", () => {
+    assert.match(css, /--workspace-max:\s*980px/);
+    assert.match(
+      css,
+      /\.page\[data-workspace="ppt"\]\[data-ppt-surface="gallery"\][\s\S]*--workspace-max:\s*1400px/
+    );
+    assert.match(
+      css,
+      /\.page\[data-workspace="ppt"\]\[data-ppt-surface="editor"\][\s\S]*--workspace-max:\s*1600px/
+    );
+  });
+
+  it("syncs layout state from both view and PPT-surface transitions", () => {
+    assert.match(appSource, /function syncWorkspaceLayoutState\(/);
+    assert.match(
+      appSource,
+      /function applyViewChange\([\s\S]*syncWorkspaceLayoutState\(viewName\)/
+    );
+    assert.match(
+      appSource,
+      /function renderPptScreen\([\s\S]*syncWorkspaceLayoutState\("ppt"\)/
+    );
   });
 });

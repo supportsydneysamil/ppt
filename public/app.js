@@ -40,6 +40,10 @@ import {
 import {
   buildCustomTitleSlidePreview as buildCatalogCustomTitleSlidePreview,
 } from "./custom-title-preview.js";
+import {
+  applyWorkspaceLayoutState,
+  resolveWorkspaceLayoutState,
+} from "./workspace-layout.js";
 import { buildHymnSubtitle } from "@lib/cover-title-content.js";
 import {
   TEMPLATE_SCHEMA_ERROR,
@@ -812,6 +816,7 @@ async function handleExportToPptGenerator(event) {
   }
 }
 
+const appPage = document.querySelector(".page");
 const navExtractor = document.getElementById("navExtractor");
 const navPpt = document.getElementById("navPpt");
 const viewExtractor = document.getElementById("view-extractor");
@@ -985,6 +990,20 @@ let duplicateInProgress = false;
 let guardedTransitionDepth = 0;
 let selectedSlideIds = new Set();
 let draggedSlideId = null;
+
+function syncWorkspaceLayoutState(viewName) {
+  const currentView =
+    viewName ??
+    (navExtractor.classList.contains("active") ? "extractor" : "ppt");
+  return applyWorkspaceLayoutState(
+    appPage,
+    resolveWorkspaceLayoutState({
+      viewName: currentView,
+      pptTab,
+      activeTemplateId,
+    })
+  );
+}
 
 function generateClientId(prefix = "slide") {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -1549,6 +1568,7 @@ function renderPptScreen() {
   }
 
   updateTemplateManagementUi();
+  syncWorkspaceLayoutState("ppt");
 }
 
 // By the time a transition body runs, the guard has already saved or
@@ -2408,10 +2428,12 @@ function applyViewChange(viewName) {
     navPpt.classList.add("active");
     renderSlideList();
   }
+  syncWorkspaceLayoutState(viewName);
 }
 
 navExtractor.addEventListener("click", () => switchView("extractor"));
 navPpt.addEventListener("click", () => switchView("ppt"));
+syncWorkspaceLayoutState("extractor");
 tabSlidesBtn.addEventListener("click", () => {
   closeBulkDropdown();
   setPptTab("slides");

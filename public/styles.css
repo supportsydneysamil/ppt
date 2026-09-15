@@ -100,11 +100,21 @@ body {
 }
 
 .page {
-  max-width: 980px;
+  --workspace-max: 980px;
+  width: 100%;
+  max-width: var(--workspace-max);
   margin: 0 auto;
   padding: 48px 24px 64px;
   display: grid;
   gap: 32px;
+}
+
+.page[data-workspace="ppt"][data-ppt-surface="gallery"] {
+  --workspace-max: 1400px;
+}
+
+.page[data-workspace="ppt"][data-ppt-surface="editor"] {
+  --workspace-max: 1600px;
 }
 
 .page-toolbar {
