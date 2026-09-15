@@ -972,7 +972,26 @@ await runScenario(
     const normalWidth = await page
       .locator("#customSlideEditor .canvas-container")
       .evaluate((node) => Math.round(node.getBoundingClientRect().width));
-    assert.ok(normalWidth >= 675, `three-pane canvas stayed narrow: ${normalWidth}`);
+    assert.ok(normalWidth >= 630, `three-pane canvas stayed narrow: ${normalWidth}`);
+
+    await page.locator("#slidePanelCollapseBtn").click();
+    await page.waitForFunction(
+      (before) =>
+        document.querySelector("#customSlideEditor .canvas-container")
+          ?.getBoundingClientRect().width > before + 180,
+      normalWidth
+    );
+    assert.equal(await workspace.getAttribute("data-slides-open"), "false");
+    assert.equal(await workspace.getAttribute("data-inspector-open"), "true");
+    await page.locator("#slidePanelCollapseBtn").click();
+    await page.waitForFunction(
+      (expected) =>
+        Math.abs(
+          document.querySelector("#customSlideEditor .canvas-container")
+            ?.getBoundingClientRect().width - expected
+        ) <= 2,
+      normalWidth
+    );
 
     await page.locator("#pptFocusModeBtn").click();
     await page.waitForFunction(
@@ -1128,7 +1147,7 @@ await runScenario(
     const wideWidth = await page.locator(
       "#customSlideEditor .canvas-container"
     ).evaluate((node) => Math.round(node.getBoundingClientRect().width));
-    assert.ok(wideWidth >= 675, `custom canvas stayed narrow: ${wideWidth}`);
+    assert.ok(wideWidth >= 630, `custom canvas stayed narrow: ${wideWidth}`);
 
     await page.locator("#navExtractor").click();
     await page.locator("#navPpt").click();

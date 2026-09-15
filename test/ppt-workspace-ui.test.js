@@ -166,7 +166,7 @@ describe("PPT three-pane layout", () => {
     assert.match(html, /id="inspectorPanelCollapseBtn"/);
     assert.match(
       css,
-      /--inspector-width:\s*clamp\(320px,\s*24vw,\s*360px\)/
+      /--inspector-width:\s*clamp\(360px,\s*27vw,\s*400px\)/
     );
     assert.match(
       css,

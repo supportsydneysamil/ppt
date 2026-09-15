@@ -2332,7 +2332,7 @@ body {
 
 /* Editor Panel */
 .slide-editor-panel {
-  --inspector-width: clamp(320px, 24vw, 360px);
+  --inspector-width: clamp(360px, 27vw, 400px);
   position: relative;
   background: var(--panel);
   border-radius: 16px;
