@@ -1056,6 +1056,76 @@ await runScenario(
 );
 
 await runScenario(
+  "custom editor ribbon stays two rows and overflow actions remain wired",
+  async (page) => {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await setup(page, { slides: customCanvasSlides });
+    await selectMainSlide(page, 0);
+    await page
+      .locator("#customSlideEditor [data-custom-editor='status']")
+      .first()
+      .filter({ hasText: "슬라이드를 불러왔습니다" })
+      .waitFor();
+
+    const ribbon = page.locator(
+      "#customSlideEditor .custom-editor-ribbon:not(.custom-editor-ribbon--fallback)"
+    );
+    const header = page.locator(".editor-header");
+    const headerControls = await header.evaluate((node) =>
+      Array.from(node.querySelectorAll("button"), (button) => ({
+        id: button.id,
+        className: button.className.replace(/\bis-dirty\b/g, "").trim(),
+      }))
+    );
+    assert.equal(
+      await ribbon
+        .locator(
+          ":scope > .custom-editor-design-row, :scope > .custom-editor-tools-row"
+        )
+        .count(),
+      2
+    );
+
+    const beforeHeight = await ribbon.evaluate((node) =>
+      Math.round(node.getBoundingClientRect().height)
+    );
+    await page.locator("[data-editor-action='add-rect']:visible").click();
+
+    const overflow = page.locator(
+      "#customSlideEditor .custom-editor-layout-overflow:visible"
+    );
+    await overflow.locator("[aria-haspopup='menu']").click();
+    const menu = overflow.locator("[role='menu']");
+    await menu.waitFor();
+    const afterHeight = await ribbon.evaluate((node) =>
+      Math.round(node.getBoundingClientRect().height)
+    );
+    assert.equal(afterHeight, beforeHeight);
+
+    await menu.locator("[data-editor-action='align-left']").click();
+    await menu.waitFor({ state: "hidden" });
+    assert.equal(await page.locator("#editorSaveBtn").isDisabled(), false);
+    assert.deepEqual(
+      await header.evaluate((node) =>
+        Array.from(node.querySelectorAll("button"), (button) => ({
+          id: button.id,
+          className: button.className.replace(/\bis-dirty\b/g, "").trim(),
+        }))
+      ),
+      headerControls
+    );
+
+    await overflow.locator("[aria-haspopup='menu']").click();
+    await page.keyboard.press("Escape");
+    await menu.waitFor({ state: "hidden" });
+    assert.equal(
+      await overflow.locator("[aria-haspopup='menu']").getAttribute("aria-expanded"),
+      "false"
+    );
+  }
+);
+
+await runScenario(
   "compact PPT workspace opens one drawer and Escape closes it",
   async (page) => {
     await page.setViewportSize({ width: 1024, height: 900 });

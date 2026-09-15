@@ -605,6 +605,25 @@ describe("PPT panel collapse affordances", () => {
     assert.doesNotMatch(header, /custom-editor-ribbon/);
   });
 
+  it("moves lower-priority ribbon actions into accessible overflow menus", () => {
+    assert.match(chromeSource, /function RibbonOverflowMenu\(/);
+    assert.match(chromeSource, /label="정렬·배치"/);
+    assert.match(chromeSource, /label="보기"/);
+    assert.match(chromeSource, /aria-haspopup="menu"/);
+    assert.match(chromeSource, /aria-expanded=\{open\}/);
+    assert.match(chromeSource, /event\.key === "Escape"/);
+    assert.match(
+      chromeSource,
+      /requestAnimationFrame\(\(\) => setOpen\(false\)\)/
+    );
+    assert.match(css, /@container\s*\(max-width:\s*1080px\)/);
+    assert.match(css, /@container\s*\(max-width:\s*560px\)/);
+    assert.equal(
+      (chromeSource.match(/<ColorPicker[\s\S]*?background/g) ?? []).length,
+      1
+    );
+  });
+
   it("gives the layer list rows instead of loose buttons", () => {
     assert.match(chromeSource, /data-editor-ui="layers"/);
     assert.match(chromeSource, /data-editor-ui="layers-empty"/);
