@@ -308,7 +308,8 @@ export function CustomEditorChrome({ inspectorHost = null }) {
 
   return (
     <div className="custom-editor-chrome">
-      <div className="custom-editor-bar">
+      <div className="custom-editor-ribbon">
+      <div className="custom-editor-bar custom-editor-design-row">
         <label className="custom-editor-field">
           <span className="field-label">템플릿</span>
           <select data-custom-editor="template" aria-label="커스텀 슬라이드 템플릿" title="커스텀 슬라이드 템플릿">
@@ -360,8 +361,9 @@ export function CustomEditorChrome({ inspectorHost = null }) {
         </div>
       </div>
 
-      <div className="custom-editor-toolbar" role="toolbar" aria-label="커스텀 슬라이드 도구">
-        <div className="custom-editor-tool-group" role="group" aria-label="개체 추가">
+      <div className="custom-editor-toolbar custom-editor-tools-row" role="toolbar" aria-label="커스텀 슬라이드 도구">
+        <div className="custom-editor-tool-group custom-editor-tool-cluster" role="group" aria-label="개체 추가">
+          <span className="custom-editor-group-label">추가</span>
           <ToolButton action="add-text" label="텍스트 추가">
             <Type size={16} />
           </ToolButton>
@@ -381,7 +383,8 @@ export function CustomEditorChrome({ inspectorHost = null }) {
             <Minus size={16} />
           </ToolButton>
         </div>
-        <div className="custom-editor-tool-group" role="group" aria-label="편집 이력">
+        <div className="custom-editor-tool-group custom-editor-tool-cluster" role="group" aria-label="편집 이력">
+          <span className="custom-editor-group-label">기록</span>
           <ToolButton action="undo" label="실행 취소">
             <Undo2 size={16} />
           </ToolButton>
@@ -389,7 +392,8 @@ export function CustomEditorChrome({ inspectorHost = null }) {
             <Redo2 size={16} />
           </ToolButton>
         </div>
-        <div className="custom-editor-tool-group" role="group" aria-label="슬라이드 기준 정렬">
+        <div className="custom-editor-tool-group custom-editor-tool-cluster custom-editor-layout-tools" role="group" aria-label="슬라이드 기준 정렬">
+          <span className="custom-editor-group-label">정렬</span>
           <ToolButton action="align-left" label="왼쪽 정렬">
             <AlignHorizontalJustifyStart size={16} />
           </ToolButton>
@@ -409,7 +413,8 @@ export function CustomEditorChrome({ inspectorHost = null }) {
             <AlignVerticalJustifyEnd size={16} />
           </ToolButton>
         </div>
-        <div className="custom-editor-tool-group" role="group" aria-label="개체 간 정렬">
+        <div className="custom-editor-tool-group custom-editor-tool-cluster custom-editor-layout-tools" role="group" aria-label="개체 간 정렬">
+          <span className="visually-hidden">개체 간 정렬</span>
           <ToolButton action="align-selection-left" label="선택 개체 왼쪽 정렬">
             <AlignStartVertical size={16} />
           </ToolButton>
@@ -423,7 +428,8 @@ export function CustomEditorChrome({ inspectorHost = null }) {
         {/* Top-to-bottom, to match the layer list these four reorder. The two
             layered-square icons lucide offers for the extremes are hard to
             tell apart at 16px, so the group reads as one scale instead. */}
-        <div className="custom-editor-tool-group" role="group" aria-label="쌓는 순서">
+        <div className="custom-editor-tool-group custom-editor-tool-cluster custom-editor-layout-tools" role="group" aria-label="쌓는 순서">
+          <span className="custom-editor-group-label">배치</span>
           <ToolButton action="to-front" label="맨 앞으로">
             <ChevronsUp size={16} />
           </ToolButton>
@@ -437,7 +443,7 @@ export function CustomEditorChrome({ inspectorHost = null }) {
             <ChevronsDown size={16} />
           </ToolButton>
         </div>
-        <div className="custom-editor-tool-group" role="group" aria-label="개체 관리">
+        <div className="custom-editor-tool-group custom-editor-tool-cluster custom-editor-object-tools" role="group" aria-label="개체 관리">
           <ToolButton action="duplicate" label="개체 복제">
             <Copy size={16} />
           </ToolButton>
@@ -445,6 +451,7 @@ export function CustomEditorChrome({ inspectorHost = null }) {
             <Trash2 size={16} />
           </ToolButton>
         </div>
+      </div>
       </div>
 
       <div className="custom-editor-context-toolbar" data-editor-ui="context-toolbar" hidden>
