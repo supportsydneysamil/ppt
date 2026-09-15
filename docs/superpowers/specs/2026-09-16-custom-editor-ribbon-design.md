@@ -105,18 +105,24 @@ same effective threshold is the fallback for browsers without container-query
 support. It changes presentation only and does not modify slide state or dirty
 state.
 
-At a ribbon container width of 560px or less, select controls shrink to their
-compact minimums and zoom out and zoom in move into a second `보기` overflow
-menu. Template, Apply, Theme, Background, and Fit remain directly visible.
-Keeping each value control as one stable DOM element avoids stale duplicated
-template, theme, or color state. Both menus use the behavior described below.
-This keeps the ribbon at two rows and prevents document-level horizontal
-overflow at the existing mobile workspace breakpoint.
+At a ribbon container width of 560px or less:
+
+- Template, Apply, History, Fit, Duplicate, and Delete remain directly visible.
+- The six Add commands move into an `추가` overflow menu.
+- Theme and Background move into a `디자인` control popover.
+- Zoom Out and Zoom In move into a `보기` overflow menu.
+
+The Theme and Background controls are not duplicated. Their original DOM
+elements render inline at wider widths and inside the control popover at
+narrow widths, so controller references and values remain stable. This keeps
+the ribbon at two rows and prevents horizontal overflow at the existing mobile
+workspace breakpoint.
 
 ### Overflow menu behavior
 
-The `정렬·배치` and `보기` triggers expose keyboard-operable menus
-containing their hidden commands in the existing group order.
+The `추가`, `정렬·배치`, and `보기` triggers expose keyboard-operable menus
+containing their hidden commands in the existing group order. `디자인` exposes
+a keyboard-operable control popover containing Theme and Background.
 
 - Each trigger reports expanded state with `aria-expanded`.
 - Escape closes the open menu and returns focus to its trigger.
@@ -134,6 +140,8 @@ Expected production files:
 
 - `public/custom-editor-chrome.jsx`: ribbon structure, group labels, and
   responsive overflow menu.
+- `public/custom-editor-popout.css`: matching ribbon grid areas in the
+  independent editor window.
 - `public/styles.css`: ribbon surface, rows, clusters, sizing, and responsive
   presentation.
 - `public/index.html`: equivalent fallback grouping for all ribbon sections

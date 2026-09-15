@@ -685,3 +685,20 @@ unless their owner committed them independently.
 - Interface consistency: both menus use `RibbonOverflowMenu`; all duplicated
   controls are action buttons with existing `data-editor-action` identifiers;
   template, theme, and background controls remain unique.
+
+## Execution notes
+
+Viewport verification exposed two constraints not visible in the initial
+source review:
+
+- Compact and mobile CSS still overrode the custom editor with the former
+  `"bar" / "tools"` grid areas. They were updated to one `"ribbon"` area in
+  the main workspace and pop-out.
+- A 390px viewport leaves a 292px ribbon after workspace gutters. Keeping all
+  six Add buttons direct was physically impossible, so Add joins the
+  responsive overflow menus at 560px and below.
+
+Theme and Background use one stable set of DOM controls. CSS presents those
+same elements inline at wider widths and inside the `디자인` popover at narrow
+widths, avoiding stale duplicated values. Browser coverage now measures both
+ribbon rows at 560px and 390px and requires zero internal overflow.
