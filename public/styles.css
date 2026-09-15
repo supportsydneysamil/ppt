@@ -116,13 +116,15 @@ body {
 }
 
 .page-toolbar {
-  display: flex;
-  /* The nav carries a bottom border + padding, so centering would push the
-     gear below the tab labels. Align tops and match heights instead. */
-  align-items: flex-start;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: var(--ctrl-h-md) minmax(0, 1fr) var(--ctrl-h-md);
+  align-items: start;
   gap: 16px;
-  flex-wrap: wrap;
+}
+
+.page-toolbar::before {
+  content: "";
+  grid-column: 1;
 }
 
 .hero {
@@ -1416,7 +1418,9 @@ body {
 
 /* Navigation */
 .main-nav {
+  grid-column: 2;
   display: flex;
+  justify-content: center;
   gap: 16px;
   border-bottom: 1px solid var(--border);
   padding-bottom: 16px;
@@ -1426,6 +1430,7 @@ body {
 }
 
 .app-settings-trigger {
+  grid-column: 3;
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;

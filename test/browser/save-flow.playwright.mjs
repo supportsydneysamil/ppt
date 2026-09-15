@@ -857,6 +857,15 @@ await runScenario(
       );
 
     const slides = await positions();
+    const globalNavCenter = await page.evaluate(() => {
+      const first = document.querySelector("#navExtractor").getBoundingClientRect();
+      const last = document.querySelector("#navPpt").getBoundingClientRect();
+      return (first.left + last.right) / 2;
+    });
+    assert.ok(
+      Math.abs(globalNavCenter - 720) <= 1,
+      `global navigation is not centered: ${globalNavCenter}`
+    );
     await page.locator("#tabTemplatesBtn").click();
     const templates = await positions();
     assert.deepEqual(templates, slides);
