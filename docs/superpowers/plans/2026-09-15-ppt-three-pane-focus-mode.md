@@ -183,7 +183,7 @@ export function reducePptWorkspaceUi(state, action = {}) {
 **Interfaces:**
 - Consumes Task 2 data attributes and stable DOM IDs.
 - Wide layout columns: 260px slides + remaining editor.
-- Editor columns: `minmax(0, 1fr)` stage + `clamp(280px, 24vw, 340px)` inspector.
+- Editor columns: `minmax(0, 1fr)` stage + `clamp(280px, 22vw, 320px)` inspector.
 
 - [ ] Add failing CSS source tests for the outer columns, editor grid areas, custom editor columns, and collapsed states.
 - [ ] Verify RED.
@@ -204,7 +204,7 @@ export function reducePptWorkspaceUi(state, action = {}) {
 ```css
 .slide-editor-panel {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(280px, 24vw, 340px);
+  grid-template-columns: minmax(0, 1fr) clamp(280px, 22vw, 320px);
   grid-template-areas:
     "header header"
     "stage inspector";
@@ -235,7 +235,7 @@ export function reducePptWorkspaceUi(state, action = {}) {
   grid-column: 1 / -1;
   grid-row: 2;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(280px, 24vw, 340px);
+  grid-template-columns: minmax(0, 1fr) clamp(280px, 22vw, 320px);
   grid-template-areas:
     "bar side"
     "tools side"

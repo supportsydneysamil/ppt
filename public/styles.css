@@ -1950,9 +1950,10 @@ body {
 /* PPT Interface Grid */
 .ppt-interface {
   display: grid;
-  grid-template-columns: 280px 1fr;
-  gap: 24px;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 16px;
   align-items: start;
+  position: relative;
 }
 
 .ppt-interface[hidden] {
@@ -2288,9 +2289,12 @@ body {
   border-radius: 16px;
   padding: var(--sp-5);
   border: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-5);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(280px, 22vw, 320px);
+  grid-template-areas:
+    "header header"
+    "stage inspector";
+  gap: var(--sp-4);
   min-width: 0;
   /* CRITICAL: prevents grid/flex blowout */
   overflow: hidden;
@@ -2299,6 +2303,7 @@ body {
 }
 
 .editor-header {
+  grid-area: header;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -2348,8 +2353,13 @@ body {
 }
 
 .editor-form {
+  grid-area: inspector;
   display: grid;
   gap: var(--sp-5);
+  min-width: 0;
+  max-height: calc(100vh - 190px);
+  overflow: auto;
+  padding-right: 4px;
 }
 
 .settings-group {
@@ -2421,10 +2431,13 @@ body {
 
 /* Preview Area */
 .preview-area {
+  grid-area: stage;
   display: grid;
   gap: 14px;
-  border-top: 1px dashed var(--border);
-  padding-top: 18px;
+  align-self: start;
+  min-width: 0;
+  border-top: 0;
+  padding-top: 0;
 }
 
 /* `display: grid` above would otherwise beat the hidden attribute. */
@@ -3465,6 +3478,97 @@ body[data-theme="light"] .rte-textarea {
 
 .custom-color-picker-value {
   width: 96px;
+}
+
+.slide-editor-panel[data-slide-type="custom"] .custom-editor[data-react-chrome="true"]:not([hidden]) {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(280px, 22vw, 320px);
+  grid-template-areas:
+    "bar side"
+    "tools side"
+    "stage side"
+    "status side";
+  gap: var(--sp-3) var(--sp-4);
+}
+
+.slide-editor-panel[data-slide-type="custom"] .editor-form {
+  grid-area: inspector;
+  z-index: 2;
+  align-self: start;
+}
+
+.slide-editor-panel[data-slide-type="custom"] .editor-form > :not(.settings-section) {
+  display: none;
+}
+
+.slide-editor-panel[data-slide-type="custom"] .custom-editor-bar {
+  grid-area: bar;
+}
+
+.slide-editor-panel[data-slide-type="custom"] .custom-editor-toolbar {
+  grid-area: tools;
+}
+
+.slide-editor-panel[data-slide-type="custom"] .custom-editor-body {
+  grid-area: stage;
+}
+
+.slide-editor-panel[data-slide-type="custom"] .custom-editor-side {
+  grid-area: side;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  padding-top: 150px;
+}
+
+.slide-editor-panel[data-slide-type="custom"] .custom-editor-status,
+.slide-editor-panel[data-slide-type="custom"] .custom-editor-error {
+  grid-area: status;
+}
+
+.ppt-interface[data-slides-open="false"] {
+  grid-template-columns: 44px minmax(0, 1fr);
+}
+
+.ppt-interface[data-slides-open="false"] .slide-list-panel {
+  min-height: 64px;
+  padding: 6px;
+  overflow: hidden;
+}
+
+.ppt-interface[data-slides-open="false"] .slide-list-panel > * {
+  visibility: hidden;
+}
+
+.ppt-interface[data-slides-open="false"] .slide-list-panel::before {
+  content: "▤";
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  color: var(--muted);
+  visibility: visible;
+}
+
+.ppt-interface[data-inspector-open="false"] .slide-editor-panel {
+  grid-template-columns: minmax(0, 1fr) 44px;
+}
+
+.ppt-interface[data-inspector-open="false"] .editor-form,
+.ppt-interface[data-inspector-open="false"] .custom-editor-side {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.ppt-interface[data-inspector-open="false"]
+  .slide-editor-panel[data-slide-type="custom"]
+  .custom-editor[data-react-chrome="true"]:not([hidden]) {
+  grid-template-columns: minmax(0, 1fr) 44px;
+}
+
+.ppt-interface[data-focus-mode="true"] {
+  grid-template-columns: 44px minmax(0, 1fr);
 }
 
 @media (max-width: 900px) {

@@ -8,10 +8,11 @@ import {
   reducePptWorkspaceUi,
 } from "../public/ppt-workspace-ui.js";
 
-const [html, appSource, chromeSource] = await Promise.all([
+const [html, appSource, chromeSource, css] = await Promise.all([
   readFile(new URL("../public/index.html", import.meta.url), "utf8"),
   readFile(new URL("../public/app.js", import.meta.url), "utf8"),
   readFile(new URL("../public/custom-editor-chrome.jsx", import.meta.url), "utf8"),
+  readFile(new URL("../public/styles.css", import.meta.url), "utf8"),
 ]);
 
 describe("PPT workspace UI state", () => {
@@ -116,6 +117,42 @@ describe("PPT workspace UI state", () => {
         slidesOpen: false,
         inspectorOpen: false,
       }
+    );
+  });
+});
+
+describe("PPT three-pane layout", () => {
+  it("gives the slide list a rail and the editor the remaining width", () => {
+    assert.match(
+      css,
+      /\.ppt-interface\s*\{[\s\S]*grid-template-columns:\s*260px minmax\(0,\s*1fr\)/
+    );
+  });
+
+  it("places the stage and inspector in distinct editor columns", () => {
+    assert.match(
+      css,
+      /\.slide-editor-panel\s*\{[\s\S]*grid-template-areas:\s*"header header"\s*"stage inspector"/
+    );
+    assert.match(css, /\.editor-form\s*\{[\s\S]*grid-area:\s*inspector/);
+    assert.match(css, /\.preview-area\s*\{[\s\S]*grid-area:\s*stage/);
+  });
+
+  it("splits custom-editor stage and side chrome without moving its DOM", () => {
+    assert.match(
+      css,
+      /\.slide-editor-panel\[data-slide-type="custom"\][\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\) clamp\(280px,\s*22vw,\s*320px\)/
+    );
+  });
+
+  it("collapses both side regions in focus mode", () => {
+    assert.match(
+      css,
+      /\.ppt-interface\[data-focus-mode="true"\][\s\S]*grid-template-columns:\s*44px minmax\(0,\s*1fr\)/
+    );
+    assert.match(
+      css,
+      /\.ppt-interface\[data-inspector-open="false"\][\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\) 44px/
     );
   });
 });
