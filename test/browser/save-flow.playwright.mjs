@@ -1161,6 +1161,79 @@ await runScenario(
 );
 
 await runScenario(
+  "custom image inspector exposes native controls and safe replacement",
+  async (page) => {
+    await page.route(`${baseURL}/uploads/browser-image.png`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "image/png",
+        body: Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+          "base64"
+        ),
+      })
+    );
+    const state = await setup(page, {
+      onUpload: async () => ({
+        status: 200,
+        json: { path: "/uploads/browser-image.png" },
+      }),
+    });
+    await page.locator("#addSlideBtn").click();
+    await page.locator("#slideType").selectOption("custom");
+    await page.locator("#customSlideEditor:not([hidden])").waitFor();
+    await page
+      .locator("#customSlideEditor")
+      .getByRole("tab", { name: "삽입" })
+      .click();
+
+    const firstChooser = page.waitForEvent("filechooser");
+    await page.locator("[data-editor-action='add-image']:visible").click();
+    await (await firstChooser).setFiles({
+      name: "browser-image.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+        "base64"
+      ),
+    });
+    await page
+      .locator("#customSlideInspector [data-editor-panel='image']:not([hidden])")
+      .waitFor();
+
+    const inspector = page.locator("#customSlideInspector");
+    await inspector.getByRole("radio", { name: "채우기" }).check();
+    await inspector.getByLabel("좌우 뒤집기").check();
+    await inspector.getByLabel("상하 뒤집기").check();
+    await inspector.getByLabel("이미지 대체 텍스트").fill("강단 위의 성경");
+    assert.equal(await page.locator("#editorSaveBtn").isDisabled(), false);
+
+    const secondChooser = page.waitForEvent("filechooser");
+    await inspector.getByRole("button", { name: "이미지 교체" }).click();
+    await (await secondChooser).setFiles({
+      name: "replacement.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+        "base64"
+      ),
+    });
+    await page
+      .locator("#customSlideEditor [data-custom-editor='status']")
+      .first()
+      .filter({ hasText: "이미지를 교체했습니다." })
+      .waitFor();
+    await waitForCount(() => state.counts.uploadPost, 2, "image upload count");
+    assert.equal(await inspector.getByRole("radio", { name: "채우기" }).isChecked(), true);
+    assert.equal(await inspector.getByLabel("좌우 뒤집기").isChecked(), true);
+    assert.equal(
+      await inspector.getByLabel("이미지 대체 텍스트").inputValue(),
+      "강단 위의 성경"
+    );
+  }
+);
+
+await runScenario(
   "compact PPT workspace opens one drawer and Escape closes it",
   async (page) => {
     await page.setViewportSize({ width: 1024, height: 900 });
