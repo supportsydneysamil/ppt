@@ -976,6 +976,9 @@ const unsavedDiscardBtn = document.getElementById("unsavedDiscardBtn");
 const unsavedCancelBtn = document.getElementById("unsavedCancelBtn");
 const appToastRegion = document.getElementById("appToastRegion");
 const customSlideEditorRoot = document.getElementById("customSlideEditor");
+// The custom editor's layers and property panels are rendered in here, inside
+// the inspector form, so that column scrolls as one stack.
+const customEditorInspectorHost = document.getElementById("customEditorInspectorHost");
 const slidePreviewArea = slidePreview ? slidePreview.closest(".preview-area") : null;
 
 // State
@@ -2612,7 +2615,7 @@ customEditorPopoutBtn?.addEventListener("click", openCustomEditorPopout);
 slideEditor?.addEventListener("pointerdown", (event) => {
   if (
     event.target.closest?.(
-      ".editor-form, .custom-editor-side, .editor-actions, .custom-editor-context-toolbar, .panel-rail-btn"
+      ".editor-form, .editor-actions, .custom-editor-context-toolbar, .panel-rail-btn"
     )
   ) {
     return;
@@ -5257,6 +5260,9 @@ function finishCustomPopout(sessionState) {
   clearInterval(active.closedTimer);
   customSlideEditorRoot.inert = false;
   delete customSlideEditorRoot.dataset.popoutActive;
+  if (customEditorInspectorHost) {
+    customEditorInspectorHost.inert = false;
+  }
   customPopout = null;
   workspaceReflow?.schedule({ force: true });
 }
@@ -5289,6 +5295,11 @@ function openCustomEditorPopout() {
   const sequence = createPopoutSequence({ sessionId, slideId });
   customSlideEditorRoot.inert = true;
   customSlideEditorRoot.dataset.popoutActive = "true";
+  // The panels are rendered outside that section now, so they need freezing
+  // too: the popout window owns the canvas they would otherwise edit.
+  if (customEditorInspectorHost) {
+    customEditorInspectorHost.inert = true;
+  }
   const active = { sessionId, slideId, popup, channel, sequence, closedTimer: null };
   customPopout = active;
 
@@ -5360,27 +5371,6 @@ const workspaceResizeObserver =
     : null;
 workspaceResizeObserver?.observe(slideEditor);
 
-// On a custom slide the inspector column holds two things stacked in the same
-// grid cell: the form, which keeps only its header and the name/type fields,
-// overlaid on top of the custom editor's own layers/properties column. The
-// lower one has to start below the form, and only the form knows how tall it
-// is, so it reports that here instead of the stylesheet guessing.
-const inspectorOffsetForm = document.getElementById("slideForm");
-const inspectorOffsetObserver =
-  typeof ResizeObserver === "function" && inspectorOffsetForm
-    ? new ResizeObserver(([entry]) => {
-        const height = entry?.borderBoxSize?.[0]?.blockSize ?? entry?.target?.offsetHeight;
-        if (!height) {
-          return;
-        }
-        slideEditor.style.setProperty(
-          "--custom-inspector-offset",
-          `${Math.round(height)}px`
-        );
-      })
-    : null;
-inspectorOffsetObserver?.observe(inspectorOffsetForm);
-
 function loadCustomSlideBridge() {
   if (!customSlideBridgePromise) {
     customSlideBridgePromise = import("./custom-slide-bridge.js").then((module) => {
@@ -5438,6 +5428,7 @@ function ensureCustomEditorSession() {
       const { createCustomSlideEditor } = await import("./custom-slide-editor.js");
       const session = bridge.createCustomEditorSession({
         root: customSlideEditorRoot,
+        inspector: customEditorInspectorHost,
         createEditor: createCustomSlideEditor,
         uploadImage: (file) => bridge.uploadCustomImage(file),
         onChange: handleCustomEditorChange,

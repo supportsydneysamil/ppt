@@ -75,6 +75,57 @@ const loadedSheets = await page.evaluate(() =>
 );
 console.log('loaded stylesheets:', loadedSheets);
 
+// The point of detection is that an installed font is used untouched. Assert it
+// rather than eyeball it: no stylesheet may load for an available family, and
+// the browser must resolve that family to a local face, not a webfont.
+if (fontPlan) {
+  const { FONT_SUBSTITUTES } = await import('../public/pptx-fonts/manifest.js');
+  const idOf = new Map(FONT_SUBSTITUTES.map((e) => [e.family, e.id]));
+  const availableFamilies = fontPlan.usedLocally.map((line) => line.split(' -> ')[0]);
+
+  for (const family of availableFamilies) {
+    const sheet = `${idOf.get(family)}.css`;
+    if (loadedSheets.includes(sheet)) {
+      failures.push(`substitute loaded for an installed font: ${family} (${sheet})`);
+    }
+  }
+
+  const cdp2 = await page.context().newCDPSession(page);
+  await Promise.all([cdp2.send('DOM.enable'), cdp2.send('CSS.enable')]);
+  const doc = await cdp2.send('DOM.getDocument');
+  await page.evaluate((families) => {
+    const host = document.createElement('div');
+    host.id = 'localFontAssert';
+    host.style.cssText = 'position:fixed;left:-9999px;top:0';
+    for (const family of families) {
+      const el = document.createElement('div');
+      el.className = 'local-font-assert';
+      el.style.cssText = `font-family:'${family}';font-size:48px`;
+      el.textContent = 'Ag1';
+      host.appendChild(el);
+    }
+    document.body.appendChild(host);
+  }, availableFamilies);
+  await page.waitForTimeout(300);
+
+  for (let i = 0; i < availableFamilies.length; i += 1) {
+    const { nodeId } = await cdp2.send('DOM.querySelector', {
+      nodeId: doc.root.nodeId,
+      selector: `.local-font-assert:nth-of-type(${i + 1})`,
+    });
+    const { fonts } = await cdp2.send('CSS.getPlatformFontsForNode', { nodeId });
+    const webfont = fonts.find((f) => f.isCustomFont);
+    console.log(
+      `  ${availableFamilies[i]} -> ${fonts.map((f) => f.familyName).join(', ')}`
+      + ` ${webfont ? '(WEBFONT!)' : '(local)'}`
+    );
+    if (webfont) {
+      failures.push(`installed font rendered via webfont: ${availableFamilies[i]}`);
+    }
+  }
+  await page.evaluate(() => document.getElementById('localFontAssert')?.remove());
+}
+
 const report = await page.evaluate(() => {
   const box = document.getElementById('slidePreview');
   const deck = box.querySelector('.pptx-deck');

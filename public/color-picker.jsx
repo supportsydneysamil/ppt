@@ -12,6 +12,22 @@ export function ColorPicker({
   const inputRef = useRef(null);
   const pickrRef = useRef(null);
 
+  /**
+   * Shows a colour the user did not pick. `setColor` alone only moves the
+   * picker's own handles: painting the swatch is `applyColor`'s job, and
+   * `setColor`'s silent flag is what skips it. Both are called silently, so
+   * reflecting a selection never looks like an edit of it.
+   */
+  function showColor(next) {
+    const pickr = pickrRef.current;
+    if (!pickr || !next) {
+      return;
+    }
+    if (pickr.setColor(next, true)) {
+      pickr.applyColor(true);
+    }
+  }
+
   useEffect(() => {
     if (!hostRef.current) {
       return undefined;
@@ -66,10 +82,21 @@ export function ColorPicker({
     if (inputRef.current && value) {
       inputRef.current.value = value;
     }
-    if (pickrRef.current && value) {
-      pickrRef.current.setColor(value, true);
-    }
+    showColor(value);
   }, [value]);
+
+  // The editor writes the selected object's colour onto the hidden input
+  // directly, which React never sees. It announces each of those writes, and
+  // the swatch follows them so it always shows the selection's own colour.
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!input) {
+      return undefined;
+    }
+    const sync = () => showColor(input.value);
+    input.addEventListener("editor-field-sync", sync);
+    return () => input.removeEventListener("editor-field-sync", sync);
+  }, []);
 
   const extra = background ? { "data-custom-editor": "background" } : {};
 

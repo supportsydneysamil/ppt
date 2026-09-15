@@ -148,7 +148,7 @@ export function customSlideDownloadFilename(slideName) {
  * without touching state, so one slide can never adopt another's canvas.
  */
 export function createCustomEditorSession(options = {}) {
-  const { root, createEditor, uploadImage, onChange, onError } = options;
+  const { root, inspector, createEditor, uploadImage, onChange, onError } = options;
 
   let editorPromise = null;
   let editor = null;
@@ -161,6 +161,9 @@ export function createCustomEditorSession(options = {}) {
     if (!editorPromise) {
       editorPromise = (async () =>
         createEditor(root, {
+          // The property panels live in the workspace's inspector form, which
+          // is outside `root`.
+          inspector,
           uploadImage,
           onChange(model, meta) {
             // Loads notify too; the caller decides that state explicitly.

@@ -183,10 +183,18 @@ describe("PPT three-pane layout", () => {
     assert.match(css, /\.preview-area\s*\{[\s\S]*grid-area:\s*stage/);
   });
 
-  it("splits custom-editor stage and side chrome without moving its DOM", () => {
+  it("gives a custom slide's editor the stage column and nothing else", () => {
+    // The editor used to span both columns and rebuild the inspector column
+    // inside itself, with the form overlaid on top of it. Its panels are
+    // rendered into the form instead, so it keeps to the stage area and the
+    // panel's own two columns are the only ones.
     assert.match(
       css,
-      /\.slide-editor-panel\[data-slide-type="custom"\][\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\) var\(--inspector-width\)/
+      /\[data-slide-type="custom"\] \.custom-editor\[data-react-chrome="true"\]:not\(\[hidden\]\)\s*\{[^}]*?grid-area:\s*stage/
+    );
+    assert.doesNotMatch(
+      css,
+      /\[data-slide-type="custom"\] \.custom-editor\[data-react-chrome="true"\]:not\(\[hidden\]\)\s*\{[^}]*?"bar side"/
     );
   });
 
@@ -308,7 +316,7 @@ describe("PPT panel collapse affordances", () => {
     );
   });
 
-  it("gives the inspector its own header and a real divider", () => {
+  it("gives the inspector its own header and its own card", () => {
     assert.match(
       html,
       /<form id="slideForm" class="editor-form">\s*<div class="inspector-header">\s*<h4>상세 설정<\/h4>\s*<button\s*id="inspectorPanelCollapseBtn"/
@@ -319,17 +327,30 @@ describe("PPT panel collapse affordances", () => {
       css,
       /\.inspector-header\s*\{[\s\S]*?position:\s*sticky[\s\S]*?top:\s*0/
     );
+    // A frame rather than a seam line, so the pane keeps an edge of its own
+    // once it collapses and the stage is no longer next to it.
     assert.match(
+      css,
+      /\.editor-form\s*\{[\s\S]*?border:\s*1px solid var\(--border\);[\s\S]*?border-radius:\s*16px/
+    );
+    assert.doesNotMatch(
       css,
       /\.editor-form\s*\{[\s\S]*?border-left:\s*1px solid var\(--border\)/
     );
+    // The sticky header pads the top, so scrolled rows cannot appear above it.
     assert.match(
       css,
-      /\[data-slide-type="custom"\] \.custom-editor-side\s*\{[\s\S]*?border-left:\s*1px solid var\(--border\)/
+      /\.editor-form\s*\{[\s\S]*?padding:\s*0 var\(--sp-4\) var\(--sp-4\)/
     );
     assert.match(
       css,
-      /\[data-slide-type="custom"\] \.editor-form > :not\(\.settings-section\):not\(\.inspector-header\)/
+      /\.inspector-header\s*\{[\s\S]*?padding:\s*var\(--sp-4\) 0 var\(--sp-3\)/
+    );
+    // One divider for the whole column: the custom editor's panels are inside
+    // the form now, so they no longer draw their own continuation of it.
+    assert.match(
+      css,
+      /\[data-slide-type="custom"\] \.editor-form > :not\(\.settings-section\):not\(\.inspector-header\):not\(\.custom-editor-inspector-host\)/
     );
     assert.match(
       css,
@@ -337,10 +358,12 @@ describe("PPT panel collapse affordances", () => {
     );
   });
 
-  it("drops the seam divider where the panels are not side by side", () => {
-    assert.match(
+  it("keeps the inspector card stacked and unpins its header", () => {
+    // Stacked, the card is the same card; only the pinned header would follow
+    // the page scroll instead of the form's, so that is all mobile undoes.
+    assert.doesNotMatch(
       css,
-      /@media\s*\(max-width:\s*899px\)[\s\S]*?\[data-layout-mode="mobile"\] \.custom-editor-side\s*\{[\s\S]*?border-left:\s*0/
+      /\[data-layout-mode="mobile"\] \.editor-form\s*\{[\s\S]*?border-left:\s*0/
     );
     assert.match(
       css,
@@ -348,11 +371,24 @@ describe("PPT panel collapse affordances", () => {
     );
   });
 
-  it("clears the taller overlaid form in the compact custom drawer", () => {
+  it("frames the collapsed inspector rail like the pane it replaces", () => {
+    // The slide list's rail sits inside a panel card. The inspector's form is
+    // the card, and it is hidden while collapsed, so the rail draws its own.
     assert.match(
       css,
-      /padding:\s*calc\(164px \+ var\(--inspector-header-h\) \+ var\(--sp-5\)\) 16px 16px/
+      /#inspectorRailBtn\s*\{[\s\S]*?border:\s*1px solid var\(--border\);[\s\S]*?border-radius:\s*16px/
     );
+    assert.match(css, /#inspectorRailBtn:hover\s*\{[^}]*?background:\s*var\(--panel-soft\)/);
+  });
+
+  it("gives the compact custom drawer no clearance to pad", () => {
+    // The panels ride inside the form's own drawer, so there is no second
+    // drawer underneath an overlay that has to be padded clear of it.
+    assert.doesNotMatch(
+      css,
+      /\[data-layout-mode="compact"\] \.custom-editor-side\s*\{/
+    );
+    assert.doesNotMatch(css, /padding:\s*calc\(164px \+ var\(--inspector-header-h\)/);
   });
 
   it("lets only the stage row absorb the custom editor's free height", () => {
@@ -369,37 +405,27 @@ describe("PPT panel collapse affordances", () => {
     );
   });
 
-  it("scrolls the custom inspector inside its own column", () => {
-    // Layers plus the property panels outgrow any viewport, and the panel
-    // clips its overflow, so the column has to scroll rather than the page.
+  it("scrolls a custom slide's whole inspector column as one stack", () => {
+    // The name/type fields, the layers and the property panels used to be two
+    // separately scrolling layers, so the fields stayed pinned while the
+    // panels moved. The form is the one scroll container for all of them now.
     assert.match(
-      css,
-      /\[data-slide-type="custom"\] \.custom-editor-side\s*\{[^}]*?min-height:\s*0/
+      html,
+      /<div id="customEditorInspectorHost" class="custom-editor-inspector-host">/
     );
     assert.match(
+      css,
+      /\[data-slide-type="custom"\] \.custom-editor-side\s*\{[^}]*?display:\s*grid/
+    );
+    assert.doesNotMatch(
       css,
       /\[data-slide-type="custom"\] \.custom-editor-side\s*\{[^}]*?overflow-y:\s*auto/
     );
-    // A margin, not padding: the strip the overlaid form occupies stays
-    // outside the scroll box, so no row slides under it.
-    assert.match(
-      css,
-      /\[data-slide-type="custom"\] \.custom-editor-side\s*\{[^}]*?margin-top:\s*calc\(\s*var\(--custom-inspector-offset/
-    );
-    // Out-of-flow drawers anchor to `top` instead, so both reset it.
-    assert.match(
-      css,
-      /\[data-layout-mode="compact"\] \.custom-editor-side\s*\{[^}]*?margin-top:\s*0/
-    );
-    assert.match(
-      css,
-      /\[data-layout-mode="mobile"\] \.custom-editor-side\s*\{[^}]*?margin-top:\s*0/
-    );
   });
 
-  it("measures the overlaid form instead of hard-coding its height", () => {
-    assert.match(appSource, /--custom-inspector-offset/);
-    assert.match(appSource, /inspectorOffsetObserver/);
+  it("no longer measures an overlaid form to offset the panels", () => {
+    assert.doesNotMatch(appSource, /--custom-inspector-offset/);
+    assert.doesNotMatch(appSource, /inspectorOffsetObserver/);
   });
 
   it("keeps the ppt view a flex column in the stylesheet", () => {

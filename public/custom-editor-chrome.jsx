@@ -8,18 +8,27 @@ import {
   AlignVerticalJustifyCenter,
   AlignVerticalJustifyEnd,
   AlignVerticalJustifyStart,
+  ArrowLeftRight,
+  ArrowUpDown,
   Bold,
   ChevronDown,
   ChevronUp,
   ChevronsDown,
   ChevronsUp,
   Circle,
+  Contrast,
   Copy,
+  Eye,
+  Image as ImageIcon,
   ImagePlus,
   Italic,
+  Layers,
+  Lock,
   Maximize,
+  MousePointerClick,
   Minus,
   Redo2,
+  Settings2,
   Square,
   SquareDashed,
   Trash2,
@@ -29,6 +38,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
+import { createPortal } from "react-dom";
 
 import { ColorPicker } from "./color-picker.jsx";
 import { CUSTOM_SLIDE_TEMPLATES } from "./custom-slide-editor.js";
@@ -61,7 +71,241 @@ function FontSelect() {
   );
 }
 
-export function CustomEditorChrome() {
+function PanelLabel({ icon: Icon, children }) {
+  return (
+    <div className="custom-editor-panel-label">
+      <Icon size={13} aria-hidden="true" />
+      {children}
+    </div>
+  );
+}
+
+/* The editor reads and writes these through `input.checked`, so the checkbox
+   stays a checkbox — visually hidden on top of the face that replaces it,
+   which keeps it clickable and keyboard reachable. */
+function StyleToggle({ field, label, children }) {
+  return (
+    <label className="custom-editor-toggle" title={label}>
+      <input type="checkbox" data-editor-field={field} aria-label={label} />
+      <span className="custom-editor-toggle-face" aria-hidden="true">
+        {children}
+      </span>
+    </label>
+  );
+}
+
+function CheckChip({ field, label, defaultChecked = false, children }) {
+  return (
+    <label className="custom-editor-chip">
+      <input
+        type="checkbox"
+        data-editor-field={field}
+        aria-label={label}
+        defaultChecked={defaultChecked}
+      />
+      <span className="custom-editor-chip-face">
+        {children}
+        {label}
+      </span>
+    </label>
+  );
+}
+
+/**
+ * `inspectorHost` is where the layers and object properties should render. The
+ * workspace passes the slot inside its inspector form, so the name/type fields
+ * and these panels share one scroll container instead of the panels sitting in
+ * a second column of their own. The popout window has no such form and leaves
+ * it unset, which keeps the panels inside the editor where they started.
+ */
+export function CustomEditorChrome({ inspectorHost = null }) {
+  const inspector = (
+    <div className="custom-editor-side" id="customSlideInspector">
+      <aside className="custom-editor-layers" aria-label="레이어">
+        <PanelLabel icon={Layers}>레이어</PanelLabel>
+        <p className="hint">
+          겹쳐서 클릭하기 어려운 개체를 골라내고, 숨기거나 잠그고, 끌어서 앞뒤 순서를 바꿉니다.
+        </p>
+        <ol data-editor-ui="layers" className="custom-editor-layer-list"></ol>
+        <p className="hint" data-editor-ui="layers-empty">
+          아직 개체가 없습니다. 위 도구로 추가해 보세요.
+        </p>
+      </aside>
+
+      <aside className="custom-editor-props" aria-label="선택 개체 속성">
+        <div className="custom-editor-panel" data-editor-panel="empty">
+          <div className="custom-editor-empty">
+            <MousePointerClick size={18} aria-hidden="true" />
+            <p>캔버스에서 개체를 선택하면 속성이 여기에 표시됩니다.</p>
+          </div>
+        </div>
+
+        <div className="custom-editor-panel" data-editor-panel="text" hidden>
+          <PanelLabel icon={Type}>텍스트</PanelLabel>
+          <label className="custom-editor-row custom-editor-row--stack">
+            <span className="field-label">내용</span>
+            <textarea rows="3" data-editor-field="text" aria-label="텍스트 내용"></textarea>
+          </label>
+          <label className="custom-editor-row">
+            <span className="field-label">글꼴</span>
+            <FontSelect />
+          </label>
+          {/* Size and the three style toggles are one decision about how the
+              glyphs look, so they share a row instead of taking four. */}
+          <div className="custom-editor-row">
+            <span className="field-label">크기</span>
+            <div className="custom-editor-controls">
+              <span className="custom-editor-num">
+                <input
+                  type="number"
+                  min="8"
+                  max="400"
+                  step="1"
+                  data-editor-field="fontSize"
+                  aria-label="텍스트 크기"
+                />
+              </span>
+              <div className="custom-editor-toggle-group" role="group" aria-label="글자 스타일">
+                <StyleToggle field="bold" label="굵게">
+                  <Bold size={14} />
+                </StyleToggle>
+                <StyleToggle field="italic" label="기울임">
+                  <Italic size={14} />
+                </StyleToggle>
+                <StyleToggle field="underline" label="밑줄">
+                  <Underline size={14} />
+                </StyleToggle>
+              </div>
+            </div>
+          </div>
+          <label className="custom-editor-row">
+            <span className="field-label">글자색</span>
+            <ColorPicker field="color" value="#000000" ariaLabel="글자색" />
+          </label>
+          <div className="custom-editor-row">
+            <span className="field-label">정렬</span>
+            <div className="custom-editor-controls">
+              <span className="custom-editor-inline-field">
+                <ArrowLeftRight size={13} aria-hidden="true" />
+                <select data-editor-field="textAlign" aria-label="텍스트 가로 정렬" title="가로 정렬">
+                  <option value="left">왼쪽</option>
+                  <option value="center">가운데</option>
+                  <option value="right">오른쪽</option>
+                </select>
+              </span>
+              <span className="custom-editor-inline-field">
+                <ArrowUpDown size={13} aria-hidden="true" />
+                <select data-editor-field="valign" aria-label="텍스트 세로 정렬" title="세로 정렬">
+                  <option value="top">위</option>
+                  <option value="middle">가운데</option>
+                  <option value="bottom">아래</option>
+                </select>
+              </span>
+            </div>
+          </div>
+          <div className="custom-editor-row">
+            <span className="field-label">간격</span>
+            <div className="custom-editor-controls">
+              <span className="custom-editor-subfield">
+                <span className="custom-editor-sublabel">행간</span>
+                <input type="number" min="0.8" max="3" step="0.05" data-editor-field="lineHeight" aria-label="행간" />
+              </span>
+              <span className="custom-editor-subfield">
+                <span className="custom-editor-sublabel">자간</span>
+                <input type="number" min="-50" max="200" step="1" data-editor-field="charSpacing" aria-label="자간" />
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="custom-editor-panel" data-editor-panel="image" hidden>
+          <PanelLabel icon={ImageIcon}>이미지</PanelLabel>
+          <label className="custom-editor-row">
+            <span className="field-label">맞춤</span>
+            <select data-editor-field="fit" aria-label="이미지 맞춤 방식">
+              <option value="contain">전체 보이기</option>
+              <option value="cover">영역 채우기</option>
+            </select>
+          </label>
+          <p className="hint">
+            전체 보이기는 이미지를 자르지 않고, 영역 채우기는 빈 공간 없이 채웁니다.
+          </p>
+        </div>
+
+        <div className="custom-editor-panel" data-editor-panel="shape" hidden>
+          <PanelLabel icon={Square}>도형</PanelLabel>
+          <label className="custom-editor-row">
+            <span className="field-label">채우기</span>
+            <ColorPicker field="fill" value="#cccccc" ariaLabel="도형 채우기 색" />
+          </label>
+          <label className="custom-editor-row">
+            <span className="field-label">선 색</span>
+            <ColorPicker field="stroke" value="#000000" ariaLabel="도형 선 색" />
+          </label>
+          <div className="custom-editor-row">
+            <span className="field-label">선 두께</span>
+            <div className="custom-editor-controls">
+              <span className="custom-editor-num">
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="1"
+                  data-editor-field="strokeWidth"
+                  aria-label="도형 선 두께"
+                />
+              </span>
+              <CheckChip field="noStroke" label="선 없음">
+                <Minus size={13} />
+              </CheckChip>
+            </div>
+          </div>
+        </div>
+
+        <div className="custom-editor-panel" data-editor-panel="common" hidden>
+          <PanelLabel icon={Settings2}>공통</PanelLabel>
+          <div className="custom-editor-row">
+            <span className="field-label">투명도</span>
+            <div className="custom-editor-controls">
+              <input type="range" min="0" max="1" step="0.05" data-editor-field="opacity" aria-label="투명도" />
+              <output className="custom-editor-readout" data-editor-readout="opacity">
+                100%
+              </output>
+            </div>
+          </div>
+          <label className="custom-editor-row">
+            <span className="field-label">회전</span>
+            <span className="custom-editor-num">
+              <input
+                type="number"
+                min="0"
+                max="359"
+                step="1"
+                data-editor-field="rotation"
+                aria-label="회전 각도"
+              />
+            </span>
+          </label>
+          <div className="custom-editor-checks">
+            <CheckChip field="visible" label="표시" defaultChecked>
+              <Eye size={13} />
+            </CheckChip>
+            <CheckChip field="locked" label="잠금">
+              <Lock size={13} />
+            </CheckChip>
+            <CheckChip field="shadowEnabled" label="그림자">
+              <Contrast size={13} />
+            </CheckChip>
+          </div>
+          <label className="custom-editor-row" data-editor-dependent="shadowEnabled">
+            <span className="field-label">그림자색</span>
+            <ColorPicker field="shadowColor" value="#000000" ariaLabel="그림자 색" />
+          </label>
+        </div>
+      </aside>
+    </div>
+  );
+
   return (
     <div className="custom-editor-chrome">
       <div className="custom-editor-bar">
@@ -260,135 +504,7 @@ export function CustomEditorChrome() {
         </li>
       </ul>
 
-      <div className="custom-editor-side" id="customSlideInspector">
-      <aside className="custom-editor-layers" aria-label="레이어">
-        <div className="custom-editor-panel-label">레이어</div>
-        <p className="hint">
-          겹쳐서 클릭하기 어려운 개체를 골라내고, 숨기거나 잠그고, 끌어서 앞뒤 순서를 바꿉니다.
-        </p>
-        <ol data-editor-ui="layers" className="custom-editor-layer-list"></ol>
-        <p className="hint" data-editor-ui="layers-empty">
-          아직 개체가 없습니다. 위 도구로 추가해 보세요.
-        </p>
-      </aside>
-
-      <aside className="custom-editor-props" aria-label="선택 개체 속성">
-        <div className="custom-editor-panel" data-editor-panel="empty">
-          <p className="hint">개체를 선택하면 속성이 표시됩니다.</p>
-        </div>
-        <div className="custom-editor-panel" data-editor-panel="text" hidden>
-          <div className="custom-editor-panel-label">텍스트</div>
-          <label className="custom-editor-row">
-            <span className="field-label">내용</span>
-            <textarea rows="3" data-editor-field="text" aria-label="텍스트 내용"></textarea>
-          </label>
-          <label className="custom-editor-row">
-            <span className="field-label">글꼴</span>
-            <FontSelect />
-          </label>
-          <label className="custom-editor-row">
-            <span className="field-label">크기</span>
-            <input type="number" min="8" max="400" step="1" data-editor-field="fontSize" aria-label="텍스트 크기" />
-          </label>
-          <label className="custom-editor-row custom-editor-row-inline">
-            <input type="checkbox" data-editor-field="bold" aria-label="굵게" />
-            <span className="field-label">굵게</span>
-          </label>
-          <label className="custom-editor-row custom-editor-row-inline">
-            <input type="checkbox" data-editor-field="italic" aria-label="기울임" />
-            <span className="field-label">기울임</span>
-          </label>
-          <label className="custom-editor-row custom-editor-row-inline">
-            <input type="checkbox" data-editor-field="underline" aria-label="밑줄" />
-            <span className="field-label">밑줄</span>
-          </label>
-          <label className="custom-editor-row">
-            <span className="field-label">글자색</span>
-            <ColorPicker field="color" value="#000000" ariaLabel="글자색" />
-          </label>
-          <label className="custom-editor-row">
-            <span className="field-label">정렬</span>
-            <select data-editor-field="textAlign" aria-label="텍스트 정렬">
-              <option value="left">왼쪽</option>
-              <option value="center">가운데</option>
-              <option value="right">오른쪽</option>
-            </select>
-          </label>
-          <label className="custom-editor-row">
-            <span className="field-label">세로 정렬</span>
-            <select data-editor-field="valign" aria-label="텍스트 세로 정렬">
-              <option value="top">상단</option>
-              <option value="middle">가운데</option>
-              <option value="bottom">하단</option>
-            </select>
-          </label>
-          <label className="custom-editor-row">
-            <span className="field-label">행간</span>
-            <input type="number" min="0.8" max="3" step="0.05" data-editor-field="lineHeight" aria-label="행간" />
-          </label>
-          <label className="custom-editor-row">
-            <span className="field-label">자간</span>
-            <input type="number" min="-50" max="200" step="1" data-editor-field="charSpacing" aria-label="자간" />
-          </label>
-        </div>
-        <div className="custom-editor-panel" data-editor-panel="image" hidden>
-          <div className="custom-editor-panel-label">이미지</div>
-          <label className="custom-editor-row">
-            <span className="field-label">맞춤</span>
-            <select data-editor-field="fit" aria-label="이미지 맞춤 방식">
-              <option value="contain">전체 보이기 (contain)</option>
-              <option value="cover">영역 채우기 (cover)</option>
-            </select>
-          </label>
-        </div>
-        <div className="custom-editor-panel" data-editor-panel="shape" hidden>
-          <div className="custom-editor-panel-label">도형</div>
-          <label className="custom-editor-row">
-            <span className="field-label">채우기</span>
-            <ColorPicker field="fill" value="#cccccc" ariaLabel="도형 채우기 색" />
-          </label>
-          <label className="custom-editor-row custom-editor-row-inline">
-            <input type="checkbox" data-editor-field="noStroke" aria-label="선 없음" />
-            <span className="field-label">선 없음</span>
-          </label>
-          <label className="custom-editor-row">
-            <span className="field-label">선 색</span>
-            <ColorPicker field="stroke" value="#000000" ariaLabel="도형 선 색" />
-          </label>
-          <label className="custom-editor-row">
-            <span className="field-label">선 두께</span>
-            <input type="number" min="0" max="100" step="1" data-editor-field="strokeWidth" aria-label="도형 선 두께" />
-          </label>
-        </div>
-        <div className="custom-editor-panel" data-editor-panel="common" hidden>
-          <div className="custom-editor-panel-label">공통</div>
-          <label className="custom-editor-row">
-            <span className="field-label">투명도</span>
-            <input type="range" min="0" max="1" step="0.05" data-editor-field="opacity" aria-label="투명도" />
-          </label>
-          <label className="custom-editor-row">
-            <span className="field-label">회전</span>
-            <input type="number" min="0" max="359" step="1" data-editor-field="rotation" aria-label="회전 각도" />
-          </label>
-          <label className="custom-editor-row custom-editor-row-inline">
-            <input type="checkbox" data-editor-field="locked" aria-label="잠금" />
-            <span className="field-label">잠금</span>
-          </label>
-          <label className="custom-editor-row custom-editor-row-inline">
-            <input type="checkbox" data-editor-field="visible" aria-label="표시" defaultChecked />
-            <span className="field-label">표시</span>
-          </label>
-          <label className="custom-editor-row custom-editor-row-inline">
-            <input type="checkbox" data-editor-field="shadowEnabled" aria-label="그림자" />
-            <span className="field-label">그림자</span>
-          </label>
-          <label className="custom-editor-row">
-            <span className="field-label">그림자 색</span>
-            <ColorPicker field="shadowColor" value="#000000" ariaLabel="그림자 색" />
-          </label>
-        </div>
-      </aside>
-      </div>
+      {inspectorHost ? createPortal(inspector, inspectorHost) : inspector}
     </div>
   );
 }

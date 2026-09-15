@@ -22,7 +22,11 @@ const editorRoot = document.getElementById("customSlideEditor");
 const chromeHost = document.getElementById("customEditorReactRoot");
 if (editorRoot && chromeHost) {
   editorRoot.dataset.reactChrome = "true";
-  createRoot(chromeHost).render(<CustomEditorChrome />);
+  createRoot(chromeHost).render(
+    <CustomEditorChrome
+      inspectorHost={document.getElementById("customEditorInspectorHost")}
+    />
+  );
 }
 
 await import("./app.js");

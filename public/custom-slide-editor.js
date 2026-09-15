@@ -2606,18 +2606,46 @@ export async function createCustomSlideEditor(root, options = {}) {
   const uploadImage = options.uploadImage;
   const nextId = createIdFactory();
 
+  /**
+   * The editor's markup does not have to be one subtree. The workspace renders
+   * the layers and property panels into its inspector form so that column
+   * scrolls as a single unit, which leaves them outside `root`. Everything that
+   * searches for controls, delegates an event, or asks "did this happen inside
+   * the editor" goes through these instead of `root` alone. The inspector comes
+   * first so that it, and not the static fallback markup inside `root`, is the
+   * panel a lookup for a single control finds.
+   */
+  const hosts = [options.inspector, root].filter(Boolean);
+
+  function queryHosts(selector) {
+    for (const host of hosts) {
+      const found = host.querySelector(selector);
+      if (found) {
+        return found;
+      }
+    }
+    return null;
+  }
+
+  function queryAllHosts(selector) {
+    return hosts.flatMap((host) => Array.from(host.querySelectorAll(selector)));
+  }
+
+  function withinHosts(node) {
+    return Boolean(
+      node && typeof node.nodeType === "number" && hosts.some((host) => host.contains(node))
+    );
+  }
+
   const dom = {
-    canvas: root.querySelector('[data-custom-editor="canvas"]'),
-    stage: root.querySelector('[data-custom-editor="stage"]'),
-    template: root.querySelector('[data-custom-editor="template"]'),
-    theme: root.querySelector('[data-custom-editor="theme"]'),
-    file: root.querySelector('[data-custom-editor="file"]'),
-    status: root.querySelector('[data-custom-editor="status"]'),
-    error: root.querySelector('[data-custom-editor="error"]'),
-    background: root.querySelector('[data-custom-editor="background"]'),
-    panels: Array.from(root.querySelectorAll("[data-editor-panel]")),
-    fields: Array.from(root.querySelectorAll("[data-editor-field]")),
-    actions: Array.from(root.querySelectorAll("[data-editor-action]")),
+    canvas: queryHosts('[data-custom-editor="canvas"]'),
+    stage: queryHosts('[data-custom-editor="stage"]'),
+    template: queryHosts('[data-custom-editor="template"]'),
+    theme: queryHosts('[data-custom-editor="theme"]'),
+    file: queryHosts('[data-custom-editor="file"]'),
+    status: queryHosts('[data-custom-editor="status"]'),
+    error: queryHosts('[data-custom-editor="error"]'),
+    background: queryHosts('[data-custom-editor="background"]'),
   };
 
   if (!dom.canvas) {
@@ -2719,7 +2747,7 @@ export async function createCustomSlideEditor(root, options = {}) {
 
   function refreshActionStates() {
     const hasSelection = selectedFabricObjects(canvas).length > 0;
-    for (const button of root.querySelectorAll("[data-editor-action]")) {
+    for (const button of queryAllHosts("[data-editor-action]")) {
       const action = button.dataset.editorAction;
       if (action === "undo") {
         button.disabled = !history.canUndo();
@@ -2812,6 +2840,7 @@ export async function createCustomSlideEditor(root, options = {}) {
       canvas.backgroundColor = nextModel.background.color;
       if (dom.background) {
         dom.background.value = nextModel.background.color;
+        dom.background.dispatchEvent(new view.CustomEvent("editor-field-sync"));
       }
 
       for (const element of nextModel.elements) {
@@ -2896,25 +2925,62 @@ export async function createCustomSlideEditor(root, options = {}) {
   }
 
   function showPanels(names) {
-    for (const element of root.querySelectorAll("[data-editor-panel]")) {
+    for (const element of queryAllHosts("[data-editor-panel]")) {
       element.hidden = !names.includes(element.dataset.editorPanel);
     }
   }
 
   function field(name) {
-    return root.querySelector(`[data-editor-field="${name}"]`);
+    return queryHosts(`[data-editor-field="${name}"]`);
+  }
+
+  /**
+   * A field can appear more than once: the floating context toolbar repeats the
+   * text size and colour the property panel also shows. Anything that reflects
+   * the selection has to reach all of them, or whichever copy `field()` misses
+   * keeps showing the previous object's value.
+   */
+  function fields(name) {
+    return queryAllHosts(`[data-editor-field="${name}"]`);
   }
 
   function setFieldValue(name, value) {
+    for (const input of fields(name)) {
+      if (input.type === "checkbox") {
+        input.checked = Boolean(value);
+      } else {
+        input.value = value ?? "";
+      }
+      // Controls wrapping this input (the colour swatches) cannot see a
+      // programmatic value assignment, and a real "input" event would come
+      // straight back as an edit, so they get their own notification. It comes
+      // from the document's own window, which is the only Event the node will
+      // accept when that document is a jsdom one.
+      input.dispatchEvent(new view.CustomEvent("editor-field-sync"));
+    }
+    syncReadout(name);
+  }
+
+  function setFieldDisabled(name, disabled) {
+    for (const input of fields(name)) {
+      input.disabled = disabled;
+    }
+  }
+
+  /** Mirrors a slider's value as text, since the thumb alone does not say it. */
+  function syncReadout(name) {
+    const readout = queryHosts(`[data-editor-readout="${name}"]`);
+    if (!readout) {
+      return;
+    }
     const input = field(name);
     if (!input) {
       return;
     }
-    if (input.type === "checkbox") {
-      input.checked = Boolean(value);
-    } else {
-      input.value = value ?? "";
-    }
+    readout.textContent =
+      name === "opacity"
+        ? `${Math.round((Number(input.value) || 0) * 100)}%`
+        : input.value ?? "";
   }
 
   function syncStrokeFields(active) {
@@ -2927,14 +2993,8 @@ export async function createCustomSlideEditor(root, options = {}) {
       hasStroke ? active.strokeWidth ?? 0 : remembered?.strokeWidth ?? 0
     );
 
-    const strokeInput = field("stroke");
-    const strokeWidthInput = field("strokeWidth");
-    if (strokeInput) {
-      strokeInput.disabled = !hasStroke;
-    }
-    if (strokeWidthInput) {
-      strokeWidthInput.disabled = !hasStroke;
-    }
+    setFieldDisabled("stroke", !hasStroke);
+    setFieldDisabled("strokeWidth", !hasStroke);
   }
 
   function updatePropertyPanel() {
@@ -2980,20 +3040,14 @@ export async function createCustomSlideEditor(root, options = {}) {
         break;
       case "line": {
         showPanels(["shape", "common"]);
-        const fillInput = field("fill");
-        if (fillInput) {
-          fillInput.disabled = true;
-        }
+        setFieldDisabled("fill", true);
         syncStrokeFields(target);
         setStatus("선이 선택되었습니다.");
         break;
       }
       default: {
         showPanels(["shape", "common"]);
-        const fillInput = field("fill");
-        if (fillInput) {
-          fillInput.disabled = false;
-        }
+        setFieldDisabled("fill", false);
         setFieldValue("fill", target.fill ?? "#cccccc");
         syncStrokeFields(target);
         setStatus(`도형(${box.width.toFixed(0)}×${box.height.toFixed(0)})이 선택되었습니다.`);
@@ -3418,14 +3472,14 @@ export async function createCustomSlideEditor(root, options = {}) {
   }
 
   function hideContextMenu() {
-    const menu = root.querySelector("[data-editor-ui='context-menu']");
+    const menu = queryHosts("[data-editor-ui='context-menu']");
     if (menu) {
       menu.hidden = true;
     }
   }
 
   function showContextMenu(event) {
-    const menu = root.querySelector("[data-editor-ui='context-menu']");
+    const menu = queryHosts("[data-editor-ui='context-menu']");
     if (!menu) {
       return;
     }
@@ -3441,7 +3495,7 @@ export async function createCustomSlideEditor(root, options = {}) {
   }
 
   function refreshContextToolbar() {
-    const toolbar = root.querySelector("[data-editor-ui='context-toolbar']");
+    const toolbar = queryHosts("[data-editor-ui='context-toolbar']");
     if (!toolbar) {
       return;
     }
@@ -3510,14 +3564,14 @@ export async function createCustomSlideEditor(root, options = {}) {
   }
 
   function refreshLayerList() {
-    const list = root.querySelector("[data-editor-ui='layers']");
+    const list = queryHosts("[data-editor-ui='layers']");
     if (!list) {
       return;
     }
     const document = list.ownerDocument;
     const objects = [...elementObjects()].reverse();
 
-    const empty = root.querySelector("[data-editor-ui='layers-empty']");
+    const empty = queryHosts("[data-editor-ui='layers-empty']");
     if (empty) {
       empty.hidden = objects.length > 0;
     }
@@ -3648,7 +3702,7 @@ export async function createCustomSlideEditor(root, options = {}) {
     if (destroyed) {
       return model;
     }
-    const themeId = root.querySelector('[data-custom-editor="theme"]')?.value ?? "native";
+    const themeId = queryHosts('[data-custom-editor="theme"]')?.value ?? "native";
     model = instantiateTemplate(templateId, nextId, themeId);
     const rendered = await renderModel(model);
     if (!rendered || destroyed) {
@@ -3686,7 +3740,7 @@ export async function createCustomSlideEditor(root, options = {}) {
   }
 
   function setThemeSelectValue(themeId) {
-    for (const select of root.querySelectorAll('[data-custom-editor="theme"]')) {
+    for (const select of queryAllHosts('[data-custom-editor="theme"]')) {
       select.value = themeId || "native";
     }
   }
@@ -3907,7 +3961,7 @@ export async function createCustomSlideEditor(root, options = {}) {
         break;
       case "apply-template":
         await applyTemplate(
-          root.querySelector('[data-custom-editor="template"]')?.value ?? "blank"
+          queryHosts('[data-custom-editor="template"]')?.value ?? "blank"
         );
         break;
       default:
@@ -3926,9 +3980,16 @@ export async function createCustomSlideEditor(root, options = {}) {
     listeners.push(() => target.removeEventListener(type, handler, options));
   }
 
-  listen(root, "click", (event) => {
+  // Delegated per host, since the property panels may sit outside `root`.
+  function listenOnHosts(type, handler) {
+    for (const host of hosts) {
+      listen(host, type, handler);
+    }
+  }
+
+  listenOnHosts("click", (event) => {
     const button = event.target.closest?.("[data-editor-action]");
-    if (!button || !root.contains(button)) {
+    if (!button || !withinHosts(button)) {
       return;
     }
     event.preventDefault();
@@ -3937,9 +3998,10 @@ export async function createCustomSlideEditor(root, options = {}) {
     });
   });
 
-  listen(root, "input", (event) => {
+  listenOnHosts("input", (event) => {
     const input = event.target;
     if (input?.dataset?.editorField) {
+      syncReadout(input.dataset.editorField);
       applyFieldChange(input.dataset.editorField, input);
     }
     if (input?.getAttribute?.("data-custom-editor") === "background") {
@@ -3949,7 +4011,7 @@ export async function createCustomSlideEditor(root, options = {}) {
     }
   });
 
-  listen(root, "change", (event) => {
+  listenOnHosts("change", (event) => {
     const input = event.target;
     if (input?.dataset?.editorField) {
       applyFieldChange(input.dataset.editorField, input);
@@ -3973,7 +4035,7 @@ export async function createCustomSlideEditor(root, options = {}) {
     });
   }
 
-  for (const select of root.querySelectorAll('[data-custom-editor="theme"]')) {
+  for (const select of queryAllHosts('[data-custom-editor="theme"]')) {
     listen(select, "change", () => {
       applyCurrentTheme(select.value);
     });
@@ -3985,7 +4047,7 @@ export async function createCustomSlideEditor(root, options = {}) {
    * Ctrl+C, so a stale canvas selection must not swallow them.
    */
   function isCanvasShortcutInScope(target) {
-    if (target && typeof target.nodeType === "number" && root.contains(target)) {
+    if (withinHosts(target)) {
       return true;
     }
     return canvasEngaged;
@@ -4116,9 +4178,7 @@ export async function createCustomSlideEditor(root, options = {}) {
 
   function trackEngagement(event) {
     const target = event.target;
-    canvasEngaged = Boolean(
-      target && typeof target.nodeType === "number" && root.contains(target)
-    );
+    canvasEngaged = withinHosts(target);
   }
 
   const editorDocument = root.ownerDocument ?? document;
@@ -4250,7 +4310,7 @@ export async function createCustomSlideEditor(root, options = {}) {
   }
   resizeToStage();
 
-  const templateSelects = root.querySelectorAll('[data-custom-editor="template"]');
+  const templateSelects = queryAllHosts('[data-custom-editor="template"]');
   for (const select of templateSelects) {
     select.replaceChildren();
     for (const template of CUSTOM_SLIDE_TEMPLATES) {
@@ -4261,7 +4321,7 @@ export async function createCustomSlideEditor(root, options = {}) {
     }
   }
 
-  const themeSelects = root.querySelectorAll('[data-custom-editor="theme"]');
+  const themeSelects = queryAllHosts('[data-custom-editor="theme"]');
   for (const select of themeSelects) {
     select.replaceChildren();
     for (const theme of CUSTOM_SLIDE_THEMES) {

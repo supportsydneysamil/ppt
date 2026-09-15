@@ -20,6 +20,9 @@
   --ctrl-h-xs: 28px;
   --ctrl-h-2xs: 24px;
   --editor-label-width: 112px;
+  /* The custom editor inspector sits in the same column but on a compact
+     scale, so its labels get their own narrower track. */
+  --custom-label-width: 62px;
   --sp-1: 4px;
   --sp-2: 8px;
   --sp-3: 12px;
@@ -2042,6 +2045,16 @@ body {
   align-self: stretch;
   z-index: 3;
   min-height: 180px;
+  /* The slide list's rail inherits the panel card it sits inside. The inspector
+     has no such wrapper — the form itself is the card, and it is hidden while
+     collapsed — so the rail carries the same frame. */
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--panel);
+}
+
+#inspectorRailBtn:hover {
+  background: var(--panel-soft);
 }
 
 .slide-list-panel {
@@ -2503,11 +2516,15 @@ body {
   min-width: 0;
   max-height: var(--stage-max-h);
   overflow: auto;
-  /* The collapse chevron used to be anchored to this seam while the seam was
-     invisible, so it read as floating. The divider is what it points at. */
-  border-left: 1px solid var(--border);
-  padding-left: var(--sp-4);
-  padding-right: 4px;
+  /* The inspector frames itself the way the slide list does. A single seam line
+     only divides the column while it is open; its own border still reads as the
+     pane's edge once it collapses to the rail. */
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--panel);
+  /* No top padding: `.inspector-header` is sticky, so anything above it is a
+     gap that scrolling rows show through. The header pads the top instead. */
+  padding: 0 var(--sp-4) var(--sp-4);
 }
 
 .inspector-header {
@@ -2518,7 +2535,7 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-3);
-  padding-bottom: var(--sp-3);
+  padding: var(--sp-4) 0 var(--sp-3);
   background: var(--panel);
   border-bottom: 1px solid var(--border);
 }
@@ -3500,46 +3517,325 @@ body[data-theme="light"] .rte-textarea {
   margin: 0 auto;
 }
 
-.custom-editor-props {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  align-items: start;
-  gap: var(--sp-3) var(--sp-5);
+/* --- Custom editor inspector -------------------------------------------------
+
+   The property panels are an inspector, not a form: up to fifteen properties
+   share a ~360px column, and the user is tweaking a selection they are looking
+   at rather than filling anything in. So this whole block runs on its own
+   compact scale — 34px controls, 12px labels, label beside the control — and
+   deliberately does not inherit the 48px `.field`/`.editor-row` sizing the
+   document-style panels above it use. */
+.custom-editor-props,
+.custom-editor-layers {
   padding: var(--sp-3);
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--panel-soft);
 }
 
+.custom-editor-props {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
 .custom-editor-panel {
   display: grid;
   gap: var(--sp-2);
+  min-width: 0;
 }
 
 .custom-editor-panel[hidden] {
   display: none;
 }
 
+/* A type panel and the 공통 panel show together, and the hidden panels between
+   them rule out `+`: this is "any shown panel that follows another shown one". */
+.custom-editor-panel:not([hidden]) ~ .custom-editor-panel:not([hidden]) {
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border);
+}
+
 .custom-editor-panel-label {
-  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
   font-weight: 700;
+  letter-spacing: 0.04em;
   color: var(--muted);
+}
+
+.custom-editor-panel-label svg {
+  flex: none;
+  color: var(--brand);
+}
+
+.custom-editor-empty {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--muted);
+}
+
+.custom-editor-empty svg {
+  color: var(--brand);
+  opacity: 0.8;
+}
+
+.custom-editor-empty p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .custom-editor-row {
   display: grid;
-  gap: var(--sp-1);
+  grid-template-columns: var(--custom-label-width) minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--sp-2);
+  row-gap: var(--sp-1);
+  min-height: var(--ctrl-h-sm);
+  min-width: 0;
 }
 
-.custom-editor-row-inline {
-  grid-auto-flow: column;
-  justify-content: start;
-  align-items: center;
-  gap: var(--sp-2);
+.custom-editor-row > .field-label {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* Only the text body earns a full-width control: it is the one field whose
+   content the user reads back while editing. */
+.custom-editor-row--stack {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
+.custom-editor-row input:not([type="checkbox"]):not([type="range"]),
+.custom-editor-row select,
+.custom-editor-row textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--ctrl-h-sm);
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 13px;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.custom-editor-row input:not([type="checkbox"]):not([type="range"]):focus,
+.custom-editor-row select:focus,
+.custom-editor-row textarea:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: var(--focus-ring);
+}
+
+.custom-editor-row input:disabled,
+.custom-editor-row select:disabled,
+.custom-editor-row textarea:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .custom-editor-row textarea {
+  min-height: 68px;
+  line-height: 1.5;
   resize: vertical;
+}
+
+/* Numbers never need the full column, and a short field reads as "expects a
+   number" before you click it. The width lives on a slot around the input
+   rather than the input itself, which keeps it out of a specificity fight with
+   the `width: 100%` every control in a row gets. */
+.custom-editor-num {
+  display: block;
+  flex: none;
+  width: 80px;
+  justify-self: start;
+}
+
+/* Wraps the control side of a row when more than one control belongs to the
+   same property. */
+.custom-editor-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.custom-editor-subfield,
+.custom-editor-inline-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.custom-editor-sublabel {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.custom-editor-inline-field > svg {
+  flex: none;
+  color: var(--muted);
+}
+
+.custom-editor-row input[type="range"] {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  accent-color: var(--brand);
+}
+
+.custom-editor-readout {
+  flex: none;
+  min-width: 36px;
+  text-align: right;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+/* Shadow colour does nothing until the shadow itself is on, so it follows the
+   toggle rather than sitting there inviting a change that has no effect. */
+.custom-editor-panel:has([data-editor-field="shadowEnabled"]:not(:checked))
+  [data-editor-dependent="shadowEnabled"] {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* Segmented icon toggles (bold/italic/underline). */
+.custom-editor-toggle-group {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel);
+}
+
+.custom-editor-toggle,
+.custom-editor-chip {
+  position: relative;
+  display: inline-flex;
+}
+
+/* Laid over its own face rather than hidden, so the real checkbox keeps the
+   click target, the focus ring and the keyboard behaviour. */
+.custom-editor-toggle input,
+.custom-editor-chip input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.custom-editor-toggle-face {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--ctrl-h-2xs);
+  height: var(--ctrl-h-2xs);
+  border-radius: 7px;
+  color: var(--muted);
+  transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+.custom-editor-toggle:hover .custom-editor-toggle-face {
+  background: var(--panel-soft);
+  color: var(--ink);
+}
+
+.custom-editor-toggle input:checked + .custom-editor-toggle-face {
+  background: var(--brand-tint-strong);
+  box-shadow: inset 0 0 0 1px var(--brand-edge);
+  color: var(--ink);
+}
+
+/* Boolean states that are not worth a labelled row each. */
+.custom-editor-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.custom-editor-chip-face {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: var(--ctrl-h-xs);
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.custom-editor-chip-face svg {
+  flex: none;
+}
+
+.custom-editor-chip:hover .custom-editor-chip-face {
+  border-color: var(--brand-edge);
+  color: var(--ink);
+}
+
+.custom-editor-chip input:checked + .custom-editor-chip-face {
+  border-color: var(--brand-edge);
+  background: var(--brand-tint);
+  color: var(--ink);
+}
+
+.custom-editor-toggle input:focus-visible + .custom-editor-toggle-face,
+.custom-editor-chip input:focus-visible + .custom-editor-chip-face {
+  box-shadow: var(--focus-ring);
+}
+
+/* Still used by the static fallback markup in index.html, which pairs a bare
+   checkbox with its label instead of using the chips above. */
+.custom-editor-row-inline {
+  grid-template-columns: auto minmax(0, 1fr);
+  justify-content: start;
+}
+
+.custom-editor-row-inline input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--brand);
+}
+
+.custom-editor-context-toolbar input[type="number"] {
+  width: 56px;
+  min-height: var(--ctrl-h-2xs);
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--panel-soft);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 12px;
 }
 
 .custom-editor-status {
@@ -3662,6 +3958,12 @@ body[data-theme="light"] .rte-textarea {
   display: grid;
   gap: var(--sp-2);
   align-content: start;
+}
+
+.custom-editor-layers .hint,
+.custom-editor-props .hint {
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 .custom-editor-layer-list {
@@ -3787,38 +4089,77 @@ body[data-theme="light"] .rte-textarea {
   width: 96px;
 }
 
+/* The editor disables the hidden value input to mark a colour as unavailable
+   (a line has no fill, a strokeless shape has no stroke colour). The swatch is
+   a Pickr button beside it, so it has to follow that state too. */
+.custom-color-picker:has(.custom-color-picker-value:disabled) {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.custom-editor-row .custom-color-picker {
+  min-width: 0;
+}
+
+.custom-editor-row .custom-color-picker-value {
+  width: auto;
+  flex: 1 1 0;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+/* Pickr's own theme is loaded from node_modules and may well land after this
+   file, so these carry the extra `.pickr` to outrank it rather than relying on
+   source order. */
+.custom-editor-row .pickr {
+  flex: none;
+}
+
+.custom-editor-row .pickr .pcr-button {
+  width: var(--ctrl-h-xs);
+  height: var(--ctrl-h-xs);
+  padding: 0;
+  border-radius: 8px;
+  /* A white or near-panel swatch would otherwise vanish into the panel. */
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.custom-editor-row .pickr .pcr-button::before,
+.custom-editor-row .pickr .pcr-button::after {
+  border-radius: 8px;
+}
+
+.custom-editor-row .pickr .pcr-button:focus-visible {
+  box-shadow: 0 0 0 1px var(--brand), var(--focus-ring);
+}
+
+/* The editor owns the stage column only. Its layers and property panels are
+   rendered into the inspector form, which is the panel's own second column, so
+   the two are no longer stacked in one cell with the form overlaid on top. */
 .slide-editor-panel[data-slide-type="custom"] .custom-editor[data-react-chrome="true"]:not([hidden]) {
-  grid-column: 1 / -1;
-  grid-row: 2;
+  grid-area: stage;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--inspector-width);
+  grid-template-columns: minmax(0, 1fr);
   grid-template-areas:
-    "bar side"
-    "tools side"
-    "stage side"
-    "status side";
-  /* The stage row is the only one allowed to absorb free height. Without this
-     the rows are all auto, and the inspector column — which spans every one of
-     them — distributes its own growth across them: selecting an object made the
-     property panels taller, which grew the bar and tool rows and pushed the
-     stage down the screen. */
+    "bar"
+    "tools"
+    "stage"
+    "status";
+  /* The stage row is the only one allowed to absorb free height, so a tall
+     toolbar wrap cannot push it down the screen. */
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   min-height: 0;
-  gap: var(--sp-3) var(--sp-4);
+  gap: var(--sp-3);
 }
 
-.slide-editor-panel[data-slide-type="custom"] .editor-form {
-  grid-area: inspector;
-  z-index: 2;
-  /* Only the header and the name/type fields are left, so the form takes its
-     own height and hands the rest of the column to `.custom-editor-side`. The
-     cap is for short viewports, where even that much would outgrow the row and
-     get clipped by the panel; `overflow: auto` on the base rule takes over. */
-  align-self: start;
-  max-height: 100%;
+.slide-editor-panel[data-slide-type="custom"] .editor-form > :not(.settings-section):not(.inspector-header):not(.custom-editor-inspector-host) {
+  display: none;
 }
 
-.slide-editor-panel[data-slide-type="custom"] .editor-form > :not(.settings-section):not(.inspector-header) {
+/* Nothing of its own to show: it is only the place the editor's panels are
+   rendered, and it inherits the form's row gap. */
+.custom-editor-inspector-host:empty {
   display: none;
 }
 
@@ -3834,27 +4175,14 @@ body[data-theme="light"] .rte-textarea {
   grid-area: stage;
 }
 
+/* Inside the inspector form the panels are just two more rows of it: the form
+   is the scroll container, the divider and the sticky header are already
+   there, and the name/type fields scroll along with them. */
 .slide-editor-panel[data-slide-type="custom"] .custom-editor-side {
-  grid-area: side;
+  display: grid;
   grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-3);
   min-width: 0;
-  min-height: 0;
-  /* Layers and the property panels grow and shrink with the selection, so this
-     column scrolls itself. It also has to: an `auto` minimum size would let the
-     panels count towards the grid's minimum height and shove the stage down. */
-  overflow-y: auto;
-  /* `.editor-form` is overlaid on the top of this same column, showing only its
-     header and the name/type fields. A margin rather than padding, so the
-     cleared strip stays outside the scroll box and nothing slides under the
-     form. --custom-inspector-offset is measured from the form itself; the
-     fallback is the height it has with those two rows. */
-  margin-top: calc(
-    var(--custom-inspector-offset, calc(150px + var(--inspector-header-h))) +
-      var(--sp-5)
-  );
-  padding-left: var(--sp-4);
-  /* Continues the `.editor-form` divider down the rest of the column. */
-  border-left: 1px solid var(--border);
 }
 
 .slide-editor-panel[data-slide-type="custom"] .custom-editor-status,
@@ -3898,16 +4226,9 @@ body[data-theme="light"] .rte-textarea {
   display: none;
 }
 
-.ppt-interface[data-inspector-open="false"] .editor-form,
-.ppt-interface[data-inspector-open="false"] .custom-editor-side {
+.ppt-interface[data-inspector-open="false"] .editor-form {
   visibility: hidden;
   pointer-events: none;
-}
-
-.ppt-interface[data-inspector-open="false"]
-  .slide-editor-panel[data-slide-type="custom"]
-  .custom-editor[data-react-chrome="true"]:not([hidden]) {
-  grid-template-columns: minmax(0, 1fr) 44px;
 }
 
 .ppt-interface[data-focus-mode="true"] {
@@ -4067,10 +4388,6 @@ body[data-theme="light"] .rte-textarea {
     right: 24px;
     width: min(340px, calc(100vw - 80px));
     max-height: calc(100vh - 190px);
-    padding: 16px;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    background: var(--panel);
   }
 
   .ppt-interface[data-layout-mode="compact"]
@@ -4086,27 +4403,8 @@ body[data-theme="light"] .rte-textarea {
       "status";
   }
 
-  .ppt-interface[data-layout-mode="compact"] .custom-editor-side {
-    position: absolute;
-    z-index: 21;
-    top: 72px;
-    right: 24px;
-    width: min(340px, calc(100vw - 80px));
-    max-height: calc(100vh - 190px);
-    overflow: auto;
-    /* Out of flow and anchored to `top`, so the wide column's clearance for the
-       overlaid form does not apply; the drawer pads it instead. */
-    margin-top: 0;
-    padding: calc(164px + var(--inspector-header-h) + var(--sp-5)) 16px 16px;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    background: var(--panel);
-  }
-
   .ppt-interface[data-layout-mode="compact"][data-inspector-open="false"]
-    .editor-form,
-  .ppt-interface[data-layout-mode="compact"][data-inspector-open="false"]
-    .custom-editor-side {
+    .editor-form {
     visibility: hidden;
     opacity: 0;
     pointer-events: none;
@@ -4124,10 +4422,7 @@ body[data-theme="light"] .rte-textarea {
 
   .page[data-ppt-surface="editor"]
     .ppt-interface[data-layout-mode="compact"]
-    .editor-form,
-  .page[data-ppt-surface="editor"]
-    .ppt-interface[data-layout-mode="compact"]
-    .custom-editor-side {
+    .editor-form {
     max-height: calc(100% - 88px);
   }
 }
@@ -4142,15 +4437,9 @@ body[data-theme="light"] .rte-textarea {
     display: none;
   }
 
-  /* Stacked vertically there is no side-by-side seam to divide. The
-     `.inspector-header` label stays, and earns its keep as a section break —
-     but unpinned, or it would follow the page scroll instead of the form's. */
-  .ppt-interface[data-layout-mode="mobile"] .editor-form,
-  .ppt-interface[data-layout-mode="mobile"] .custom-editor-side {
-    border-left: 0;
-    padding-left: 0;
-  }
-
+  /* Stacked, the inspector keeps its own card the way the slide list above it
+     does. Only its header is unpinned, or it would follow the page scroll
+     instead of the form's. */
   .ppt-interface[data-layout-mode="mobile"] .inspector-header {
     position: static;
   }
@@ -4202,20 +4491,7 @@ body[data-theme="light"] .rte-textarea {
       "bar"
       "tools"
       "stage"
-      "side"
       "status";
-  }
-
-  .ppt-interface[data-layout-mode="mobile"] .custom-editor-side {
-    position: static;
-    width: auto;
-    max-height: none;
-    overflow: visible;
-    visibility: visible;
-    /* Stacked below the form rather than overlaid by it, so there is nothing
-       to clear and the page owns the scrolling again. */
-    margin-top: 0;
-    padding: 0;
   }
 
   .custom-editor-props {
