@@ -259,6 +259,12 @@ export function createCustomEditorSession(options = {}) {
       }
       return editor.serialize();
     },
+    resize(slideId) {
+      if (!ownsSlide(slideId) || typeof editor.resize !== "function") {
+        return false;
+      }
+      return editor.resize();
+    },
     async reset(slideId) {
       if (!ownsSlide(slideId)) {
         return false;

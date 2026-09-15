@@ -59,6 +59,7 @@ function createFakeEditorFactory({ holdLoad = false } = {}) {
     loads: [],
     markSavedCalls: 0,
     resetCalls: 0,
+    resizeCalls: 0,
     serializeCalls: 0,
     pendingLoads: [],
     onChange: null,
@@ -98,6 +99,10 @@ function createFakeEditorFactory({ holdLoad = false } = {}) {
       async reset() {
         state.resetCalls += 1;
         state.dirty = true;
+      },
+      resize() {
+        state.resizeCalls += 1;
+        return true;
       },
       async destroy() {
         state.destroyed = true;
@@ -556,6 +561,16 @@ test("createCustomEditorSession", async (t) => {
     assert.equal(await session.reset("a"), true);
     assert.equal(state.resetCalls, 1);
     assert.equal(state.dirty, true);
+  });
+
+  await t.test("resizes only the custom slide it owns", async () => {
+    const { createEditor, state } = createFakeEditorFactory();
+    const session = createCustomEditorSession({ root: {}, createEditor });
+    await session.showSlide("slide-a", rectModel("slide-a"));
+
+    assert.equal(session.resize("slide-b"), false);
+    assert.equal(session.resize("slide-a"), true);
+    assert.equal(state.resizeCalls, 1);
   });
 
   await t.test("serializes nothing before the editor exists", () => {

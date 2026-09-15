@@ -1118,3 +1118,30 @@ test("serializing an ActiveSelection restores absolute coordinates", async () =>
   assert.equal(serialized.elements[1].x, 300);
   await ctx.editor.destroy();
 });
+
+test("explicit resize uses the visible stage width", async () => {
+  const ctx = await createEditor();
+  const stage = ctx.root.querySelector('[data-custom-editor="stage"]');
+  Object.defineProperty(stage, "clientWidth", {
+    configurable: true,
+    value: 960,
+  });
+
+  assert.equal(ctx.editor.resize(), true);
+  assert.deepEqual(ctx.canvas.cssDimensions, {
+    width: "960px",
+    height: "540px",
+    cssOnly: true,
+  });
+});
+
+test("explicit resize is a no-op while the stage has no width", async () => {
+  const ctx = await createEditor();
+  const stage = ctx.root.querySelector('[data-custom-editor="stage"]');
+  Object.defineProperty(stage, "clientWidth", {
+    configurable: true,
+    value: 0,
+  });
+
+  assert.equal(ctx.editor.resize(), false);
+});

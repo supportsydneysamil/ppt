@@ -4081,14 +4081,19 @@ export async function createCustomSlideEditor(root, options = {}) {
   canvas.on("after:render", drawGuides);
 
   function resizeToStage() {
+    if (destroyed) {
+      return false;
+    }
     const host = dom.stage ?? root;
     const available = host.clientWidth;
     if (!available) {
-      return;
+      return false;
     }
     const width = Math.min(available, SLIDE_WIDTH) * zoom;
     const height = (width * SLIDE_HEIGHT) / SLIDE_WIDTH;
     canvas.setDimensions({ width: `${width}px`, height: `${height}px` }, { cssOnly: true });
+    positionToolbar?.();
+    return true;
   }
 
   if (typeof view.ResizeObserver === "function") {
@@ -4126,6 +4131,7 @@ export async function createCustomSlideEditor(root, options = {}) {
   return {
     canvas,
     load,
+    resize: resizeToStage,
     serialize() {
       if (destroyed) {
         return model;
