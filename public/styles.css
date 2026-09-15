@@ -3264,7 +3264,11 @@ body[data-theme="light"] .rte-textarea {
   background: var(--panel);
   border-radius: 16px;
   color: var(--muted);
-  min-height: 400px;
+  /* A floor for the document layout, where the panel has the page's height to
+     grow into. Inside the shell it is a ceiling the row cannot afford: a short
+     window gave the row less than this, and the placeholder pushed itself and
+     the slide list past the bottom of the window. */
+  min-height: min(400px, 100%);
 }
 
 /* PPTX Preview Layout (Vertical Scroll) */
