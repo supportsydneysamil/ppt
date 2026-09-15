@@ -1086,8 +1086,8 @@ test("theme options come from the theme module and recolor without rewriting cop
   await ctx.editor.applyTemplate("title-hero");
   const before = ctx.editor.serialize();
   const title = before.elements.find((element) => element.themeRole === "title");
-  assert.equal(title.text, "제목을 입력하세요");
-  assert.equal(before.background.color, "#0f172a");
+  assert.equal(title.text, "은혜 위에 세워진 공동체");
+  assert.equal(before.background.color, "#101c33");
 
   themeSelect.value = "plain";
   themeSelect.dispatchEvent(new host.window.Event("change", { bubbles: true }));
@@ -1096,7 +1096,7 @@ test("theme options come from the theme module and recolor without rewriting cop
   const after = ctx.editor.serialize();
   const afterTitle = after.elements.find((element) => element.themeRole === "title");
   assert.equal(after.background.color, "#ffffff");
-  assert.equal(afterTitle.text, "제목을 입력하세요");
+  assert.equal(afterTitle.text, "은혜 위에 세워진 공동체");
   assert.equal(afterTitle.color, "#111827");
   assert.equal(after.themeId, "plain");
 

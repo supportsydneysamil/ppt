@@ -150,6 +150,68 @@ test("information templates expose independently editable content units", () => 
   ]);
 });
 
+test("pastoral templates use approved editable units", () => {
+  assertElementIds("prayer", [
+    "prayer-1-number",
+    "prayer-1-text",
+    "prayer-2-number",
+    "prayer-2-text",
+    "prayer-3-number",
+    "prayer-3-text",
+    "prayer-orbit",
+  ]);
+  assertElementIds("welcome", [
+    "welcome-orbit",
+    "welcome-title",
+    "welcome-newcomer-panel",
+  ]);
+  assertElementIds("offering", [
+    "offering-frame",
+    "offering-title",
+    "offering-scripture",
+  ]);
+  assertElementIds("next-week", [
+    "next-week-day",
+    "next-week-month",
+    "next-week-event",
+    "next-week-cta",
+  ]);
+});
+
+test("professional templates keep non-bleed elements inside the slide", () => {
+  const allowedBleed = new Set(["prayer-orbit", "welcome-orbit"]);
+  for (const template of CUSTOM_SLIDE_TEMPLATES) {
+    for (const element of template.model.elements) {
+      if (!allowedBleed.has(element.id)) {
+        assertElementInsideCanvas(template.id, element);
+      }
+    }
+  }
+});
+
+test("professional templates retain geometry and copy across themes", () => {
+  for (const template of CUSTOM_SLIDE_TEMPLATES.filter(({ id }) => id !== "blank")) {
+    const plain = instantiateTemplate(template.id, undefined, "plain");
+    const dark = instantiateTemplate(template.id, undefined, "deep-black");
+    assert.deepEqual(
+      plain.elements.map(({ x, y, width, height, text }) => ({
+        x,
+        y,
+        width,
+        height,
+        text,
+      })),
+      dark.elements.map(({ x, y, width, height, text }) => ({
+        x,
+        y,
+        width,
+        height,
+        text,
+      }))
+    );
+  }
+});
+
 test("every template model survives normalization unchanged", () => {
   for (const template of CUSTOM_SLIDE_TEMPLATES) {
     const normalized = normalizeCustomSlide(template.model);

@@ -169,7 +169,7 @@
 
 - 기존 `TEMPLATE_DEFINITIONS`, `CUSTOM_SLIDE_TEMPLATES`, `instantiateTemplate` 흐름을 유지한다.
 - 템플릿 ID, 라벨, `themeId`, `templateId`, 요소 직렬화 방식은 바꾸지 않는다.
-- 모델이 이미 지원하는 `text`, `rect`, `roundRect`, `circle`, `line`만 사용한다.
+- 모델이 이미 지원하는 `text`, `rect`, `roundRect`, `ellipse`, `line`만 사용한다.
 - 각 요소에는 기존 정규화기가 보존하는 `themeRole` 또는 `themeStrokeRole`을 지정한다.
 - 사용자가 템플릿을 적용하면 지금처럼 요소 ID가 새로 생성된다.
 - 수동 색상 변경 시 테마 역할을 해제하는 기존 동작을 유지한다.

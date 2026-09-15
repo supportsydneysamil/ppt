@@ -12,7 +12,7 @@
 
 - Preserve all 15 template IDs, Korean labels, and ordering.
 - Preserve 1280×720 dimensions and current model/Fabric serialization.
-- Use only existing model types: `text`, `rect`, `roundRect`, `circle`, and `line`.
+- Use only existing model types: `text`, `rect`, `roundRect`, `ellipse`, and `line`.
 - Use `Malgun Gothic` for template text.
 - Use only semantic palette roles: `background`, `surface`, `accent`, `title`, `body`, `muted`, and `stroke`.
 - Do not add external image, icon, or illustration assets.
@@ -129,7 +129,7 @@ const CORE_TEMPLATE_ELEMENTS = {
   ],
   "split-photo": [
     ["photo-panel", "rect", "surface"],
-    ["photo-shape-back", "circle", "accent"],
+    ["photo-shape-back", "ellipse", "accent"],
     ["photo-shape-front", "roundRect", "surface"],
     ["photo-kicker", "text", "muted"],
     ["photo-title", "text", "title"],
@@ -347,7 +347,7 @@ const PRAYER_UNITS = [
 ];
 ```
 
-- `prayer`: labels and three rows occupy the left 72%; `prayer-orbit` is the only intentionally bleeding circle and `prayer-orbit-label` is rotated 270° inside the slide.
+- `prayer`: labels and three rows occupy the left 72%; `prayer-orbit` is a large right-edge ellipse and `prayer-orbit-label` is rotated 270° inside the slide.
 - `welcome`: `welcome-orbit` may bleed at the upper-left; welcome copy occupies the left 52%; a surface panel on the right contains `NEW HERE?`, `예배 후 새가족 안내`, and `로비 안내 데스크`.
 - `offering`: inset frame `(88,56,1104,608)`, centered title and scripture, short top accent, no iconography.
 - `next-week`: large day, month/weekday, divider, event title, time/location, and CTA surface are independent elements; use actual example copy `27`, `SEP\nSUN`, `주일예배`, and `오전 11:00\n시드니새일교회 본당`.
