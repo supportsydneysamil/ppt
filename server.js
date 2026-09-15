@@ -31,7 +31,7 @@ import {
   appendThemedCoverTitleSlide,
   normalizeTitleThemeId,
 } from "./lib/cover-title-slide.js";
-import { convertLegacyPptToPptx } from "./lib/legacy-ppt.js";
+import { convertLegacyPptToPptx, countPptSlides } from "./lib/legacy-ppt.js";
 import { mergePptxBuffers } from "./lib/merge-pptx.js";
 import { fetchRemoteImage, sniffImageMimeType } from "./lib/remote-image.js";
 import { appendTitleSlide } from "./lib/title-slide.js";
@@ -941,9 +941,9 @@ app.get("/api/hymn/title/:number", (req, res) => {
 // Download Hymn from External Source
 app.post("/api/hymn/download", async (req, res) => {
   try {
-    const { number } = req.body;
-    if (!number) {
-      return res.status(400).json({ error: "Hymn number required" });
+    const number = String(req.body?.number ?? "").trim();
+    if (!/^\d{1,3}$/.test(number) || Number(number) < 1) {
+      return res.status(400).json({ error: "올바른 찬송가 장수를 입력해 주세요." });
     }
 
     // Ensure uploads folder exists
@@ -957,18 +957,26 @@ app.post("/api/hymn/download", async (req, res) => {
     const url = `https://www.rickc.online/uploads/1/0/9/7/109730685/${fileName}`;
     const localFileName = `hymn_${number}_${Date.now()}.ppt`;
     const savePath = path.join(uploadsDir, localFileName);
+    const partialPath = `${savePath}.part`;
 
-    console.log(`Downloading (curl) ${url} to ${savePath}`);
+    console.log(`Downloading (curl) ${url} to ${partialPath}`);
 
     try {
-      await execAsync(`curl -L -f -s -o "${savePath}" "${url}"`);
+      await execAsync(
+        `curl -L --fail --silent --show-error --max-time 30 -o "${partialPath}" "${url}"`
+      );
 
-      // Verify file size > 0
-      const stats = await fs.stat(savePath);
-      if (stats.size === 0) {
-        await fs.unlink(savePath);
-        throw new Error("Downloaded file is empty");
+      const downloaded = await fs.readFile(partialPath);
+      let slideCount;
+      try {
+        slideCount = countPptSlides(downloaded);
+      } catch {
+        throw new Error("원본 서버가 올바른 PowerPoint 파일을 반환하지 않았습니다.");
       }
+      if (slideCount < 1) {
+        throw new Error("다운로드한 PowerPoint 파일에 슬라이드가 없습니다.");
+      }
+      await fs.rename(partialPath, savePath);
 
       res.json({
         success: true,
@@ -981,8 +989,10 @@ app.post("/api/hymn/download", async (req, res) => {
 
     } catch (err) {
       console.error("Curl download failed:", err);
-      try { await fs.unlink(savePath); } catch { }
-      res.status(404).json({ error: "Download failed. Check if hymn number is correct." });
+      await Promise.allSettled([fs.unlink(partialPath), fs.unlink(savePath)]);
+      res.status(502).json({
+        error: `찬송가 ${number}장 파일을 내려받지 못했습니다. 장 번호와 원본 서버 상태를 확인해 주세요.`,
+      });
     }
 
   } catch (e) {
