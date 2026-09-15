@@ -535,7 +535,6 @@ test("image controls synchronize fit, flips, and alternative text", async () => 
       flipH: ctx.editor.serialize().elements[0].flipH,
       flipV: ctx.editor.serialize().elements[0].flipV,
       altText: ctx.editor.serialize().elements[0].altText,
-      shadow: ctx.editor.serialize().elements[0].shadow,
     },
     {
       fit: "cover",
@@ -940,13 +939,6 @@ test("replacing an image preserves its authored properties and selection", async
         offsetY: 4,
         opacity: 0.4,
       },
-      shadow: {
-        color: "#112233",
-        blur: 8,
-        offsetX: 3,
-        offsetY: 4,
-        opacity: 0.4,
-      },
     })
   );
   const [original] = ctx.canvas.getObjects();
@@ -974,6 +966,7 @@ test("replacing an image preserves its authored properties and selection", async
       flipH: ctx.editor.serialize().elements[0].flipH,
       flipV: ctx.editor.serialize().elements[0].flipV,
       altText: ctx.editor.serialize().elements[0].altText,
+      shadow: ctx.editor.serialize().elements[0].shadow,
     },
     {
       id: "image-a",
@@ -988,6 +981,13 @@ test("replacing an image preserves its authored properties and selection", async
       flipH: true,
       flipV: true,
       altText: "원래 설명",
+      shadow: {
+        color: "#112233",
+        blur: 8,
+        offsetX: 3,
+        offsetY: 4,
+        opacity: 0.4,
+      },
     }
   );
   assert.equal(ctx.editor.isDirty(), true);
