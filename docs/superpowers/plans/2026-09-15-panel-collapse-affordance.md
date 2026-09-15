@@ -20,8 +20,8 @@
 - Small controls size on `--ctrl-h-sm` (34px). Never hard-code 30px.
 - Layout breakpoints are unchanged: wide `>= 1280px`, compact `900-1279px`, mobile `< 900px`.
 - Rail buttons exist only in wide mode. They must be `display: none` in compact and mobile.
-- Leave the uncommitted work in `data/templates.json`, `scripts/upload-preview-check.mjs`, `tmp-preview-height-check.mjs`, `tmp-template-list-shot.mjs`, and `docs/superpowers/specs/2026-09-15-preview-stage-height-design.md` untouched and unstaged. `public/styles.css` also has uncommitted work in it — you are editing that same file, so stage it deliberately with `git add public/styles.css` and never use `git add -A` or `git add .`.
-- `public/styles.css` is large and being edited by others. **Anchor every edit on the CSS selector text, not on line numbers.** Line numbers in this plan are advisory only and may have drifted.
+- **This repository has concurrent uncommitted work that is not yours.** Run `git status --short` before you start and write the result down. `public/styles.css`, `public/app.js`, and files under `test/` have all carried unrelated uncommitted changes recently. Stage only the exact paths each task's commit step lists. Never use `git add -A` or `git add .`. Never run `git checkout`, `git stash`, or `git restore` on a file you did not create.
+- **Anchor every edit on the selector, ID, or code text quoted in the step — never on a line number.** `public/styles.css` is ~4000 lines and moving under you. Every line number in this plan is advisory and was already drifting when the plan was written. If quoted text does not match what you find, stop and report rather than guessing.
 
 ---
 
@@ -1175,7 +1175,7 @@ Expected: no output.
 - [ ] **Step 5: Confirm the unrelated uncommitted work survived**
 
 Run: `git status --short`
-Expected: `data/templates.json`, `scripts/upload-preview-check.mjs`, `docs/superpowers/specs/2026-09-15-preview-stage-height-design.md`, `tmp-preview-height-check.mjs`, and `tmp-template-list-shot.mjs` still listed as modified or untracked, and nothing from `public/` or `test/` left uncommitted.
+Expected: every path you recorded from the `git status --short` you ran before Task 1 is still listed, with the same status letter. Nothing you were told to leave alone became staged or disappeared. The five files this plan owns — `public/index.html`, `public/styles.css`, `public/app.js`, `test/ppt-workspace-ui.test.js`, `test/browser/save-flow.playwright.mjs` — are committed, though `public/styles.css` and `public/app.js` may still show as modified if someone else's work is in them.
 
 - [ ] **Step 6: Manual visual check at 1440x1000**
 
