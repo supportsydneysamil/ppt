@@ -5,6 +5,13 @@ import {
   normalizeCustomSlide,
 } from "./custom-slide-model.js";
 import { createCustomSlideHistory } from "./custom-slide-history.js";
+import {
+  applyTheme,
+  CUSTOM_SLIDE_THEMES,
+  isThemeId,
+  nativePaletteFromDefinition,
+  resolvePalette,
+} from "./custom-slide-themes.js";
 import { autoUpdate, computePosition, flip, offset, shift } from "@floating-ui/dom";
 
 export const SLIDE_WIDTH = 1280;
@@ -41,6 +48,7 @@ const TEMPLATE_DEFINITIONS = [
         stroke: "",
         strokeWidth: 0,
         opacity: 0.9,
+        themeRole: "accent",
       },
       {
         id: "title-hero-title",
@@ -55,6 +63,7 @@ const TEMPLATE_DEFINITIONS = [
         fontWeight: "bold",
         color: "#ffffff",
         textAlign: "center",
+        themeRole: "title",
       },
       {
         id: "title-hero-subtitle",
@@ -69,6 +78,7 @@ const TEMPLATE_DEFINITIONS = [
         fontWeight: "normal",
         color: "#dbeafe",
         textAlign: "center",
+        themeRole: "muted",
       },
     ],
   },
@@ -87,6 +97,7 @@ const TEMPLATE_DEFINITIONS = [
         fill: "#e2e8f0",
         stroke: "",
         strokeWidth: 0,
+        themeRole: "surface",
       },
       {
         id: "split-photo-hint",
@@ -101,6 +112,7 @@ const TEMPLATE_DEFINITIONS = [
         fontWeight: "normal",
         color: "#64748b",
         textAlign: "center",
+        themeRole: "muted",
       },
       {
         id: "split-photo-title",
@@ -115,6 +127,7 @@ const TEMPLATE_DEFINITIONS = [
         fontWeight: "bold",
         color: "#0f172a",
         textAlign: "left",
+        themeRole: "title",
       },
       {
         id: "split-photo-body",
@@ -129,6 +142,7 @@ const TEMPLATE_DEFINITIONS = [
         fontWeight: "normal",
         color: "#334154",
         textAlign: "left",
+        themeRole: "body",
       },
     ],
   },
@@ -148,6 +162,8 @@ const TEMPLATE_DEFINITIONS = [
         fill: "#ffffff",
         stroke: "#cbd5e1",
         strokeWidth: 3,
+        themeRole: "surface",
+        themeStrokeRole: "stroke",
       },
       {
         id: "quote-card-accent",
@@ -159,6 +175,7 @@ const TEMPLATE_DEFINITIONS = [
         fill: "#2563eb",
         stroke: "",
         strokeWidth: 0,
+        themeRole: "accent",
       },
       {
         id: "quote-card-quote",
@@ -173,6 +190,7 @@ const TEMPLATE_DEFINITIONS = [
         fontWeight: "normal",
         color: "#111827",
         textAlign: "left",
+        themeRole: "body",
       },
       {
         id: "quote-card-author",
@@ -187,12 +205,13 @@ const TEMPLATE_DEFINITIONS = [
         fontWeight: "normal",
         color: "#64748b",
         textAlign: "right",
+        themeRole: "muted",
       },
     ],
   },
   {
     id: "agenda-list",
-    label: "순서 목록",
+    label: "예배 순서",
     background: "#ffffff",
     elements: [
       {
@@ -208,6 +227,7 @@ const TEMPLATE_DEFINITIONS = [
         fontWeight: "bold",
         color: "#0f172a",
         textAlign: "left",
+        themeRole: "title",
       },
       {
         id: "agenda-list-rule",
@@ -218,6 +238,7 @@ const TEMPLATE_DEFINITIONS = [
         y2: 200,
         stroke: "#2563eb",
         strokeWidth: 4,
+        themeRole: "accent",
       },
       {
         id: "agenda-list-body",
@@ -232,15 +253,438 @@ const TEMPLATE_DEFINITIONS = [
         fontWeight: "normal",
         color: "#1f2937",
         textAlign: "left",
+        themeRole: "body",
+      },
+    ],
+  },
+  {
+    id: "scripture",
+    label: "성경 본문",
+    background: "#ffffff",
+    elements: [
+      {
+        id: "scripture-rule",
+        type: "rect",
+        x: 120,
+        y: 140,
+        width: 8,
+        height: 440,
+        fill: "#2563eb",
+        stroke: "",
+        strokeWidth: 0,
+        themeRole: "accent",
+      },
+      {
+        id: "scripture-verse",
+        type: "text",
+        x: 168,
+        y: 160,
+        width: 980,
+        height: 360,
+        text: "하나님이 세상을 이처럼 사랑하사 독생자를 주셨으니 이는 그를 믿는 자마다 멸망하지 않고 영생을 얻게 하려 하심이라",
+        fontFamily: "Malgun Gothic",
+        fontSize: 36,
+        fontWeight: "normal",
+        color: "#111827",
+        textAlign: "left",
+        themeRole: "title",
+      },
+      {
+        id: "scripture-ref",
+        type: "text",
+        x: 168,
+        y: 540,
+        width: 980,
+        height: 48,
+        text: "요한복음 3:16",
+        fontFamily: "Malgun Gothic",
+        fontSize: 24,
+        fontWeight: "normal",
+        color: "#64748b",
+        textAlign: "left",
+        themeRole: "muted",
+      },
+    ],
+  },
+  {
+    id: "lyrics",
+    label: "찬양 가사",
+    background: "#0f172a",
+    elements: [
+      {
+        id: "lyrics-song",
+        type: "text",
+        x: 140,
+        y: 72,
+        width: 1000,
+        height: 48,
+        text: "곡 제목",
+        fontFamily: "Malgun Gothic",
+        fontSize: 22,
+        fontWeight: "normal",
+        color: "#93b4fc",
+        textAlign: "center",
+        themeRole: "muted",
+      },
+      {
+        id: "lyrics-body",
+        type: "text",
+        x: 140,
+        y: 220,
+        width: 1000,
+        height: 360,
+        text: "가사를 입력하세요\n두 번째 줄",
+        fontFamily: "Malgun Gothic",
+        fontSize: 48,
+        fontWeight: "bold",
+        color: "#ffffff",
+        textAlign: "center",
+        themeRole: "title",
+      },
+    ],
+  },
+  {
+    id: "sermon-title",
+    label: "설교 제목",
+    background: "#0f172a",
+    elements: [
+      {
+        id: "sermon-title-kicker",
+        type: "text",
+        x: 140,
+        y: 176,
+        width: 1000,
+        height: 40,
+        text: "시리즈 이름",
+        fontFamily: "Malgun Gothic",
+        fontSize: 20,
+        fontWeight: "normal",
+        color: "#93b4fc",
+        textAlign: "left",
+        themeRole: "muted",
+      },
+      {
+        id: "sermon-title-bar",
+        type: "rect",
+        x: 140,
+        y: 232,
+        width: 72,
+        height: 6,
+        fill: "#1d4ed8",
+        stroke: "",
+        strokeWidth: 0,
+        themeRole: "accent",
+      },
+      {
+        id: "sermon-title-heading",
+        type: "text",
+        x: 140,
+        y: 260,
+        width: 1000,
+        height: 160,
+        text: "설교 제목",
+        fontFamily: "Malgun Gothic",
+        fontSize: 56,
+        fontWeight: "bold",
+        color: "#ffffff",
+        textAlign: "left",
+        themeRole: "title",
+      },
+      {
+        id: "sermon-title-meta",
+        type: "text",
+        x: 140,
+        y: 448,
+        width: 1000,
+        height: 48,
+        text: "본문 · 설교자",
+        fontFamily: "Malgun Gothic",
+        fontSize: 24,
+        fontWeight: "normal",
+        color: "#dbeafe",
+        textAlign: "left",
+        themeRole: "body",
+      },
+    ],
+  },
+  {
+    id: "sermon-points",
+    label: "설교 요점",
+    background: "#ffffff",
+    elements: [
+      {
+        id: "sermon-points-title",
+        type: "text",
+        x: 120,
+        y: 80,
+        width: 1040,
+        height: 72,
+        text: "오늘의 말씀",
+        fontFamily: "Malgun Gothic",
+        fontSize: 48,
+        fontWeight: "bold",
+        color: "#0f172a",
+        textAlign: "left",
+        themeRole: "title",
+      },
+      {
+        id: "sermon-points-body",
+        type: "text",
+        x: 120,
+        y: 180,
+        width: 1040,
+        height: 440,
+        text: "1. 첫 번째 요점\n2. 두 번째 요점\n3. 세 번째 요점",
+        fontFamily: "Malgun Gothic",
+        fontSize: 36,
+        fontWeight: "normal",
+        color: "#1f2937",
+        textAlign: "left",
+        themeRole: "body",
+      },
+    ],
+  },
+  {
+    id: "announcements",
+    label: "교회 광고",
+    background: "#ffffff",
+    elements: [
+      {
+        id: "announcements-title",
+        type: "text",
+        x: 120,
+        y: 80,
+        width: 1040,
+        height: 72,
+        text: "교회 소식",
+        fontFamily: "Malgun Gothic",
+        fontSize: 48,
+        fontWeight: "bold",
+        color: "#0f172a",
+        textAlign: "left",
+        themeRole: "title",
+      },
+      {
+        id: "announcements-body",
+        type: "text",
+        x: 120,
+        y: 180,
+        width: 1040,
+        height: 440,
+        text: "• 날짜 · 시간 · 장소\n• 두 번째 소식\n• 세 번째 소식",
+        fontFamily: "Malgun Gothic",
+        fontSize: 32,
+        fontWeight: "normal",
+        color: "#1f2937",
+        textAlign: "left",
+        themeRole: "body",
+      },
+    ],
+  },
+  {
+    id: "creed",
+    label: "공동 고백·기도문",
+    background: "#ffffff",
+    elements: [
+      {
+        id: "creed-kicker",
+        type: "text",
+        x: 140,
+        y: 64,
+        width: 1000,
+        height: 44,
+        text: "사도신경",
+        fontFamily: "Malgun Gothic",
+        fontSize: 22,
+        fontWeight: "normal",
+        color: "#64748b",
+        textAlign: "center",
+        themeRole: "muted",
+      },
+      {
+        id: "creed-body",
+        type: "text",
+        x: 140,
+        y: 130,
+        width: 1000,
+        height: 520,
+        text: "전능하사 천지를 만드신 하나님 아버지를 내가 믿사오며,\n그 외아들 우리 주 예수 그리스도를 믿사오니",
+        fontFamily: "Malgun Gothic",
+        fontSize: 32,
+        fontWeight: "normal",
+        color: "#111827",
+        textAlign: "center",
+        themeRole: "body",
+      },
+    ],
+  },
+  {
+    id: "prayer",
+    label: "기도 제목",
+    background: "#ffffff",
+    elements: [
+      {
+        id: "prayer-title",
+        type: "text",
+        x: 120,
+        y: 80,
+        width: 1040,
+        height: 72,
+        text: "기도 제목",
+        fontFamily: "Malgun Gothic",
+        fontSize: 48,
+        fontWeight: "bold",
+        color: "#0f172a",
+        textAlign: "left",
+        themeRole: "title",
+      },
+      {
+        id: "prayer-body",
+        type: "text",
+        x: 120,
+        y: 180,
+        width: 1040,
+        height: 440,
+        text: "1. 첫 번째 제목\n2. 두 번째 제목\n3. 세 번째 제목",
+        fontFamily: "Malgun Gothic",
+        fontSize: 36,
+        fontWeight: "normal",
+        color: "#1f2937",
+        textAlign: "left",
+        themeRole: "body",
+      },
+    ],
+  },
+  {
+    id: "welcome",
+    label: "환영",
+    background: "#ffffff",
+    elements: [
+      {
+        id: "welcome-title",
+        type: "text",
+        x: 120,
+        y: 250,
+        width: 1040,
+        height: 120,
+        text: "환영합니다",
+        fontFamily: "Malgun Gothic",
+        fontSize: 72,
+        fontWeight: "bold",
+        color: "#0f172a",
+        textAlign: "center",
+        themeRole: "title",
+      },
+      {
+        id: "welcome-body",
+        type: "text",
+        x: 180,
+        y: 400,
+        width: 920,
+        height: 80,
+        text: "오늘 처음 오신 분들을 진심으로 환영합니다",
+        fontFamily: "Malgun Gothic",
+        fontSize: 28,
+        fontWeight: "normal",
+        color: "#64748b",
+        textAlign: "center",
+        themeRole: "muted",
+      },
+    ],
+  },
+  {
+    id: "offering",
+    label: "봉헌",
+    background: "#ffffff",
+    elements: [
+      {
+        id: "offering-title",
+        type: "text",
+        x: 120,
+        y: 240,
+        width: 1040,
+        height: 100,
+        text: "봉헌",
+        fontFamily: "Malgun Gothic",
+        fontSize: 64,
+        fontWeight: "bold",
+        color: "#0f172a",
+        textAlign: "center",
+        themeRole: "title",
+      },
+      {
+        id: "offering-body",
+        type: "text",
+        x: 160,
+        y: 360,
+        width: 960,
+        height: 80,
+        text: "하나님을 찬송하는 마음으로 드립니다",
+        fontFamily: "Malgun Gothic",
+        fontSize: 28,
+        fontWeight: "normal",
+        color: "#64748b",
+        textAlign: "center",
+        themeRole: "muted",
+      },
+    ],
+  },
+  {
+    id: "next-week",
+    label: "다음 주 안내",
+    background: "#ffffff",
+    elements: [
+      {
+        id: "next-week-kicker",
+        type: "text",
+        x: 120,
+        y: 220,
+        width: 420,
+        height: 40,
+        text: "다음 주일",
+        fontFamily: "Malgun Gothic",
+        fontSize: 20,
+        fontWeight: "normal",
+        color: "#64748b",
+        textAlign: "left",
+        themeRole: "muted",
+      },
+      {
+        id: "next-week-date",
+        type: "text",
+        x: 120,
+        y: 268,
+        width: 420,
+        height: 180,
+        text: "주일",
+        fontFamily: "Malgun Gothic",
+        fontSize: 72,
+        fontWeight: "bold",
+        color: "#0f172a",
+        textAlign: "left",
+        themeRole: "title",
+      },
+      {
+        id: "next-week-body",
+        type: "text",
+        x: 580,
+        y: 268,
+        width: 580,
+        height: 220,
+        text: "주일예배\n오전 11:00 · 본당",
+        fontFamily: "Malgun Gothic",
+        fontSize: 32,
+        fontWeight: "normal",
+        color: "#1f2937",
+        textAlign: "left",
+        themeRole: "body",
       },
     ],
   },
 ];
 
-export const CUSTOM_SLIDE_TEMPLATES = TEMPLATE_DEFINITIONS.map((definition) => ({
-  id: definition.id,
-  label: definition.label,
-  model: normalizeCustomSlide({
+export const CUSTOM_SLIDE_TEMPLATES = TEMPLATE_DEFINITIONS.map((definition) => {
+  const model = normalizeCustomSlide({
     version: 1,
     width: SLIDE_WIDTH,
     height: SLIDE_HEIGHT,
@@ -251,10 +695,16 @@ export const CUSTOM_SLIDE_TEMPLATES = TEMPLATE_DEFINITIONS.map((definition) => (
       zIndex: index,
       ...element,
     })),
-  }),
-}));
+  });
+  return {
+    id: definition.id,
+    label: definition.label,
+    nativePalette: nativePaletteFromDefinition(definition),
+    model,
+  };
+});
 
-export function instantiateTemplate(templateId, idFactory) {
+export function instantiateTemplate(templateId, idFactory, themeId = "native") {
   const template =
     CUSTOM_SLIDE_TEMPLATES.find((candidate) => candidate.id === templateId) ??
     CUSTOM_SLIDE_TEMPLATES.find((candidate) => candidate.id === "blank");
@@ -263,7 +713,14 @@ export function instantiateTemplate(templateId, idFactory) {
     return createDefaultCustomSlide();
   }
 
-  return cloneCustomSlide(template.model, idFactory);
+  const resolvedThemeId = isThemeId(themeId) ? themeId : "native";
+  const cloned = cloneCustomSlide(template.model, idFactory);
+  const painted = applyTheme(cloned, resolvePalette(resolvedThemeId, template.nativePalette));
+  return normalizeCustomSlide({
+    ...painted,
+    templateId: template.id,
+    themeId: resolvedThemeId,
+  });
 }
 
 export function decideKeyboardCommand(event) {
@@ -637,6 +1094,8 @@ function tagObject(object, element, fabric) {
     role: "element",
     customElementId: element.id,
     elementType: element.type,
+    ...(element.themeRole ? { themeRole: element.themeRole } : {}),
+    ...(element.themeStrokeRole ? { themeStrokeRole: element.themeStrokeRole } : {}),
   });
   return applyElementChrome(object, element, fabric);
 }
@@ -890,6 +1349,8 @@ function lineDescriptor(object) {
     stroke: object.stroke,
     strokeWidth: object.strokeWidth,
     opacity: object.opacity,
+    ...(object.themeRole ? { themeRole: object.themeRole } : {}),
+    ...(object.themeStrokeRole ? { themeStrokeRole: object.themeStrokeRole } : {}),
   };
 }
 
@@ -921,6 +1382,8 @@ export function fabricObjectToDescriptor(object) {
     scaleY: Math.abs(object.scaleY ?? 1),
     angle: object.angle ?? 0,
     opacity: object.opacity ?? 1,
+    ...(object.themeRole ? { themeRole: object.themeRole } : {}),
+    ...(object.themeStrokeRole ? { themeStrokeRole: object.themeStrokeRole } : {}),
   };
 
   switch (object.elementType) {
@@ -1065,6 +1528,7 @@ export async function createCustomSlideEditor(root, options = {}) {
     canvas: root.querySelector('[data-custom-editor="canvas"]'),
     stage: root.querySelector('[data-custom-editor="stage"]'),
     template: root.querySelector('[data-custom-editor="template"]'),
+    theme: root.querySelector('[data-custom-editor="theme"]'),
     file: root.querySelector('[data-custom-editor="file"]'),
     status: root.querySelector('[data-custom-editor="status"]'),
     error: root.querySelector('[data-custom-editor="error"]'),
@@ -1326,6 +1790,7 @@ export async function createCustomSlideEditor(root, options = {}) {
     // immediate serialize/isDirty is stable.
     model = serialize();
     history.reset(model, { markSaved });
+    setThemeSelectValue(model.themeId);
     setStatus("슬라이드를 불러왔습니다.");
     refreshActionStates();
     notifyChange();
@@ -2046,7 +2511,8 @@ export async function createCustomSlideEditor(root, options = {}) {
     if (destroyed) {
       return model;
     }
-    model = instantiateTemplate(templateId, nextId);
+    const themeId = root.querySelector('[data-custom-editor="theme"]')?.value ?? "native";
+    model = instantiateTemplate(templateId, nextId, themeId);
     const rendered = await renderModel(model);
     if (!rendered || destroyed) {
       return model;
@@ -2054,6 +2520,38 @@ export async function createCustomSlideEditor(root, options = {}) {
     pushHistory();
     setStatus("템플릿을 적용했습니다.");
     return model;
+  }
+
+  async function applyCurrentTheme(themeId) {
+    if (destroyed) {
+      return model;
+    }
+    const current = syncModel();
+    const template = CUSTOM_SLIDE_TEMPLATES.find((item) => item.id === current.templateId);
+    const native =
+      template?.nativePalette ??
+      nativePaletteFromDefinition({
+        background: current.background?.color,
+        elements: current.elements,
+      });
+    model = normalizeCustomSlide({
+      ...applyTheme(current, resolvePalette(themeId, native)),
+      templateId: current.templateId,
+    });
+    setThemeSelectValue(model.themeId);
+    const rendered = await renderModel(model);
+    if (!rendered || destroyed) {
+      return model;
+    }
+    pushHistory();
+    setStatus("테마를 적용했습니다.");
+    return model;
+  }
+
+  function setThemeSelectValue(themeId) {
+    for (const select of root.querySelectorAll('[data-custom-editor="theme"]')) {
+      select.value = themeId || "native";
+    }
   }
 
   // A reset intentionally leaves a dirty blank slide with one undo back to the
@@ -2145,7 +2643,7 @@ export async function createCustomSlideEditor(root, options = {}) {
         }
         break;
       case "color":
-        active.set({ fill: input.value });
+        active.set({ fill: input.value, themeRole: undefined });
         break;
       case "textAlign":
         active.set({ textAlign: input.value });
@@ -2157,10 +2655,10 @@ export async function createCustomSlideEditor(root, options = {}) {
         break;
       }
       case "fill":
-        active.set({ fill: input.value });
+        active.set({ fill: input.value, themeRole: undefined });
         break;
       case "stroke":
-        active.set({ stroke: input.value || null });
+        active.set({ stroke: input.value || null, themeStrokeRole: undefined });
         break;
       case "strokeWidth":
         active.set({ strokeWidth: Number(input.value) || 0 });
@@ -2171,7 +2669,7 @@ export async function createCustomSlideEditor(root, options = {}) {
             stroke: active.stroke ?? "",
             strokeWidth: active.strokeWidth ?? 0,
           });
-          active.set({ stroke: null, strokeWidth: 0 });
+          active.set({ stroke: null, strokeWidth: 0, themeStrokeRole: undefined });
         } else {
           const remembered = strokeMemory.get(active);
           const color = remembered?.stroke || field("stroke")?.value || "#000000";
@@ -2335,6 +2833,12 @@ export async function createCustomSlideEditor(root, options = {}) {
   if (dom.template) {
     listen(dom.template, "change", () => {
       setStatus(`${dom.template.selectedOptions[0]?.textContent ?? ""} 템플릿을 선택했습니다.`);
+    });
+  }
+
+  for (const select of root.querySelectorAll('[data-custom-editor="theme"]')) {
+    listen(select, "change", () => {
+      applyCurrentTheme(select.value);
     });
   }
 
@@ -2611,6 +3115,17 @@ export async function createCustomSlideEditor(root, options = {}) {
       const option = select.ownerDocument.createElement("option");
       option.value = template.id;
       option.textContent = template.label;
+      select.append(option);
+    }
+  }
+
+  const themeSelects = root.querySelectorAll('[data-custom-editor="theme"]');
+  for (const select of themeSelects) {
+    select.replaceChildren();
+    for (const theme of CUSTOM_SLIDE_THEMES) {
+      const option = select.ownerDocument.createElement("option");
+      option.value = theme.id;
+      option.textContent = theme.label;
       select.append(option);
     }
   }

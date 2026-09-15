@@ -10,6 +10,7 @@ debug_pptx.js
 .env
 data/slides.json
 .claude/
+.superpowers/
 .worktrees/
 test_bongdok.js
 tmp-lo-profile/

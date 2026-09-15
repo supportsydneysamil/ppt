@@ -3011,11 +3011,10 @@ body[data-theme="light"] .rte-textarea {
 }
 
 /* PPTX Preview Layout (Vertical Scroll) */
-.pptx-renderer {
-  display: flex !important;
-  flex-direction: column !important;
-  gap: 20px;
-  padding: 20px;
+/* No horizontal padding: the viewer fits slides to the container's clientWidth,
+   which counts padding, so side padding would push slides past the edge. */
+.pptx-deck {
+  padding: 20px 0;
   width: 100%;
   box-sizing: border-box;
 }
@@ -3052,29 +3051,13 @@ body[data-theme="light"] .rte-textarea {
   border-radius: 4px;
 }
 
-/* Force PPTXjs slides styling */
-.pptx-renderer .slide {
-  margin-bottom: 20px !important;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
-  /* Let library handle width/height/transform via slidesScale */
-  /* We only ensure it doesn't overflow container if library messes up */
-  /* max-width: 100%; REMOVED to allow proper JS scaling */
-  will-change: transform;
-}
-
-/* Ensure wrapper doesn't lock width */
-.pptx-renderer>div,
-.pptx-wrapper {
-  width: 100% !important;
-  max-width: 100% !important;
-  height: auto !important;
-  min-height: 0 !important;
-}
-
-.pptx-slide-frame {
-  position: relative;
+/* The viewer sizes each slide wrapper itself, so styling stays cosmetic.
+   data-slide-index is the wrapper hook it exposes in list mode. */
+.pptx-deck [data-slide-index] {
   margin: 0 auto 20px;
-  overflow: visible;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
+  overflow: hidden;
 }
 
 /* Zoom Controls Overlay */

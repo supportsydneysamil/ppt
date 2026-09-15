@@ -26,6 +26,65 @@ describe("createDefaultCustomSlide", () => {
   });
 });
 
+describe("theme fields", () => {
+  it("keeps themeId, templateId, and element roles", () => {
+    const normalized = normalizeCustomSlide({
+      themeId: "plain",
+      templateId: "title-hero",
+      extra: "drop",
+      elements: [
+        {
+          type: "text",
+          text: "Hi",
+          themeRole: "title",
+          themeStrokeRole: "nope",
+        },
+        {
+          type: "roundRect",
+          themeRole: "surface",
+          themeStrokeRole: "stroke",
+          fill: "#ffffff",
+          stroke: "#cbd5e1",
+          strokeWidth: 3,
+        },
+      ],
+    });
+    assert.equal(normalized.themeId, "plain");
+    assert.equal(normalized.templateId, "title-hero");
+    assert.equal("extra" in normalized, false);
+    assert.equal(normalized.elements[0].themeRole, "title");
+    assert.equal("themeStrokeRole" in normalized.elements[0], false);
+    assert.equal(normalized.elements[1].themeRole, "surface");
+    assert.equal(normalized.elements[1].themeStrokeRole, "stroke");
+  });
+
+  it("round-trips theme roles through fabric objects", () => {
+    const model = normalizeCustomSlide({
+      themeId: "deep-black",
+      templateId: "quote-card",
+      elements: [
+        {
+          type: "roundRect",
+          x: 10,
+          y: 10,
+          width: 100,
+          height: 80,
+          themeRole: "surface",
+          themeStrokeRole: "stroke",
+          fill: "#ffffff",
+          stroke: "#cbd5e1",
+          strokeWidth: 3,
+        },
+      ],
+    });
+    const roundTripped = fabricObjectsToCustomSlide(customSlideToFabricObjects(model));
+    assert.equal(roundTripped.themeId, "deep-black");
+    assert.equal(roundTripped.templateId, "quote-card");
+    assert.equal(roundTripped.elements[0].themeRole, "surface");
+    assert.equal(roundTripped.elements[0].themeStrokeRole, "stroke");
+  });
+});
+
 describe("normalizeCustomSlide", () => {
   it("fills defaults and strips unknown top-level fields", () => {
     const normalized = normalizeCustomSlide({

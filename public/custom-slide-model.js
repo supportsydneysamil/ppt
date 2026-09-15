@@ -1,3 +1,5 @@
+import { isThemeId, normalizeThemeRole } from "./custom-slide-themes.js";
+
 const DEFAULT_WIDTH = 1280;
 const DEFAULT_HEIGHT = 720;
 const DEFAULT_BACKGROUND = "#ffffff";
@@ -392,9 +394,19 @@ function normalizeCommonFields(element, index, canvasWidth, canvasHeight) {
     visible: element.visible !== false,
     locked: Boolean(element.locked),
     shadow: normalizeShadow(element.shadow),
+    ...themeRoleFields(element),
   };
 
   return normalizeBoxGeometry(common, canvasWidth, canvasHeight);
+}
+
+function themeRoleFields(element) {
+  const themeRole = normalizeThemeRole(element.themeRole);
+  const themeStrokeRole = normalizeThemeRole(element.themeStrokeRole);
+  return {
+    ...(themeRole ? { themeRole } : {}),
+    ...(themeStrokeRole ? { themeStrokeRole } : {}),
+  };
 }
 
 function normalizeTextElement(element, index, canvasWidth, canvasHeight) {
@@ -473,6 +485,7 @@ function normalizeLineElement(element, index, canvasWidth, canvasHeight) {
     visible: element.visible !== false,
     locked: Boolean(element.locked),
     shadow: normalizeShadow(element.shadow),
+    ...themeRoleFields(element),
   };
 }
 
@@ -527,6 +540,15 @@ export function normalizeCustomSlide(input) {
       zIndex: index,
     }));
 
+  const themeId =
+    typeof source.themeId === "string" && source.themeId
+      ? isThemeId(source.themeId)
+        ? source.themeId
+        : "native"
+      : undefined;
+  const templateId =
+    typeof source.templateId === "string" && source.templateId ? source.templateId : undefined;
+
   return {
     version: 1,
     width,
@@ -534,6 +556,8 @@ export function normalizeCustomSlide(input) {
     background: {
       color: normalizeColor(source.background?.color, DEFAULT_BACKGROUND),
     },
+    ...(themeId ? { themeId } : {}),
+    ...(templateId ? { templateId } : {}),
     elements: normalizedElements,
   };
 }
@@ -594,6 +618,8 @@ function backgroundFabricObject(slide) {
     fill: slide.background.color,
     selectable: false,
     evented: false,
+    ...(slide.themeId ? { customThemeId: slide.themeId } : {}),
+    ...(slide.templateId ? { customTemplateId: slide.templateId } : {}),
   };
 }
 
@@ -633,6 +659,7 @@ function elementToFabricObject(element) {
       customLocked: Boolean(element.locked),
       customVisible: element.visible !== false,
       shadow: element.shadow,
+      ...themeRoleFields(element),
     };
   }
 
@@ -657,6 +684,7 @@ function elementToFabricObject(element) {
     customLocked: Boolean(element.locked),
     customVisible: element.visible !== false,
     shadow: element.shadow,
+    ...themeRoleFields(element),
   };
 
   switch (element.type) {
@@ -816,6 +844,12 @@ export function fabricObjectsToCustomSlide(objects, base) {
   if (background && typeof background.fill === "string") {
     slide.background.color = background.fill;
   }
+  if (typeof background?.customThemeId === "string" && background.customThemeId) {
+    slide.themeId = background.customThemeId;
+  }
+  if (typeof background?.customTemplateId === "string" && background.customTemplateId) {
+    slide.templateId = background.customTemplateId;
+  }
 
   slide.elements = sourceObjects
     .filter((object) => object && object.role !== "background")
@@ -850,6 +884,7 @@ function fabricObjectToElement(object, orderIndex) {
       visible: object.visible !== false && object.customVisible !== false,
       locked: Boolean(object.customLocked) || object.selectable === false,
       shadow: fabricShadowToModel(object.shadow),
+      ...themeRoleFields(object),
     };
   }
 
@@ -871,6 +906,7 @@ function fabricObjectToElement(object, orderIndex) {
     visible: object.visible !== false && object.customVisible !== false,
     locked: Boolean(object.customLocked) || object.selectable === false,
     shadow: fabricShadowToModel(object.shadow),
+    ...themeRoleFields(object),
   };
 
   switch (elementType) {

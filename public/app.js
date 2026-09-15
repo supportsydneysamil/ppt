@@ -1809,9 +1809,7 @@ function cleanupPreviewResources() {
   const state = slidePreview.__pptxPreviewState;
   if (!state) return;
 
-  if (state.fitInterval) clearInterval(state.fitInterval);
-  if (state.resizeObserver) state.resizeObserver.disconnect();
-  if (state.rafId) cancelAnimationFrame(state.rafId);
+  if (state.viewer) state.viewer.destroy();
   if (state.objectUrl) URL.revokeObjectURL(state.objectUrl);
 
   slidePreview.__pptxPreviewState = null;
@@ -3207,11 +3205,11 @@ function renderPreview(slideOverride) {
     ph.style.minHeight = '100%';
     ph.style.padding = '0'; // No padding
 
-    // Container for PPTXjs
-    const pptxContainerId = "pptx-renderer-" + Date.now();
+    // Container for the deck viewer
+    const pptxContainerId = "pptx-deck-" + Date.now();
     const pptxContainer = document.createElement('div');
     pptxContainer.id = pptxContainerId;
-    pptxContainer.className = "pptx-renderer";
+    pptxContainer.className = "pptx-deck";
 
     let fileUrl = null;
 
@@ -3257,14 +3255,12 @@ function renderPreview(slideOverride) {
               <div style="font-size:13px;color:#aaa;">로컬 업로드된 .ppt 파일은 미리보기를 지원하지 않습니다.<br>외부 링크 파일만 지원됩니다.</div>
           </div>`;
       }
-    } else if (fileUrl && window.jQuery && window.jQuery.fn.pptxToHtml) {
+    } else if (fileUrl) {
       ph.appendChild(pptxContainer);
 
       const previewState = {
-        fitInterval: null,
         objectUrl: data.file && !data.file.name.toLowerCase().endsWith('.ppt') ? fileUrl : null,
-        rafId: 0,
-        resizeObserver: null
+        viewer: null
       };
       slidePreview.__pptxPreviewState = previewState;
 
@@ -3276,140 +3272,81 @@ function renderPreview(slideOverride) {
         slidePreview.dataset.lastRenderedPath = data.serverFilePath;
       }
 
-      // Render
-      setTimeout(() => {
+      // Deferred so the placeholder is in the DOM first: the viewer measures the
+      // container to fit slides, and a detached container measures as zero.
+      setTimeout(async () => {
         if (slidePreview.__pptxPreviewState !== previewState) return;
 
+        // The viewer fits slides to the container itself, so this zoom rides on
+        // top of that fit scale rather than replacing it.
+        let zoomPercent = 100;
+
+        const controls = document.createElement('div');
+        controls.className = 'zoom-controls';
+        controls.innerHTML = `
+          <button class="zoom-btn" id="zoom-out-${pptxContainerId}">-</button>
+          <span class="zoom-display" id="zoom-val-${pptxContainerId}">100%</span>
+          <button class="zoom-btn" id="zoom-in-${pptxContainerId}">+</button>
+          <button class="zoom-btn" id="zoom-reset-${pptxContainerId}" title="Reset">⟲</button>
+        `;
+        slidePreview.appendChild(controls); // Fixed position, not inside scroll area
+
+        const applyZoom = (next) => {
+          zoomPercent = Math.min(300, Math.max(20, next));
+          const display = document.getElementById('zoom-val-' + pptxContainerId);
+          if (display) display.textContent = zoomPercent + '%';
+          previewState.viewer?.setZoom(zoomPercent);
+        };
+
+        const btnIn = document.getElementById(`zoom-in-${pptxContainerId}`);
+        const btnOut = document.getElementById(`zoom-out-${pptxContainerId}`);
+        const btnReset = document.getElementById(`zoom-reset-${pptxContainerId}`);
+
+        if (btnIn) btnIn.onclick = (e) => {
+          e.stopPropagation();
+          applyZoom(zoomPercent + 10);
+        };
+        if (btnOut) btnOut.onclick = (e) => {
+          e.stopPropagation();
+          applyZoom(zoomPercent - 10);
+        };
+        if (btnReset) btnReset.onclick = (e) => {
+          e.stopPropagation();
+          applyZoom(100);
+        };
+
         try {
-          window.jQuery(`#${pptxContainerId}`).pptxToHtml({
-            pptxFileUrl: fileUrl,
-            slidesScale: "50%", // Render at 50% of native
-            slideMode: false,
-            keyBoardShortCut: false
+          // Font CSS is large because Korean is split into unicode ranges. Load
+          // it only when a PPTX is previewed; the browser then fetches only the
+          // glyph chunks used by that deck.
+          await import('./pptx-font-fallbacks.css');
+          const { PptxViewer, RECOMMENDED_ZIP_LIMITS } = await import('@aiden0z/pptx-renderer');
+          if (slidePreview.__pptxPreviewState !== previewState) return;
+
+          // A locally picked file goes straight in as a Blob; only a server path
+          // needs fetching.
+          const source = data.file || (await fetch(fileUrl).then((resp) => resp.blob()));
+          if (slidePreview.__pptxPreviewState !== previewState) return;
+
+          const viewer = await PptxViewer.open(source, pptxContainer, {
+            renderMode: 'list',
+            fitMode: 'contain',
+            // Uploads are untrusted, so the zip guards stay on.
+            zipLimits: RECOMMENDED_ZIP_LIMITS,
+            scrollContainer: slidePreview,
+            lazySlides: true,
+            lazyMedia: true,
+            listOptions: { windowed: true, initialSlides: 4, batchSize: 4 }
           });
 
-          // Zoom State
-          let manualZoomMultiplier = 1.0;
-
-          const ensureSlideFrame = (slide) => {
-            let frame = slide.parentElement;
-            if (frame && frame.classList.contains('pptx-slide-frame')) {
-              return frame;
-            }
-
-            frame = document.createElement('div');
-            frame.className = 'pptx-slide-frame';
-            slide.parentNode.insertBefore(frame, slide);
-            frame.appendChild(slide);
-            return frame;
-          };
-
-          const scheduleScale = () => {
-            if (slidePreview.__pptxPreviewState !== previewState) return;
-            if (previewState.rafId) cancelAnimationFrame(previewState.rafId);
-            previewState.rafId = requestAnimationFrame(() => {
-              previewState.rafId = 0;
-              applyScale();
-            });
-          };
-
-          // Helper: Apply stable scale without feeding layout changes back into ResizeObserver
-          const applyScale = () => {
-            const container = document.getElementById(pptxContainerId);
-            if (!container) return;
-
-            const slides = container.querySelectorAll('.slide');
-            if (slides.length === 0) return;
-
-            const styles = window.getComputedStyle(container);
-            const paddingX = parseFloat(styles.paddingLeft) + parseFloat(styles.paddingRight);
-            const availableWidth = (container.offsetWidth - paddingX) || 400;
-
-            slides.forEach(slide => {
-              const frame = ensureSlideFrame(slide);
-              const naturalWidth = parseFloat(slide.dataset.naturalWidth || "0") || slide.offsetWidth || slide.scrollWidth || 500;
-              const naturalHeight = parseFloat(slide.dataset.naturalHeight || "0") || slide.offsetHeight || slide.scrollHeight || 281;
-              slide.dataset.naturalWidth = String(naturalWidth);
-              slide.dataset.naturalHeight = String(naturalHeight);
-
-              const baseScale = (availableWidth / naturalWidth) * 0.99;
-              const finalScale = Math.max(0.2, baseScale * manualZoomMultiplier);
-
-              frame.style.width = `${naturalWidth * finalScale}px`;
-              frame.style.height = `${naturalHeight * finalScale}px`;
-              slide.style.transform = `scale(${finalScale})`;
-              slide.style.transformOrigin = 'top left';
-              slide.style.margin = '0';
-              slide.style.borderRadius = "4px";
-              slide.style.overflow = "hidden";
-            });
-
-            // Update display text
-            const display = document.getElementById('zoom-val-' + pptxContainerId);
-            if (display) display.textContent = Math.round(manualZoomMultiplier * 100) + '%';
-          };
-
-          // Create Zoom Controls
-          const controls = document.createElement('div');
-          controls.className = 'zoom-controls';
-          controls.innerHTML = `
-            <button class="zoom-btn" id="zoom-out-${pptxContainerId}">-</button>
-            <span class="zoom-display" id="zoom-val-${pptxContainerId}">100%</span>
-            <button class="zoom-btn" id="zoom-in-${pptxContainerId}">+</button>
-            <button class="zoom-btn" id="zoom-reset-${pptxContainerId}" title="Reset">⟲</button>
-          `;
-          slidePreview.appendChild(controls); // Fixed position, not inside scroll area
-
-          // Event Listeners for Zoom
-          const btnIn = document.getElementById(`zoom-in-${pptxContainerId}`);
-          const btnOut = document.getElementById(`zoom-out-${pptxContainerId}`);
-          const btnReset = document.getElementById(`zoom-reset-${pptxContainerId}`);
-
-          if (btnIn) btnIn.onclick = (e) => {
-            e.stopPropagation();
-            manualZoomMultiplier = Math.min(manualZoomMultiplier + 0.1, 3.0);
-            scheduleScale();
-          };
-          if (btnOut) btnOut.onclick = (e) => {
-            e.stopPropagation();
-            manualZoomMultiplier = Math.max(manualZoomMultiplier - 0.1, 0.2);
-            scheduleScale();
-          };
-          if (btnReset) btnReset.onclick = (e) => {
-            e.stopPropagation();
-            manualZoomMultiplier = 1.0;
-            scheduleScale();
-          };
-
-          // Post-render: poll for slides and apply zoom to fit container
-          let checks = 0;
-          previewState.fitInterval = setInterval(() => {
-            checks++;
-            const container = document.getElementById(pptxContainerId);
-            if (!container || slidePreview.__pptxPreviewState !== previewState) {
-              clearInterval(previewState.fitInterval);
-              previewState.fitInterval = null;
-              return;
-            }
-
-            const slides = container.querySelectorAll('.slide');
-            if (slides.length > 0) {
-              scheduleScale();
-            }
-            if (checks > 30) {
-              clearInterval(previewState.fitInterval);
-              previewState.fitInterval = null;
-            }
-          }, 100);
-
-          // Observe the stable outer shell, not transformed slide nodes.
-          previewState.resizeObserver = new ResizeObserver(() => {
-            scheduleScale();
-          });
-          previewState.resizeObserver.observe(slidePreview);
-
+          // A newer preview may have replaced this one while the deck parsed.
+          if (slidePreview.__pptxPreviewState !== previewState) {
+            viewer.destroy();
+            return;
+          }
+          previewState.viewer = viewer;
         } catch (e) {
-          console.error("PPTXjs error:", e);
+          console.error("PPTX preview error:", e);
           pptxContainer.textContent = "미리보기 로딩 실패";
         }
       }, 50);

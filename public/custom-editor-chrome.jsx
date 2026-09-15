@@ -22,6 +22,7 @@ import {
 
 import { ColorPicker } from "./color-picker.jsx";
 import { CUSTOM_SLIDE_TEMPLATES } from "./custom-slide-editor.js";
+import { CUSTOM_SLIDE_THEMES } from "./custom-slide-themes.js";
 import { SAFE_SLIDE_FONTS } from "./custom-slide-fonts.js";
 
 function ToolButton({ action, label, children, danger = false }) {
@@ -73,6 +74,16 @@ export function CustomEditorChrome() {
         >
           템플릿 적용
         </button>
+        <label className="custom-editor-field">
+          <span className="field-label">테마</span>
+          <select data-custom-editor="theme" aria-label="커스텀 슬라이드 테마" title="커스텀 슬라이드 테마">
+            {CUSTOM_SLIDE_THEMES.map((theme) => (
+              <option key={theme.id} value={theme.id}>
+                {theme.label}
+              </option>
+            ))}
+          </select>
+        </label>
         <label className="custom-editor-field">
           <span className="field-label">배경색</span>
           <ColorPicker

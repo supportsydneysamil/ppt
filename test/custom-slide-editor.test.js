@@ -27,29 +27,45 @@ import {
 
 const CANVAS = { width: 1280, height: 720 };
 
-test("templates expose a blank preset and at least three editable designs", () => {
-  assert.ok(Array.isArray(CUSTOM_SLIDE_TEMPLATES));
-
-  const blank = CUSTOM_SLIDE_TEMPLATES.filter((template) => template.id === "blank");
-  assert.equal(blank.length, 1);
-  assert.equal(blank[0].model.elements.length, 0);
+test("templates include fifteen church layouts with roles", () => {
+  const expected = [
+    ["blank", "빈 슬라이드"],
+    ["title-hero", "타이틀 히어로"],
+    ["split-photo", "좌우 분할 (사진)"],
+    ["quote-card", "인용 카드"],
+    ["agenda-list", "예배 순서"],
+    ["scripture", "성경 본문"],
+    ["lyrics", "찬양 가사"],
+    ["sermon-title", "설교 제목"],
+    ["sermon-points", "설교 요점"],
+    ["announcements", "교회 광고"],
+    ["creed", "공동 고백·기도문"],
+    ["prayer", "기도 제목"],
+    ["welcome", "환영"],
+    ["offering", "봉헌"],
+    ["next-week", "다음 주 안내"],
+  ];
+  assert.deepEqual(
+    CUSTOM_SLIDE_TEMPLATES.map((template) => [template.id, template.label]),
+    expected
+  );
 
   const designs = CUSTOM_SLIDE_TEMPLATES.filter((template) => template.id !== "blank");
-  assert.ok(designs.length >= 3, `expected 3+ designs, got ${designs.length}`);
-
-  const ids = new Set();
-  for (const template of CUSTOM_SLIDE_TEMPLATES) {
-    assert.equal(typeof template.id, "string");
-    assert.ok(template.id.length > 0);
-    assert.equal(typeof template.label, "string");
-    assert.ok(template.label.length > 0);
-    assert.equal(ids.has(template.id), false);
-    ids.add(template.id);
-  }
-
   for (const template of designs) {
-    assert.ok(template.model.elements.length > 0, `${template.id} must have elements`);
+    const roled = template.model.elements.filter((element) => element.themeRole);
+    assert.ok(roled.length > 0, `${template.id} needs themeRole`);
   }
+
+  const hero = instantiateTemplate("title-hero");
+  assert.equal(hero.background.color, "#0f172a");
+  assert.equal(hero.templateId, "title-hero");
+  assert.equal(hero.themeId, "native");
+
+  const plainHero = instantiateTemplate("title-hero", undefined, "plain");
+  assert.equal(plainHero.background.color, "#ffffff");
+  const title = plainHero.elements.find((element) => element.themeRole === "title");
+  assert.equal(title.color, "#111827");
+  assert.equal(title.text, "제목을 입력하세요");
 });
 
 test("every template model survives normalization unchanged", () => {

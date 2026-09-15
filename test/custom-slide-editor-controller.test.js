@@ -8,6 +8,7 @@ import {
   CUSTOM_SLIDE_TEMPLATES,
   createCustomSlideEditor,
 } from "../public/custom-slide-editor.js";
+import { CUSTOM_SLIDE_THEMES } from "../public/custom-slide-themes.js";
 import * as fakeFabric from "./fixtures/fake-fabric.js";
 
 const FAKE_FABRIC_URL = new URL("./fixtures/fake-fabric.js", import.meta.url).href;
@@ -1065,6 +1066,39 @@ test("template options come from the editor module instead of the markup", async
     Array.from(select.options).map((option) => option.textContent),
     CUSTOM_SLIDE_TEMPLATES.map((template) => template.label)
   );
+
+  await ctx.editor.destroy();
+});
+
+test("theme options come from the theme module and recolor without rewriting copy", async () => {
+  const host = createHost();
+  const select = host.root.querySelector('[data-custom-editor="theme"]');
+  assert.equal(select.options.length, 0, "index.html must not hardcode theme options");
+
+  const ctx = await createEditor({ host });
+  const themeSelect = host.root.querySelector('[data-custom-editor="theme"]');
+  assert.ok(themeSelect);
+  assert.deepEqual(
+    Array.from(themeSelect.options).map((option) => option.value),
+    CUSTOM_SLIDE_THEMES.map((theme) => theme.id)
+  );
+
+  await ctx.editor.applyTemplate("title-hero");
+  const before = ctx.editor.serialize();
+  const title = before.elements.find((element) => element.themeRole === "title");
+  assert.equal(title.text, "제목을 입력하세요");
+  assert.equal(before.background.color, "#0f172a");
+
+  themeSelect.value = "plain";
+  themeSelect.dispatchEvent(new host.window.Event("change", { bubbles: true }));
+  await flush();
+
+  const after = ctx.editor.serialize();
+  const afterTitle = after.elements.find((element) => element.themeRole === "title");
+  assert.equal(after.background.color, "#ffffff");
+  assert.equal(afterTitle.text, "제목을 입력하세요");
+  assert.equal(afterTitle.color, "#111827");
+  assert.equal(after.themeId, "plain");
 
   await ctx.editor.destroy();
 });
