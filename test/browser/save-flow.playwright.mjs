@@ -834,6 +834,42 @@ async function waitForAlert(diagnostics, text) {
 }
 
 await runScenario(
+  "global and PPT navigation stay fixed while content surfaces change",
+  async (page) => {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await setup(page);
+    const positions = () =>
+      page.evaluate(() =>
+        Object.fromEntries(
+          [
+            "#navExtractor",
+            "#navPpt",
+            "#appSettingsBtn",
+            "#tabSlidesBtn",
+            "#tabTemplatesBtn",
+          ].map((selector) => [
+            selector,
+            Math.round(
+              document.querySelector(selector).getBoundingClientRect().left
+            ),
+          ])
+        )
+      );
+
+    const slides = await positions();
+    await page.locator("#tabTemplatesBtn").click();
+    const templates = await positions();
+    assert.deepEqual(templates, slides);
+
+    await page.locator("#navExtractor").click();
+    const extractor = await positions();
+    assert.equal(extractor["#navExtractor"], slides["#navExtractor"]);
+    assert.equal(extractor["#navPpt"], slides["#navPpt"]);
+    assert.equal(extractor["#appSettingsBtn"], slides["#appSettingsBtn"]);
+  }
+);
+
+await runScenario(
   "blocked custom editor popup leaves inline editing available",
   async (page) => {
     await setup(page);
@@ -1013,7 +1049,11 @@ await runScenario(
     const extractorShellWidth = await page.locator(".page").evaluate(
       (node) => Math.round(node.getBoundingClientRect().width)
     );
-    assert.equal(extractorShellWidth, 980);
+    const extractorContentWidth = await page.locator("#view-extractor").evaluate(
+      (node) => Math.round(node.getBoundingClientRect().width)
+    );
+    assert.ok(extractorShellWidth >= 1390);
+    assert.equal(extractorContentWidth, 932);
     assert.equal(
       await page.locator(".page").getAttribute("data-workspace"),
       "extractor"
@@ -1027,7 +1067,7 @@ await runScenario(
     const pptShellWidth = await page.locator(".page").evaluate(
       (node) => Math.round(node.getBoundingClientRect().width)
     );
-    assert.ok(pptShellWidth >= 1390, `PPT shell stayed narrow: ${pptShellWidth}`);
+    assert.equal(pptShellWidth, extractorShellWidth);
 
     await page.locator("#tabTemplatesBtn").click();
     assert.equal(

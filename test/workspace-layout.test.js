@@ -76,16 +76,10 @@ describe("workspace layout state", () => {
 });
 
 describe("workspace shell wiring", () => {
-  it("declares distinct extractor, gallery, and editor maximum widths", () => {
-    assert.match(css, /--workspace-max:\s*980px/);
-    assert.match(
-      css,
-      /\.page\[data-workspace="ppt"\]\[data-ppt-surface="gallery"\][\s\S]*--workspace-max:\s*1400px/
-    );
-    assert.match(
-      css,
-      /\.page\[data-workspace="ppt"\]\[data-ppt-surface="editor"\][\s\S]*--workspace-max:\s*1600px/
-    );
+  it("keeps navigation in one shell while constraining content surfaces", () => {
+    assert.match(css, /\.page\s*\{[\s\S]*--workspace-max:\s*1600px/);
+    assert.match(css, /#view-extractor\s*\{[\s\S]*max-width:\s*932px/);
+    assert.match(css, /\.template-gallery\s*\{[\s\S]*max-width:\s*1400px/);
   });
 
   it("syncs layout state from both view and PPT-surface transitions", () => {
