@@ -105,15 +105,17 @@ same effective threshold is the fallback for browsers without container-query
 support. It changes presentation only and does not modify slide state or dirty
 state.
 
-At a ribbon container width of 560px or less, theme, background color, zoom
-out, and zoom in move into a second `디자인·보기` overflow menu. Template,
-Apply, and Fit remain directly visible. Both menus use the behavior described
-below. This keeps the ribbon at two rows and prevents document-level
-horizontal overflow at the existing mobile workspace breakpoint.
+At a ribbon container width of 560px or less, select controls shrink to their
+compact minimums and zoom out and zoom in move into a second `보기` overflow
+menu. Template, Apply, Theme, Background, and Fit remain directly visible.
+Keeping each value control as one stable DOM element avoids stale duplicated
+template, theme, or color state. Both menus use the behavior described below.
+This keeps the ribbon at two rows and prevents document-level horizontal
+overflow at the existing mobile workspace breakpoint.
 
 ### Overflow menu behavior
 
-The `정렬·배치` and `디자인·보기` triggers expose keyboard-operable menus
+The `정렬·배치` and `보기` triggers expose keyboard-operable menus
 containing their hidden commands in the existing group order.
 
 - Each trigger reports expanded state with `aria-expanded`.
