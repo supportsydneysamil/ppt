@@ -5793,17 +5793,11 @@ function renderSlideList() {
     const actions = document.createElement("div");
     actions.className = "slide-card-actions";
 
-    const handle = document.createElement("button");
-    handle.type = "button";
-    handle.className = "slide-card-handle";
-    handle.title = "드래그해서 순서 바꾸기";
-    handle.textContent = "⋮⋮";
-    handle.addEventListener("click", (event) => event.stopPropagation());
-
     const moveUpBtn = document.createElement("button");
     moveUpBtn.type = "button";
     moveUpBtn.className = "slide-move-btn";
     moveUpBtn.title = "위로 이동";
+    moveUpBtn.setAttribute("aria-label", `${slide.name} 위로 이동`);
     moveUpBtn.disabled = index === 0;
     moveUpBtn.innerHTML =
       '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6l-6 6h12z"></path></svg>';
@@ -5816,6 +5810,7 @@ function renderSlideList() {
     moveDownBtn.type = "button";
     moveDownBtn.className = "slide-move-btn";
     moveDownBtn.title = "아래로 이동";
+    moveDownBtn.setAttribute("aria-label", `${slide.name} 아래로 이동`);
     moveDownBtn.disabled = index === slides.length - 1;
     moveDownBtn.innerHTML =
       '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 18l6-6H6z"></path></svg>';
@@ -5824,13 +5819,11 @@ function renderSlideList() {
       await moveSlideByOffset(slide.id, 1);
     });
 
-    actions.appendChild(handle);
     actions.appendChild(moveUpBtn);
     actions.appendChild(moveDownBtn);
 
     header.appendChild(checkbox);
     header.appendChild(main);
-    header.appendChild(actions);
 
     const meta = document.createElement("div");
     meta.className = "slide-card-meta";
@@ -5845,6 +5838,7 @@ function renderSlideList() {
 
     meta.appendChild(typeBadge);
     meta.appendChild(saveBadge);
+    meta.appendChild(actions);
 
     card.appendChild(header);
     card.appendChild(meta);

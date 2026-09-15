@@ -2150,7 +2150,7 @@ body {
   padding: 12px;
   border-radius: 12px;
   border: 1px solid transparent;
-  cursor: pointer;
+  cursor: grab;
   transition: all 0.2s;
   display: grid;
   gap: 10px;
@@ -2172,6 +2172,7 @@ body {
 
 .slide-card.dragging {
   opacity: 0.4;
+  cursor: grabbing;
 }
 
 .slide-card.drag-over-top {
@@ -2215,18 +2216,16 @@ body {
 }
 
 .slide-card-actions {
-  grid-column: 2;
-  justify-self: end;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
+  margin-left: auto;
 }
 
-.slide-card-handle,
 .slide-move-btn {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
   /* currentColor-based so they stay visible on light cards and on the brand
      background of the active card. */
   border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
@@ -2239,23 +2238,12 @@ body {
   transition: border-color 160ms ease, background 160ms ease;
 }
 
-.slide-card-handle {
-  cursor: grab;
-  font-size: 14px;
-  letter-spacing: 1px;
-}
-
-.slide-card-handle:active {
-  cursor: grabbing;
-}
-
 .slide-move-btn svg {
   width: 14px;
   height: 14px;
   fill: currentColor;
 }
 
-.slide-card-handle:hover,
 .slide-move-btn:hover {
   border-color: var(--brand-edge);
   background: var(--brand-tint);
@@ -2265,7 +2253,19 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
+}
+
+@media (hover: hover) {
+  .slide-card-actions {
+    opacity: 0.62;
+    transition: opacity 140ms ease;
+  }
+
+  .slide-card:hover .slide-card-actions,
+  .slide-card:focus-within .slide-card-actions {
+    opacity: 1;
+  }
 }
 
 .slide-type-badge {

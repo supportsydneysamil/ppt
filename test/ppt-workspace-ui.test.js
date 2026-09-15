@@ -148,11 +148,18 @@ describe("PPT three-pane layout", () => {
       /\.ppt-interface\s*\{[\s\S]*grid-template-columns:\s*280px minmax\(0,\s*1fr\)/
     );
     assert.match(css, /\.slide-card-main h4\s*\{[\s\S]*word-break:\s*keep-all/);
+    assert.match(appSource, /meta\.appendChild\(actions\)/);
+    assert.match(html, /id="slidePanelCollapseBtn"/);
+  });
+
+  it("uses the whole card as the drag affordance without a handle button", () => {
+    assert.doesNotMatch(appSource, /slide-card-handle/);
+    assert.match(css, /\.slide-card\s*\{[\s\S]*cursor:\s*grab/);
+    assert.match(css, /\.slide-card\.dragging\s*\{[\s\S]*cursor:\s*grabbing/);
     assert.match(
       css,
-      /\.slide-card-actions\s*\{[\s\S]*grid-column:\s*2/
+      /\.slide-move-btn\s*\{[\s\S]*width:\s*26px[\s\S]*height:\s*26px/
     );
-    assert.match(html, /id="slidePanelCollapseBtn"/);
   });
 
   it("places the stage and inspector in distinct editor columns", () => {
