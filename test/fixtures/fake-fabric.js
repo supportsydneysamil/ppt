@@ -233,6 +233,11 @@ export class Canvas {
     return this;
   }
 
+  insertAt(index, ...objects) {
+    this._objects.splice(index, 0, ...objects.filter(Boolean));
+    return this;
+  }
+
   remove(...objects) {
     for (const object of objects) {
       const index = this._objects.indexOf(object);

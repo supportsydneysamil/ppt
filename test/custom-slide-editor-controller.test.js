@@ -535,6 +535,7 @@ test("image controls synchronize fit, flips, and alternative text", async () => 
       flipH: ctx.editor.serialize().elements[0].flipH,
       flipV: ctx.editor.serialize().elements[0].flipV,
       altText: ctx.editor.serialize().elements[0].altText,
+      shadow: ctx.editor.serialize().elements[0].shadow,
     },
     {
       fit: "cover",
@@ -915,6 +916,140 @@ test("a successful upload centers the picture, pushes history and reports status
     "이미지를 추가했습니다."
   );
   assert.deepEqual(ctx.errors, []);
+
+  await ctx.editor.destroy();
+});
+
+test("replacing an image preserves its authored properties and selection", async () => {
+  const ctx = await createEditor({
+    uploadImage: async () => "/uploads/replacement.png",
+  });
+  fakeFabric.__setImageBehaviour({ width: 200, height: 100 });
+  await ctx.editor.load(
+    imageSlide("image-a", {
+      fit: "cover",
+      rotation: 25,
+      opacity: 0.6,
+      flipH: true,
+      flipV: true,
+      altText: "원래 설명",
+      shadow: {
+        color: "#112233",
+        blur: 8,
+        offsetX: 3,
+        offsetY: 4,
+        opacity: 0.4,
+      },
+      shadow: {
+        color: "#112233",
+        blur: 8,
+        offsetX: 3,
+        offsetY: 4,
+        opacity: 0.4,
+      },
+    })
+  );
+  const [original] = ctx.canvas.getObjects();
+  select(ctx, original);
+
+  action(ctx.root, "replace-image").click();
+  chooseFile(ctx, { name: "replacement.png", type: "image/png" });
+  await settle();
+
+  const objects = ctx.canvas.getObjects();
+  assert.equal(objects.length, 1);
+  assert.notEqual(objects[0], original);
+  assert.equal(ctx.canvas.getActiveObject(), objects[0]);
+  assert.deepEqual(
+    {
+      id: ctx.editor.serialize().elements[0].id,
+      src: ctx.editor.serialize().elements[0].src,
+      fit: ctx.editor.serialize().elements[0].fit,
+      x: ctx.editor.serialize().elements[0].x,
+      y: ctx.editor.serialize().elements[0].y,
+      width: ctx.editor.serialize().elements[0].width,
+      height: ctx.editor.serialize().elements[0].height,
+      rotation: ctx.editor.serialize().elements[0].rotation,
+      opacity: ctx.editor.serialize().elements[0].opacity,
+      flipH: ctx.editor.serialize().elements[0].flipH,
+      flipV: ctx.editor.serialize().elements[0].flipV,
+      altText: ctx.editor.serialize().elements[0].altText,
+    },
+    {
+      id: "image-a",
+      src: "/uploads/replacement.png",
+      fit: "cover",
+      x: 340,
+      y: 160,
+      width: 600,
+      height: 400,
+      rotation: 25,
+      opacity: 0.6,
+      flipH: true,
+      flipV: true,
+      altText: "원래 설명",
+    }
+  );
+  assert.equal(ctx.editor.isDirty(), true);
+  assert.equal(action(ctx.root, "undo").disabled, false);
+  assert.equal(
+    ctx.root.querySelector('[data-custom-editor="status"]').textContent,
+    "이미지를 교체했습니다."
+  );
+
+  await ctx.editor.destroy();
+});
+
+test("a replacement resolving after selection changes leaves the image untouched", async () => {
+  let resolveUpload;
+  const ctx = await createEditor({
+    uploadImage: () =>
+      new Promise((resolve) => {
+        resolveUpload = resolve;
+      }),
+  });
+  fakeFabric.__setImageBehaviour({ width: 200, height: 100 });
+  await ctx.editor.load(imageSlide("image-a"));
+  const [original] = ctx.canvas.getObjects();
+  select(ctx, original);
+
+  action(ctx.root, "replace-image").click();
+  chooseFile(ctx, { name: "late.png", type: "image/png" });
+  await settle();
+  assert.ok(resolveUpload);
+  ctx.canvas.discardActiveObject();
+  ctx.canvas.fire("selection:cleared", {});
+
+  resolveUpload("/uploads/late.png");
+  await settle();
+
+  assert.deepEqual(ctx.canvas.getObjects(), [original]);
+  assert.equal(ctx.editor.serialize().elements[0].src, "/uploads/photo.png");
+  assert.equal(ctx.editor.isDirty(), false);
+  assert.equal(action(ctx.root, "undo").disabled, true);
+
+  await ctx.editor.destroy();
+});
+
+test("a failed replacement keeps the original image and history", async () => {
+  const ctx = await createEditor({
+    uploadImage: async () => {
+      throw new Error("upload failed");
+    },
+  });
+  await ctx.editor.load(imageSlide("image-a"));
+  const [original] = ctx.canvas.getObjects();
+  select(ctx, original);
+
+  action(ctx.root, "replace-image").click();
+  chooseFile(ctx, { name: "bad.png", type: "image/png" });
+  await settle();
+
+  assert.deepEqual(ctx.canvas.getObjects(), [original]);
+  assert.equal(ctx.editor.serialize().elements[0].src, "/uploads/photo.png");
+  assert.equal(ctx.editor.isDirty(), false);
+  assert.equal(action(ctx.root, "undo").disabled, true);
+  assert.ok(ctx.errors.length > 0);
 
   await ctx.editor.destroy();
 });

@@ -2212,6 +2212,7 @@ function applyElementChrome(object, element, fabric) {
         blur: shadow.blur,
         offsetX: shadow.offsetX,
         offsetY: shadow.offsetY,
+        opacity: shadow.opacity,
       }),
     });
   } else if (shadow) {
@@ -2516,6 +2517,11 @@ export function fabricObjectToDescriptor(object) {
     scaleY: Math.abs(object.scaleY ?? 1),
     angle: object.angle ?? 0,
     opacity: object.opacity ?? 1,
+    visible: object.visible !== false,
+    selectable: object.selectable !== false,
+    customLocked: Boolean(object.customLocked),
+    customVisible: object.customVisible !== false,
+    shadow: object.shadow ?? null,
     ...(object.themeRole ? { themeRole: object.themeRole } : {}),
     ...(object.themeStrokeRole ? { themeStrokeRole: object.themeStrokeRole } : {}),
   };
@@ -2728,6 +2734,7 @@ export async function createCustomSlideEditor(root, options = {}) {
   let spacePan = false;
   let panning = false;
   let panOrigin = null;
+  let pendingImageReplacementId = null;
   // True while the last pointer or focus interaction happened inside the
   // editor, which is what scopes the clipboard and delete shortcuts.
   let canvasEngaged = false;
@@ -3275,7 +3282,7 @@ export async function createCustomSlideEditor(root, options = {}) {
     };
   }
 
-  async function insertImageFile(file) {
+  async function insertImageFile(file, replacementId = null) {
     if (destroyed) {
       return;
     }
@@ -3298,32 +3305,76 @@ export async function createCustomSlideEditor(root, options = {}) {
         throw new Error("업로드 경로가 올바르지 않습니다.");
       }
 
-      const element = {
-        id: nextId(),
-        type: "image",
-        src,
-        fit: "contain",
-        x: 0,
-        y: 0,
-        width: SLIDE_WIDTH * 0.6,
-        height: SLIDE_HEIGHT * 0.6,
-        rotation: 0,
-        opacity: 1,
-        zIndex: elementObjects().length,
-      };
-      element.x = (SLIDE_WIDTH - element.width) / 2;
-      element.y = (SLIDE_HEIGHT - element.height) / 2;
+      let replacementTarget = null;
+      let replacementIndex = -1;
+      let element = null;
+      if (replacementId) {
+        const selected = selectedFabricObjects(canvas);
+        replacementTarget = elementObjects().find(
+          (object) => object.customElementId === replacementId
+        );
+        if (
+          !replacementTarget ||
+          selected.length !== 1 ||
+          selected[0] !== replacementTarget ||
+          replacementTarget.elementType !== "image"
+        ) {
+          return;
+        }
+        replacementIndex = elementObjects().indexOf(replacementTarget);
+        const currentElement = serialize().elements.find(
+          (candidate) => candidate.id === replacementId
+        );
+        if (!currentElement) {
+          return;
+        }
+        element = { ...currentElement, src };
+      } else {
+        element = {
+          id: nextId(),
+          type: "image",
+          src,
+          fit: "contain",
+          x: 0,
+          y: 0,
+          width: SLIDE_WIDTH * 0.6,
+          height: SLIDE_HEIGHT * 0.6,
+          rotation: 0,
+          opacity: 1,
+          zIndex: elementObjects().length,
+        };
+        element.x = (SLIDE_WIDTH - element.width) / 2;
+        element.y = (SLIDE_HEIGHT - element.height) / 2;
+      }
 
       provisional = await buildFabricImage(fabric, element);
       if (isStale()) {
         return;
       }
-      canvas.add(provisional);
+      if (replacementTarget) {
+        const selected = selectedFabricObjects(canvas);
+        const currentTarget = elementObjects().find(
+          (object) => object.customElementId === replacementId
+        );
+        if (
+          currentTarget !== replacementTarget ||
+          selected.length !== 1 ||
+          selected[0] !== replacementTarget
+        ) {
+          return;
+        }
+        canvas.insertAt(replacementIndex, provisional);
+        canvas.remove(replacementTarget);
+      } else {
+        canvas.add(provisional);
+      }
       canvas.setActiveObject(provisional);
       canvas.requestRenderAll();
       pushHistory();
       updatePropertyPanel();
-      setStatus("이미지를 추가했습니다.");
+      setStatus(
+        replacementTarget ? "이미지를 교체했습니다." : "이미지를 추가했습니다."
+      );
     } catch (error) {
       // A superseded upload owns none of the visible state: the slide it was
       // started from is gone, so it must not report on the one now loaded.
@@ -3983,8 +4034,20 @@ export async function createCustomSlideEditor(root, options = {}) {
         setStatus("선을 추가했습니다.");
         break;
       case "add-image":
+        pendingImageReplacementId = null;
         dom.file?.click();
         break;
+      case "replace-image": {
+        const selected = selectedFabricObjects(canvas);
+        pendingImageReplacementId =
+          selected.length === 1 && selected[0].elementType === "image"
+            ? selected[0].customElementId
+            : null;
+        if (pendingImageReplacementId) {
+          dom.file?.click();
+        }
+        break;
+      }
       case "undo":
         await undo();
         break;
@@ -4093,8 +4156,10 @@ export async function createCustomSlideEditor(root, options = {}) {
   if (dom.file) {
     listen(dom.file, "change", () => {
       const [file] = dom.file.files ?? [];
+      const replacementId = pendingImageReplacementId;
+      pendingImageReplacementId = null;
       if (file) {
-        insertImageFile(file).finally(() => {
+        insertImageFile(file, replacementId).finally(() => {
           dom.file.value = "";
         });
       }
