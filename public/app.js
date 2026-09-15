@@ -2565,7 +2565,9 @@ function applyViewChange(viewName) {
     navPpt.classList.remove("active");
   } else {
     viewExtractor.style.display = "none";
-    viewPpt.style.display = "grid";
+    // Column flex, not grid: the editor surface hands the workspace whatever
+    // height the tab bar leaves, and the bars above it come and go.
+    viewPpt.style.display = "flex";
     navExtractor.classList.remove("active");
     navPpt.classList.add("active");
     renderSlideList();

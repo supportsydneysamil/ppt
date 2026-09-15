@@ -115,6 +115,11 @@ body {
   margin-inline: auto;
 }
 
+#view-ppt {
+  flex-direction: column;
+  min-width: 0;
+}
+
 .page-toolbar {
   display: grid;
   grid-template-columns: var(--ctrl-h-md) minmax(0, 1fr) var(--ctrl-h-md);
@@ -2333,6 +2338,12 @@ body {
 /* Editor Panel */
 .slide-editor-panel {
   --inspector-width: clamp(360px, 27vw, 400px);
+  /* Document mode (stacked, narrow viewports): the stage and inspector cannot
+     know their own offset from the top of the viewport, so they share one
+     conservative cap and the page scrolls around them. The app shell below
+     replaces this with the real remaining height. Both read the same token so
+     the two panes always stop on the same line. */
+  --stage-max-h: calc(100vh - 190px);
   position: relative;
   background: var(--panel);
   border-radius: 16px;
@@ -2431,7 +2442,7 @@ body {
   display: grid;
   gap: var(--sp-5);
   min-width: 0;
-  max-height: calc(100vh - 190px);
+  max-height: var(--stage-max-h);
   overflow: auto;
   padding-right: 4px;
 }
@@ -3123,12 +3134,25 @@ body[data-theme="light"] .rte-textarea {
   font-family: "Malgun Gothic", sans-serif;
 }
 
+/* A deck is taller than any viewport, so something has to stop it. Clamp the
+   whole stage area rather than the box: the "미리보기" label sits above the box,
+   and clamping the box alone would push its bottom past the inspector's by the
+   label's height, which is enough to start the page scrolling behind the deck.
+   minmax(0, ...) lets the box shrink under its content — with the default auto
+   the row grows to fit the deck and overflow-y never engages. */
+.preview-area:has(.preview-scroll-mode) {
+  max-height: var(--stage-max-h);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
 /* Modifier class added by JS when in upload mode */
 .slide-preview-box.preview-scroll-mode {
   aspect-ratio: auto !important;
   height: auto !important;
-  max-height: 600px;
-  /* Scrollable area height */
+  min-height: 0;
+  /* Backstop for the rule above; without :has() support the deck would grow
+     without bound. */
+  max-height: var(--stage-max-h);
   overflow-y: auto !important;
   overflow-x: hidden !important;
   /* Critical: preventing blowout */
@@ -3652,6 +3676,83 @@ body[data-theme="light"] .rte-textarea {
   grid-template-columns: 44px minmax(0, 1fr);
 }
 
+/* --- App shell: the slide editor owns the viewport ---
+
+   Everywhere else this app is a document that scrolls. The slide editor is not:
+   you change a setting on the right and check the result on the left, so both
+   panes need to be on screen at once. Letting the page scroll underneath them
+   means two scrollbars moving the same way, and it wastes the height the panes
+   could have used.
+
+   So on wide enough viewports the page claims exactly one viewport, and every
+   region that can grow — the slide rail, the stage, the inspector — scrolls
+   inside its own box. minmax(0, ...) and min-height: 0 appear at every level
+   because a grid or flex item defaults to min-height: auto, which refuses to
+   shrink below its content and would push the overflow back out to the page.
+
+   Vertical space is the scarce resource here, so the editor surface also runs
+   tighter page padding and gaps than the reading-oriented extractor view.
+
+   Below 900px the panes stack and there is nothing to keep side by side, so the
+   page goes back to being a document. */
+@media (min-width: 900px) {
+  .page[data-ppt-surface="editor"] {
+    height: 100dvh;
+    padding-top: 24px;
+    padding-bottom: 16px;
+    gap: 16px;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .page[data-ppt-surface="editor"] #view-ppt {
+    min-height: 0;
+  }
+
+  .page[data-ppt-surface="editor"] .ppt-tabbar {
+    margin-bottom: 16px;
+  }
+
+  .page[data-ppt-surface="editor"] .ppt-interface {
+    flex: 1 1 auto;
+    min-height: 0;
+    align-items: stretch;
+  }
+
+  .page[data-ppt-surface="editor"] .slide-list-panel {
+    align-self: stretch;
+    min-height: 0;
+  }
+
+  .page[data-ppt-surface="editor"] .slide-cards {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+  }
+
+  .page[data-ppt-surface="editor"] .slide-editor-panel {
+    /* The panes now measure themselves against the shell, so the document-mode
+       cap has to get out of the way of both .editor-form and .preview-area. */
+    --stage-max-h: none;
+    align-self: stretch;
+    min-height: 0;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .page[data-ppt-surface="editor"] .editor-form {
+    min-height: 0;
+  }
+
+  /* align-content keeps the 16:9 box at its own height instead of stretching it
+     to the full stage, which would override its aspect ratio. A scroll-mode
+     deck is unaffected: its 1fr row absorbs the free space before alignment
+     has any left to distribute. */
+  .page[data-ppt-surface="editor"] .preview-area {
+    align-self: stretch;
+    align-content: start;
+    min-height: 0;
+  }
+}
+
 @media (min-width: 1280px) {
   #pptSlidesPaneBtn,
   #pptInspectorPaneBtn {
@@ -3774,6 +3875,25 @@ body[data-theme="light"] .rte-textarea {
     visibility: hidden;
     opacity: 0;
     pointer-events: none;
+  }
+
+  /* Under the app shell these drawers hang off panels that are already exactly
+     as tall as the viewport allows, so they measure against the panel. Against
+     the viewport they would overhang by whatever chrome sits above it and drag
+     the page scrollbar back. The offsets match each drawer's own `top`. */
+  .page[data-ppt-surface="editor"]
+    .ppt-interface[data-layout-mode="compact"]
+    .slide-list-panel {
+    max-height: 100%;
+  }
+
+  .page[data-ppt-surface="editor"]
+    .ppt-interface[data-layout-mode="compact"]
+    .editor-form,
+  .page[data-ppt-surface="editor"]
+    .ppt-interface[data-layout-mode="compact"]
+    .custom-editor-side {
+    max-height: calc(100% - 88px);
   }
 }
 
