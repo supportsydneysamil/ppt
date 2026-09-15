@@ -2447,10 +2447,13 @@ export async function buildFabricImage(fabric, element) {
     originY: "center",
     angle: element.rotation ?? 0,
     opacity: element.opacity ?? 1,
+    flipX: Boolean(element.flipH),
+    flipY: Boolean(element.flipV),
     objectCaching: false,
     customNaturalWidth: image.width,
     customNaturalHeight: image.height,
     customSrc: element.src,
+    customAltText: element.altText ?? "",
   });
   applyImageFit(image, element.fit, element.width || image.width, element.height || image.height);
   return tagObject(image, element, fabric);
@@ -2541,6 +2544,9 @@ export function fabricObjectToDescriptor(object) {
         scaleY: 1,
         src: object.customSrc,
         fit: object.customFit,
+        flipH: Boolean(object.flipX),
+        flipV: Boolean(object.flipY),
+        altText: object.customAltText ?? "",
       };
     }
     case "roundRect":
