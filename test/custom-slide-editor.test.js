@@ -117,6 +117,39 @@ test("core message templates use their approved professional structure", () => {
   ]);
 });
 
+test("information templates expose independently editable content units", () => {
+  assertElementIds("agenda-list", [
+    "agenda-row-1-number",
+    "agenda-row-1-title",
+    "agenda-row-1-owner",
+    "agenda-row-2-number",
+    "agenda-row-2-title",
+    "agenda-row-2-owner",
+    "agenda-row-3-number",
+    "agenda-row-3-title",
+    "agenda-row-3-owner",
+  ]);
+  assertElementIds("sermon-points", [
+    "sermon-point-1-number",
+    "sermon-point-1-text",
+    "sermon-point-2-number",
+    "sermon-point-2-text",
+    "sermon-point-3-number",
+    "sermon-point-3-text",
+  ]);
+  assertElementIds("announcements", [
+    "announcement-1-date",
+    "announcement-1-title",
+    "announcement-1-detail",
+    "announcement-2-date",
+    "announcement-2-title",
+    "announcement-2-detail",
+    "announcement-3-date",
+    "announcement-3-title",
+    "announcement-3-detail",
+  ]);
+});
+
 test("every template model survives normalization unchanged", () => {
   for (const template of CUSTOM_SLIDE_TEMPLATES) {
     const normalized = normalizeCustomSlide(template.model);
