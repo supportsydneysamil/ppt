@@ -162,6 +162,18 @@ describe("PPT three-pane layout", () => {
     );
   });
 
+  it("uses an edge icon and a wider commercial inspector", () => {
+    assert.match(html, /id="inspectorPanelCollapseBtn"/);
+    assert.match(
+      css,
+      /--inspector-width:\s*clamp\(320px,\s*24vw,\s*360px\)/
+    );
+    assert.match(
+      css,
+      /@media\s*\(min-width:\s*1280px\)[\s\S]*#pptInspectorPaneBtn[\s\S]*display:\s*none/
+    );
+  });
+
   it("places the stage and inspector in distinct editor columns", () => {
     assert.match(
       css,
@@ -174,7 +186,7 @@ describe("PPT three-pane layout", () => {
   it("splits custom-editor stage and side chrome without moving its DOM", () => {
     assert.match(
       css,
-      /\.slide-editor-panel\[data-slide-type="custom"\][\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\) clamp\(280px,\s*21vw,\s*300px\)/
+      /\.slide-editor-panel\[data-slide-type="custom"\][\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\) var\(--inspector-width\)/
     );
   });
 

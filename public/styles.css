@@ -2332,12 +2332,14 @@ body {
 
 /* Editor Panel */
 .slide-editor-panel {
+  --inspector-width: clamp(320px, 24vw, 360px);
+  position: relative;
   background: var(--panel);
   border-radius: 16px;
   padding: var(--sp-5);
   border: 1px solid var(--border);
   display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(280px, 21vw, 300px);
+  grid-template-columns: minmax(0, 1fr) var(--inspector-width);
   grid-template-areas:
     "header header"
     "stage inspector";
@@ -2347,6 +2349,31 @@ body {
   overflow: hidden;
   /* extra safety */
   align-self: start;
+}
+
+.inspector-panel-collapse {
+  position: absolute;
+  z-index: 30;
+  top: 76px;
+  right: calc(var(--inspector-width) + 8px);
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.inspector-panel-collapse svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
 }
 
 .editor-header {
@@ -3531,7 +3558,7 @@ body[data-theme="light"] .rte-textarea {
   grid-column: 1 / -1;
   grid-row: 2;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(280px, 21vw, 300px);
+  grid-template-columns: minmax(0, 1fr) var(--inspector-width);
   grid-template-areas:
     "bar side"
     "tools side"
@@ -3603,6 +3630,12 @@ body[data-theme="light"] .rte-textarea {
   grid-template-columns: minmax(0, 1fr) 44px;
 }
 
+.ppt-interface[data-inspector-open="false"] .inspector-panel-collapse {
+  top: 76px;
+  right: 6px;
+  transform: rotate(180deg);
+}
+
 .ppt-interface[data-inspector-open="false"] .editor-form,
 .ppt-interface[data-inspector-open="false"] .custom-editor-side {
   visibility: hidden;
@@ -3620,7 +3653,14 @@ body[data-theme="light"] .rte-textarea {
 }
 
 @media (min-width: 1280px) {
-  #pptSlidesPaneBtn {
+  #pptSlidesPaneBtn,
+  #pptInspectorPaneBtn {
+    display: none;
+  }
+}
+
+@media (max-width: 1279px) {
+  .inspector-panel-collapse {
     display: none;
   }
 }

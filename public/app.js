@@ -847,6 +847,9 @@ const customEditorPopoutBtn = document.getElementById("customEditorPopoutBtn");
 const pptWorkspace = document.getElementById("pptWorkspace");
 const slideListPanel = document.getElementById("slideListPanel");
 const slidePanelCollapseBtn = document.getElementById("slidePanelCollapseBtn");
+const inspectorPanelCollapseBtn = document.getElementById(
+  "inspectorPanelCollapseBtn"
+);
 const templateGallery = document.getElementById("templateGallery");
 const templateGalleryGrid = document.getElementById("templateGalleryGrid");
 const templateGalleryEmpty = document.getElementById("templateGalleryEmpty");
@@ -1056,6 +1059,15 @@ function applyPptWorkspaceUi() {
     pptInspectorPaneBtn.textContent = pptWorkspaceUi.inspectorOpen
       ? "속성 닫기"
       : "속성 열기";
+  }
+  if (inspectorPanelCollapseBtn) {
+    const expanded = String(pptWorkspaceUi.inspectorOpen);
+    const label = pptWorkspaceUi.inspectorOpen
+      ? "속성 패널 닫기"
+      : "속성 패널 열기";
+    inspectorPanelCollapseBtn.setAttribute("aria-expanded", expanded);
+    inspectorPanelCollapseBtn.setAttribute("aria-label", label);
+    inspectorPanelCollapseBtn.title = label;
   }
   if (pptFocusModeBtn) {
     pptFocusModeBtn.hidden = pptWorkspaceUi.mode === "mobile";
@@ -2571,6 +2583,9 @@ slidePanelCollapseBtn?.addEventListener("click", () => {
   dispatchPptWorkspaceUi({ type: "toggle-slides" });
 });
 pptInspectorPaneBtn?.addEventListener("click", () => {
+  dispatchPptWorkspaceUi({ type: "toggle-inspector" });
+});
+inspectorPanelCollapseBtn?.addEventListener("click", () => {
   dispatchPptWorkspaceUi({ type: "toggle-inspector" });
 });
 pptFocusModeBtn?.addEventListener("click", () => {

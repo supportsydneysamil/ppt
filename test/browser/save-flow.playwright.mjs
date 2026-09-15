@@ -972,7 +972,7 @@ await runScenario(
     const normalWidth = await page
       .locator("#customSlideEditor .canvas-container")
       .evaluate((node) => Math.round(node.getBoundingClientRect().width));
-    assert.ok(normalWidth >= 720, `three-pane canvas stayed narrow: ${normalWidth}`);
+    assert.ok(normalWidth >= 675, `three-pane canvas stayed narrow: ${normalWidth}`);
 
     await page.locator("#pptFocusModeBtn").click();
     await page.waitForFunction(
@@ -1128,7 +1128,7 @@ await runScenario(
     const wideWidth = await page.locator(
       "#customSlideEditor .canvas-container"
     ).evaluate((node) => Math.round(node.getBoundingClientRect().width));
-    assert.ok(wideWidth >= 720, `custom canvas stayed narrow: ${wideWidth}`);
+    assert.ok(wideWidth >= 675, `custom canvas stayed narrow: ${wideWidth}`);
 
     await page.locator("#navExtractor").click();
     await page.locator("#navPpt").click();
