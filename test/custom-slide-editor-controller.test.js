@@ -57,7 +57,7 @@ function rectSlide(id, overrides = {}) {
   };
 }
 
-function imageSlide(id = "image-1") {
+function imageSlide(id = "image-1", overrides = {}) {
   return {
     elements: [
       {
@@ -70,6 +70,7 @@ function imageSlide(id = "image-1") {
         width: 600,
         height: 400,
         zIndex: 0,
+        ...overrides,
       },
     ],
   };
@@ -102,10 +103,17 @@ function fieldEl(root, name) {
 }
 
 function setField(ctx, name, value) {
-  const element = fieldEl(ctx.root, name);
+  const first = fieldEl(ctx.root, name);
+  const element =
+    first?.type === "radio"
+      ? ctx.root.querySelector(
+          `[data-editor-field="${name}"][value="${String(value)}"]`
+        )
+      : first;
   assert.ok(element, `missing field ${name}`);
-  if (element.type === "checkbox") {
+  if (element.type === "checkbox" || element.type === "radio") {
     element.checked = Boolean(value);
+    if (element.type === "radio") element.checked = true;
     element.dispatchEvent(new ctx.window.Event("change", { bubbles: true }));
     return element;
   }
@@ -498,6 +506,44 @@ test("image fit toggles preserve the authored layout box", async () => {
   setField(ctx, "fit", "contain");
   assert.deepEqual(box(), authored);
   assert.equal(ctx.editor.serialize().elements[0].fit, "contain");
+
+  await ctx.editor.destroy();
+});
+
+test("image controls synchronize fit, flips, and alternative text", async () => {
+  const ctx = await createEditor();
+  fakeFabric.__setImageBehaviour({ width: 100, height: 50 });
+
+  await ctx.editor.load(imageSlide());
+  const [image] = ctx.canvas.getObjects();
+  select(ctx, image);
+
+  assert.equal(
+    ctx.root.querySelector(
+      '[data-editor-field="fit"][value="contain"]'
+    )?.checked,
+    true
+  );
+  setField(ctx, "fit", "cover");
+  setField(ctx, "flipH", true);
+  setField(ctx, "flipV", true);
+  setField(ctx, "altText", "강단 위의 성경");
+
+  assert.deepEqual(
+    {
+      fit: ctx.editor.serialize().elements[0].fit,
+      flipH: ctx.editor.serialize().elements[0].flipH,
+      flipV: ctx.editor.serialize().elements[0].flipV,
+      altText: ctx.editor.serialize().elements[0].altText,
+    },
+    {
+      fit: "cover",
+      flipH: true,
+      flipV: true,
+      altText: "강단 위의 성경",
+    }
+  );
+  assert.equal(ctx.editor.isDirty(), true);
 
   await ctx.editor.destroy();
 });

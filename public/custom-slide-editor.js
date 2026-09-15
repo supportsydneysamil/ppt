@@ -3003,6 +3003,8 @@ export async function createCustomSlideEditor(root, options = {}) {
     for (const input of fields(name)) {
       if (input.type === "checkbox") {
         input.checked = Boolean(value);
+      } else if (input.type === "radio") {
+        input.checked = input.value === String(value ?? "");
       } else {
         input.value = value ?? "";
       }
@@ -3091,6 +3093,9 @@ export async function createCustomSlideEditor(root, options = {}) {
       case "image":
         showPanels(["image", "common"]);
         setFieldValue("fit", target.customFit ?? "contain");
+        setFieldValue("flipH", Boolean(target.flipX));
+        setFieldValue("flipV", Boolean(target.flipY));
+        setFieldValue("altText", target.customAltText ?? "");
         setStatus("이미지가 선택되었습니다.");
         break;
       case "line": {
@@ -3900,6 +3905,15 @@ export async function createCustomSlideEditor(root, options = {}) {
         applyImageFit(active, input.value, box.width, box.height);
         break;
       }
+      case "flipH":
+        active.set({ flipX: input.checked });
+        break;
+      case "flipV":
+        active.set({ flipY: input.checked });
+        break;
+      case "altText":
+        active.set({ customAltText: input.value.slice(0, 500) });
+        break;
       case "fill":
         active.set({ fill: input.value, themeRole: undefined });
         break;
@@ -4069,6 +4083,9 @@ export async function createCustomSlideEditor(root, options = {}) {
   listenOnHosts("change", (event) => {
     const input = event.target;
     if (input?.dataset?.editorField) {
+      if (input.type === "radio" && !input.checked) {
+        return;
+      }
       applyFieldChange(input.dataset.editorField, input);
     }
   });

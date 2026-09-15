@@ -19,6 +19,8 @@ import {
   Contrast,
   Copy,
   Eye,
+  FlipHorizontal2,
+  FlipVertical2,
   Image as ImageIcon,
   ImagePlus,
   Italic,
@@ -28,6 +30,7 @@ import {
   MousePointerClick,
   Minus,
   Redo2,
+  RefreshCw,
   Settings2,
   Square,
   SquareDashed,
@@ -259,15 +262,52 @@ export function CustomEditorChrome({ inspectorHost = null }) {
 
         <div className="custom-editor-panel" data-editor-panel="image" hidden>
           <PanelLabel icon={ImageIcon}>이미지</PanelLabel>
-          <label className="custom-editor-row">
-            <span className="field-label">맞춤</span>
-            <select data-editor-field="fit" aria-label="이미지 맞춤 방식">
-              <option value="contain">전체 보이기</option>
-              <option value="cover">영역 채우기</option>
-            </select>
+          <div className="custom-editor-image-actions">
+            <button
+              type="button"
+              className="ghost small"
+              data-editor-action="replace-image"
+            >
+              <RefreshCw size={14} aria-hidden="true" />
+              이미지 교체
+            </button>
+          </div>
+          <div className="custom-editor-row">
+            <span className="field-label">표시 방식</span>
+            <div className="custom-editor-fit-segment" role="radiogroup" aria-label="이미지 표시 방식">
+              <label className="custom-editor-fit-option">
+                <input type="radio" value="contain" data-editor-field="fit" name={`${ribbonId}-imageFit`} />
+                <span>맞춤</span>
+              </label>
+              <label className="custom-editor-fit-option">
+                <input type="radio" value="cover" data-editor-field="fit" name={`${ribbonId}-imageFit`} />
+                <span>채우기</span>
+              </label>
+            </div>
+          </div>
+          <div className="custom-editor-row">
+            <span className="field-label">뒤집기</span>
+            <div className="custom-editor-controls">
+              <CheckChip field="flipH" label="좌우 뒤집기">
+                <FlipHorizontal2 size={13} />
+              </CheckChip>
+              <CheckChip field="flipV" label="상하 뒤집기">
+                <FlipVertical2 size={13} />
+              </CheckChip>
+            </div>
+          </div>
+          <label className="custom-editor-row custom-editor-row--stack custom-editor-image-alt">
+            <span className="field-label">대체 텍스트 <span className="custom-editor-sublabel">선택</span></span>
+            <textarea
+              rows="2"
+              maxLength={500}
+              data-editor-field="altText"
+              aria-label="이미지 대체 텍스트"
+              placeholder="이미지의 내용이나 목적을 설명하세요"
+            ></textarea>
           </label>
           <p className="hint">
-            전체 보이기는 이미지를 자르지 않고, 영역 채우기는 빈 공간 없이 채웁니다.
+            맞춤은 전체 이미지를 보이고, 채우기는 프레임을 빈틈없이 채웁니다.
           </p>
         </div>
 
