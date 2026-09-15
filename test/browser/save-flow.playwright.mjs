@@ -806,20 +806,13 @@ async function fillCustomBackground(page, value) {
   const input = page
     .locator("#customSlideEditor [data-custom-editor='background']")
     .first();
-  let openedDesign = false;
   if (!(await input.isVisible())) {
     await page
-      .locator(
-        "#customSlideEditor .custom-editor-design-overflow:visible [aria-haspopup='dialog']"
-      )
+      .locator("#customSlideEditor")
+      .getByRole("tab", { name: "디자인" })
       .click();
-    openedDesign = true;
   }
   await input.fill(value);
-  if (openedDesign) {
-    await page.keyboard.press("Escape");
-    await input.waitFor({ state: "hidden" });
-  }
 }
 
 async function expectToastOnce(page, text) {
@@ -932,6 +925,11 @@ await runScenario(
     assert.equal(await popup.locator("[data-custom-editor='canvas']").count(), 1);
     assert.equal(await page.locator("#customSlideEditor").getAttribute("inert"), "");
 
+    assert.deepEqual(
+      await popup.getByRole("tab").allTextContents(),
+      ["디자인", "삽입", "정렬", "배치"]
+    );
+    await popup.getByRole("tab", { name: "삽입" }).click();
     await popup.locator("[data-editor-action='add-text']:visible").click();
     await page.locator("#editorSaveBtn:not([disabled])").waitFor();
     await popup.getByRole("button", { name: "저장" }).click();
@@ -1076,7 +1074,7 @@ await runScenario(
 );
 
 await runScenario(
-  "custom editor ribbon stays two rows and overflow actions remain wired",
+  "custom editor ribbon keeps named categories stable across workspace widths",
   async (page) => {
     await page.setViewportSize({ width: 1440, height: 1000 });
     await setup(page, { slides: customCanvasSlides });
@@ -1090,94 +1088,74 @@ await runScenario(
     const ribbon = page.locator(
       "#customSlideEditor .custom-editor-ribbon:not(.custom-editor-ribbon--fallback)"
     );
-    const header = page.locator(".editor-header");
-    const headerControls = await header.evaluate((node) =>
-      Array.from(node.querySelectorAll("button"), (button) => ({
-        id: button.id,
-        className: button.className.replace(/\bis-dirty\b/g, "").trim(),
-      }))
-    );
-    assert.equal(
-      await ribbon
-        .locator(
-          ":scope > .custom-editor-design-row, :scope > .custom-editor-tools-row"
-        )
-        .count(),
-      2
-    );
-
-    const beforeHeight = await ribbon.evaluate((node) =>
-      Math.round(node.getBoundingClientRect().height)
-    );
-    await page.locator("[data-editor-action='add-rect']:visible").click();
-
-    const overflow = page.locator(
-      "#customSlideEditor .custom-editor-layout-overflow:visible"
-    );
-    await overflow.locator("[aria-haspopup='menu']").click();
-    const menu = overflow.locator("[role='menu']");
-    await menu.waitFor();
-    const afterHeight = await ribbon.evaluate((node) =>
-      Math.round(node.getBoundingClientRect().height)
-    );
-    assert.equal(afterHeight, beforeHeight);
-
-    await menu.locator("[data-editor-action='align-left']").click();
-    await menu.waitFor({ state: "hidden" });
-    assert.equal(await page.locator("#editorSaveBtn").isDisabled(), false);
+    const tabs = ribbon.getByRole("tab");
     assert.deepEqual(
-      await header.evaluate((node) =>
-        Array.from(node.querySelectorAll("button"), (button) => ({
-          id: button.id,
-          className: button.className.replace(/\bis-dirty\b/g, "").trim(),
-        }))
-      ),
-      headerControls
+      await tabs.allTextContents(),
+      ["디자인", "삽입", "정렬", "배치"]
     );
+    assert.equal(await tabs.nth(0).getAttribute("aria-selected"), "true");
+    assert.equal(await page.locator("#editorSaveBtn").isDisabled(), true);
 
-    await overflow.locator("[aria-haspopup='menu']").click();
-    await page.keyboard.press("Escape");
-    await menu.waitFor({ state: "hidden" });
-    assert.equal(
-      await overflow.locator("[aria-haspopup='menu']").getAttribute("aria-expanded"),
-      "false"
-    );
-
-    for (const width of [560, 390]) {
-      await page.setViewportSize({ width, height: 900 });
-      await page.waitForTimeout(100);
-      const overflowByRow = await ribbon.evaluate((node) =>
-        Array.from(node.children, (row) => row.scrollWidth - row.clientWidth)
-      );
-      assert.deepEqual(
-        overflowByRow,
-        [0, 0],
-        `${width}px ribbon rows must keep every control reachable`
-      );
-    }
-
-    const designOverflow = page.locator(
-      "#customSlideEditor .custom-editor-design-overflow:visible"
-    );
-    const themeSelect = page.locator(
-      "#customSlideEditor .custom-editor-ribbon:not(.custom-editor-ribbon--fallback) [data-custom-editor='theme']"
-    );
-    assert.equal(await themeSelect.count(), 1);
-    assert.equal(await themeSelect.isVisible(), false);
-    assert.ok(
-      (await page
-        .locator(
-          "#customSlideEditor .custom-editor-ribbon:not(.custom-editor-ribbon--fallback) [data-custom-editor='template']"
-        )
-        .evaluate((node) => node.getBoundingClientRect().width)) >= 72
-    );
-    await designOverflow.locator("[aria-haspopup='dialog']").click();
-    await themeSelect.waitFor({ state: "visible" });
-    await page.keyboard.press("Escape");
-    await themeSelect.waitFor({ state: "hidden" });
-    await page.setViewportSize({ width: 1440, height: 1000 });
+    await tabs.nth(0).focus();
+    await page.keyboard.press("ArrowRight");
+    assert.equal(await tabs.nth(1).getAttribute("aria-selected"), "true");
     await page.waitForFunction(
-      () => document.querySelector("#pptWorkspace")?.dataset.layoutMode === "wide"
+      () =>
+        document.activeElement?.getAttribute("role") === "tab" &&
+        document.activeElement?.textContent?.trim() === "삽입"
+    );
+    await page.keyboard.press("End");
+    assert.equal(await tabs.nth(3).getAttribute("aria-selected"), "true");
+    await page.keyboard.press("Home");
+    assert.equal(await tabs.nth(0).getAttribute("aria-selected"), "true");
+    assert.equal(await page.locator("#editorSaveBtn").isDisabled(), true);
+
+    await tabs.nth(1).click();
+    const insertPanel = ribbon.getByRole("tabpanel");
+    await insertPanel.locator("[data-editor-action='add-rect']").click();
+    assert.equal(await page.locator("#editorSaveBtn").isDisabled(), false);
+
+    await tabs.nth(2).click();
+    const alignPanel = ribbon.getByRole("tabpanel");
+    await alignPanel.locator("[data-editor-action='align-left']").click();
+
+    await tabs.nth(3).click();
+    const arrangePanel = ribbon.getByRole("tabpanel");
+    assert.equal(
+      await arrangePanel.locator("[data-editor-action='to-front']").isVisible(),
+      true
+    );
+    assert.equal(
+      await arrangePanel.locator("[data-editor-action='duplicate']").isVisible(),
+      true
+    );
+
+    await page.locator("#inspectorPanelCollapseBtn").click();
+    assert.equal(await tabs.nth(3).getAttribute("aria-selected"), "true");
+    await page.locator("#inspectorRailBtn").click();
+    assert.equal(await tabs.nth(3).getAttribute("aria-selected"), "true");
+
+    await tabs.nth(2).click();
+    await page.setViewportSize({ width: 390, height: 900 });
+    await page.waitForTimeout(100);
+    const narrowMetrics = await ribbon.evaluate((node) => {
+      const panel = node.querySelector(
+        '.custom-editor-ribbon-panel:not([hidden])'
+      );
+      return {
+        panelOverflow: panel.scrollWidth - panel.clientWidth,
+        pageOverflow:
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+      };
+    });
+    assert.ok(
+      narrowMetrics.panelOverflow > 0,
+      "narrow active category should scroll inside the ribbon"
+    );
+    assert.ok(
+      narrowMetrics.pageOverflow <= 0,
+      "the ribbon must not create document-level horizontal overflow"
     );
   }
 );
@@ -1233,10 +1211,14 @@ await runScenario(
     const extractorShellWidth = await page.locator(".page").evaluate(
       (node) => Math.round(node.getBoundingClientRect().width)
     );
-    const extractorContentWidth = await page.locator("#view-extractor").evaluate(
-      (node) => Math.round(node.getBoundingClientRect().width)
-    );
+    const extractorViewportWidth = await page
+      .locator("#view-extractor")
+      .evaluate((node) => Math.round(node.getBoundingClientRect().width));
+    const extractorContentWidth = await page
+      .locator("#view-extractor > .hero")
+      .evaluate((node) => Math.round(node.getBoundingClientRect().width));
     assert.ok(extractorShellWidth >= 1390);
+    assert.ok(extractorViewportWidth >= 1390);
     assert.equal(extractorContentWidth, 932);
     assert.equal(
       await page.locator(".page").getAttribute("data-workspace"),

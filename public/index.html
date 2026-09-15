@@ -1114,84 +1114,98 @@
           >
             <div id="customEditorReactRoot" class="custom-editor-react-root"></div>
             <div class="custom-editor-ribbon custom-editor-ribbon--fallback">
-            <div class="custom-editor-bar custom-editor-design-row">
-              <label class="custom-editor-field">
-                <span class="field-label">템플릿</span>
-                <select
-                  id="customEditorTemplate"
-                  data-custom-editor="template"
-                  aria-label="커스텀 슬라이드 템플릿"
-                  title="커스텀 슬라이드 템플릿"
-                >
-                  <!-- Options are populated from custom-slide-editor.js -->
-                </select>
-              </label>
-              <button
-                type="button"
-                class="ghost small"
-                data-editor-action="apply-template"
-                title="선택한 템플릿 적용"
-                aria-label="선택한 템플릿 적용"
-              >
-                템플릿 적용
-              </button>
-              <label class="custom-editor-field">
-                <span class="field-label">테마</span>
-                <select
-                  data-custom-editor="theme"
-                  aria-label="커스텀 슬라이드 테마"
-                  title="커스텀 슬라이드 테마"
-                >
-                  <!-- Options are populated from custom-slide-themes.js -->
-                </select>
-              </label>
-              <label class="custom-editor-field">
-                <span class="field-label">배경색</span>
-                <input
-                  id="customEditorBackground"
-                  type="color"
-                  value="#ffffff"
-                  data-custom-editor="background"
-                  title="슬라이드 배경색"
-                  aria-label="슬라이드 배경색"
-                />
-              </label>
-            </div>
+              <input class="visually-hidden" id="fallbackRibbonDesign" name="fallbackRibbonTab" type="radio" checked />
+              <input class="visually-hidden" id="fallbackRibbonInsert" name="fallbackRibbonTab" type="radio" />
+              <input class="visually-hidden" id="fallbackRibbonAlign" name="fallbackRibbonTab" type="radio" />
+              <input class="visually-hidden" id="fallbackRibbonArrange" name="fallbackRibbonTab" type="radio" />
 
-            <div class="custom-editor-toolbar custom-editor-tools-row" role="toolbar" aria-label="커스텀 슬라이드 도구">
-              <div class="custom-editor-tool-group custom-editor-tool-cluster" role="group" aria-label="개체 추가">
-                <span class="custom-editor-group-label">추가</span>
-                <button type="button" class="custom-editor-tool" data-editor-action="add-text" title="텍스트 추가" aria-label="텍스트 추가">텍스트</button>
-                <button type="button" class="custom-editor-tool" data-editor-action="add-image" title="이미지 추가" aria-label="이미지 추가">이미지</button>
-                <button type="button" class="custom-editor-tool" data-editor-action="add-rect" title="사각형 추가" aria-label="사각형 추가">사각형</button>
-                <button type="button" class="custom-editor-tool" data-editor-action="add-roundRect" title="둥근 사각형 추가" aria-label="둥근 사각형 추가">둥근 사각형</button>
-                <button type="button" class="custom-editor-tool" data-editor-action="add-ellipse" title="원 추가" aria-label="원 추가">원</button>
-                <button type="button" class="custom-editor-tool" data-editor-action="add-line" title="선 추가" aria-label="선 추가">선</button>
+              <div class="custom-editor-ribbon-tabbar" role="tablist" aria-label="편집 도구 카테고리">
+                <div class="custom-editor-ribbon-tablist">
+                  <label class="custom-editor-ribbon-tab" for="fallbackRibbonDesign">디자인</label>
+                  <label class="custom-editor-ribbon-tab" for="fallbackRibbonInsert">삽입</label>
+                  <label class="custom-editor-ribbon-tab" for="fallbackRibbonAlign">정렬</label>
+                  <label class="custom-editor-ribbon-tab" for="fallbackRibbonArrange">배치</label>
+                </div>
+                <div class="custom-editor-ribbon-quick-access" role="group" aria-label="편집 이력">
+                  <button type="button" class="custom-editor-tool" data-editor-action="undo" title="실행 취소" aria-label="실행 취소" disabled>되돌리기</button>
+                  <button type="button" class="custom-editor-tool" data-editor-action="redo" title="다시 실행" aria-label="다시 실행" disabled>다시 실행</button>
+                </div>
               </div>
 
-              <div class="custom-editor-tool-group custom-editor-tool-cluster" role="group" aria-label="편집 이력">
-                <span class="custom-editor-group-label">기록</span>
-                <button type="button" class="custom-editor-tool" data-editor-action="undo" title="실행 취소" aria-label="실행 취소" disabled>되돌리기</button>
-                <button type="button" class="custom-editor-tool" data-editor-action="redo" title="다시 실행" aria-label="다시 실행" disabled>다시 실행</button>
+              <div class="custom-editor-ribbon-panel" data-fallback-ribbon-panel="design">
+                <div class="custom-editor-ribbon-group">
+                  <div class="custom-editor-ribbon-group-controls">
+                    <label class="custom-editor-field">
+                      <span class="visually-hidden">템플릿</span>
+                      <select id="customEditorTemplate" data-custom-editor="template" aria-label="커스텀 슬라이드 템플릿"></select>
+                    </label>
+                    <button type="button" class="ghost small" data-editor-action="apply-template">적용</button>
+                  </div>
+                  <span class="custom-editor-ribbon-group-label">템플릿</span>
+                </div>
+                <div class="custom-editor-ribbon-group">
+                  <div class="custom-editor-ribbon-group-controls">
+                    <label class="custom-editor-field">
+                      <span class="visually-hidden">테마</span>
+                      <select data-custom-editor="theme" aria-label="커스텀 슬라이드 테마"></select>
+                    </label>
+                    <input id="customEditorBackground" type="color" value="#ffffff" data-custom-editor="background" aria-label="슬라이드 배경색" />
+                  </div>
+                  <span class="custom-editor-ribbon-group-label">테마 및 배경</span>
+                </div>
               </div>
 
-              <div class="custom-editor-tool-group custom-editor-tool-cluster custom-editor-layout-tools" role="group" aria-label="슬라이드 기준 정렬">
-                <span class="custom-editor-group-label">정렬</span>
-                <button type="button" class="custom-editor-tool" data-editor-action="align-left" title="왼쪽 정렬" aria-label="왼쪽 정렬" disabled>왼쪽</button>
-                <button type="button" class="custom-editor-tool" data-editor-action="align-center" title="가로 가운데 정렬" aria-label="가로 가운데 정렬" disabled>가로 가운데</button>
-                <button type="button" class="custom-editor-tool" data-editor-action="align-right" title="오른쪽 정렬" aria-label="오른쪽 정렬" disabled>오른쪽</button>
-                <button type="button" class="custom-editor-tool" data-editor-action="align-top" title="위쪽 정렬" aria-label="위쪽 정렬" disabled>위쪽</button>
-                <button type="button" class="custom-editor-tool" data-editor-action="align-middle" title="세로 가운데 정렬" aria-label="세로 가운데 정렬" disabled>세로 가운데</button>
-                <button type="button" class="custom-editor-tool" data-editor-action="align-bottom" title="아래쪽 정렬" aria-label="아래쪽 정렬" disabled>아래쪽</button>
+              <div class="custom-editor-ribbon-panel" data-fallback-ribbon-panel="insert">
+                <div class="custom-editor-ribbon-group">
+                  <div class="custom-editor-ribbon-group-controls">
+                    <button type="button" class="custom-editor-tool" data-editor-action="add-text">텍스트</button>
+                    <button type="button" class="custom-editor-tool" data-editor-action="add-image">이미지</button>
+                  </div>
+                  <span class="custom-editor-ribbon-group-label">콘텐츠</span>
+                </div>
+                <div class="custom-editor-ribbon-group">
+                  <div class="custom-editor-ribbon-group-controls">
+                    <button type="button" class="custom-editor-tool" data-editor-action="add-rect">사각형</button>
+                    <button type="button" class="custom-editor-tool" data-editor-action="add-roundRect">둥근 사각형</button>
+                    <button type="button" class="custom-editor-tool" data-editor-action="add-ellipse">원</button>
+                    <button type="button" class="custom-editor-tool" data-editor-action="add-line">선</button>
+                  </div>
+                  <span class="custom-editor-ribbon-group-label">도형</span>
+                </div>
               </div>
 
-              <div class="custom-editor-tool-group custom-editor-tool-cluster custom-editor-object-tools" role="group" aria-label="개체 관리">
-                <button type="button" class="custom-editor-tool" data-editor-action="forward" title="앞으로 가져오기" aria-label="앞으로 가져오기" disabled>앞으로</button>
-                <button type="button" class="custom-editor-tool" data-editor-action="backward" title="뒤로 보내기" aria-label="뒤로 보내기" disabled>뒤로</button>
-                <button type="button" class="custom-editor-tool" data-editor-action="duplicate" title="개체 복제" aria-label="개체 복제" disabled>복제</button>
-                <button type="button" class="custom-editor-tool danger" data-editor-action="delete" title="개체 삭제" aria-label="개체 삭제" disabled>삭제</button>
+              <div class="custom-editor-ribbon-panel" data-fallback-ribbon-panel="align">
+                <div class="custom-editor-ribbon-group">
+                  <div class="custom-editor-ribbon-group-controls">
+                    <button type="button" class="custom-editor-tool" data-editor-action="align-left" disabled>왼쪽</button>
+                    <button type="button" class="custom-editor-tool" data-editor-action="align-center" disabled>가로 가운데</button>
+                    <button type="button" class="custom-editor-tool" data-editor-action="align-right" disabled>오른쪽</button>
+                    <button type="button" class="custom-editor-tool" data-editor-action="align-top" disabled>위쪽</button>
+                    <button type="button" class="custom-editor-tool" data-editor-action="align-middle" disabled>세로 가운데</button>
+                    <button type="button" class="custom-editor-tool" data-editor-action="align-bottom" disabled>아래쪽</button>
+                  </div>
+                  <span class="custom-editor-ribbon-group-label">슬라이드에 맞춤</span>
+                </div>
               </div>
-            </div>
+
+              <div class="custom-editor-ribbon-panel" data-fallback-ribbon-panel="arrange">
+                <div class="custom-editor-ribbon-group">
+                  <div class="custom-editor-ribbon-group-controls">
+                    <button type="button" class="custom-editor-tool" data-editor-action="to-front" disabled>맨 앞으로</button>
+                    <button type="button" class="custom-editor-tool" data-editor-action="forward" disabled>앞으로</button>
+                    <button type="button" class="custom-editor-tool" data-editor-action="backward" disabled>뒤로</button>
+                    <button type="button" class="custom-editor-tool" data-editor-action="to-back" disabled>맨 뒤로</button>
+                  </div>
+                  <span class="custom-editor-ribbon-group-label">쌓는 순서</span>
+                </div>
+                <div class="custom-editor-ribbon-group">
+                  <div class="custom-editor-ribbon-group-controls">
+                    <button type="button" class="custom-editor-tool" data-editor-action="duplicate" disabled>복제</button>
+                    <button type="button" class="custom-editor-tool danger" data-editor-action="delete" disabled>삭제</button>
+                  </div>
+                  <span class="custom-editor-ribbon-group-label">개체 관리</span>
+                </div>
+              </div>
             </div>
 
             <div class="custom-editor-body">
