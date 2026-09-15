@@ -4128,10 +4128,62 @@ export async function createCustomSlideEditor(root, options = {}) {
 
   await load(model);
 
+  function exportSession() {
+    flushHistory();
+    model = syncModel();
+    return {
+      model: normalizeCustomSlide(model),
+      history: history.exportState(),
+      activeElementIds: selectedFabricObjects(canvas)
+        .map((object) => object.customElementId)
+        .filter(Boolean),
+    };
+  }
+
+  async function importSession(session = {}) {
+    if (destroyed) {
+      return model;
+    }
+    if (historyTimer !== null) {
+      clearTimeout(historyTimer);
+      historyTimer = null;
+    }
+
+    model = normalizeCustomSlide(session.model);
+    const rendered = await renderModel(model);
+    if (!rendered || destroyed) {
+      return model;
+    }
+    model = serialize();
+    history.importState({
+      ...session.history,
+      current: model,
+    });
+
+    const ids = new Set(
+      Array.isArray(session.activeElementIds) ? session.activeElementIds : []
+    );
+    const members = elementObjects().filter((object) =>
+      ids.has(object.customElementId)
+    );
+    if (members.length === 1) {
+      canvas.setActiveObject(members[0]);
+    } else if (members.length > 1 && fabric.ActiveSelection) {
+      canvas.setActiveObject(new fabric.ActiveSelection(members, { canvas }));
+    }
+    canvas.requestRenderAll();
+    updatePropertyPanel();
+    refreshActionStates();
+    notifyChange();
+    return normalizeCustomSlide(model);
+  }
+
   return {
     canvas,
     load,
     resize: resizeToStage,
+    exportSession,
+    importSession,
     serialize() {
       if (destroyed) {
         return model;

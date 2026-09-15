@@ -1145,3 +1145,29 @@ test("explicit resize is a no-op while the stage has no width", async () => {
 
   assert.equal(ctx.editor.resize(), false);
 });
+
+test("editor sessions transfer model, history, and selected element ids", async () => {
+  const source = await createEditor();
+  await source.editor.load(textSlide("session-text", { text: "처음" }));
+  const text = source.canvas.getObjects().find((object) => object.elementType === "text");
+  source.canvas.setActiveObject(text);
+  text.set({ text: "수정됨" });
+  source.canvas.fire("text:changed", { target: text });
+
+  const session = source.editor.exportSession();
+  assert.equal(session.model.elements[0].text, "수정됨");
+  assert.deepEqual(session.activeElementIds, ["session-text"]);
+  assert.equal(session.history.undo.length, 1);
+
+  const target = await createEditor();
+  await target.editor.importSession(session);
+  assert.equal(target.editor.serialize().elements[0].text, "수정됨");
+  assert.equal(target.editor.isDirty(), true);
+  assert.equal(
+    target.canvas.getActiveObject().customElementId,
+    "session-text"
+  );
+
+  await target.editor.undo();
+  assert.equal(target.editor.serialize().elements[0].text, "처음");
+});

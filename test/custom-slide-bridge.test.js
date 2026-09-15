@@ -60,6 +60,8 @@ function createFakeEditorFactory({ holdLoad = false } = {}) {
     markSavedCalls: 0,
     resetCalls: 0,
     resizeCalls: 0,
+    exportSessionCalls: 0,
+    importSessionCalls: 0,
     serializeCalls: 0,
     pendingLoads: [],
     onChange: null,
@@ -103,6 +105,15 @@ function createFakeEditorFactory({ holdLoad = false } = {}) {
       resize() {
         state.resizeCalls += 1;
         return true;
+      },
+      exportSession() {
+        state.exportSessionCalls += 1;
+        return { model: state.loads.at(-1)?.model, history: {} };
+      },
+      async importSession(session) {
+        state.importSessionCalls += 1;
+        state.loads.push({ model: session.model, loadOptions: {} });
+        return session.model;
       },
       async destroy() {
         state.destroyed = true;
@@ -571,6 +582,26 @@ test("createCustomEditorSession", async (t) => {
     assert.equal(session.resize("slide-b"), false);
     assert.equal(session.resize("slide-a"), true);
     assert.equal(state.resizeCalls, 1);
+  });
+
+  await t.test("exports and imports sessions only for the owned slide", async () => {
+    const { createEditor, state } = createFakeEditorFactory();
+    const session = createCustomEditorSession({ root: {}, createEditor });
+    await session.showSlide("slide-a", rectModel("slide-a"));
+
+    assert.equal(session.exportSession("slide-b"), null);
+    assert.ok(session.exportSession("slide-a"));
+    assert.equal(state.exportSessionCalls, 1);
+
+    assert.equal(await session.importSession("slide-b", {}), false);
+    assert.equal(
+      await session.importSession("slide-a", {
+        model: rectModel("restored"),
+        history: {},
+      }),
+      true
+    );
+    assert.equal(state.importSessionCalls, 1);
   });
 
   await t.test("serializes nothing before the editor exists", () => {

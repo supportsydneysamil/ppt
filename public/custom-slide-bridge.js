@@ -265,6 +265,19 @@ export function createCustomEditorSession(options = {}) {
       }
       return editor.resize();
     },
+    exportSession(slideId) {
+      if (!ownsSlide(slideId) || typeof editor.exportSession !== "function") {
+        return null;
+      }
+      return editor.exportSession();
+    },
+    async importSession(slideId, session) {
+      if (!ownsSlide(slideId) || typeof editor.importSession !== "function") {
+        return false;
+      }
+      await editor.importSession(session);
+      return ownsSlide(slideId);
+    },
     async reset(slideId) {
       if (!ownsSlide(slideId)) {
         return false;
