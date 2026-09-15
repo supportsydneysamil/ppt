@@ -733,6 +733,15 @@ async function setup(page, options = {}) {
     return state;
   }
   await waitForPptReady(page);
+  const layoutMode = await page
+    .locator("#pptWorkspace")
+    .getAttribute("data-layout-mode");
+  const slidesOpen = await page
+    .locator("#pptWorkspace")
+    .getAttribute("data-slides-open");
+  if (layoutMode === "compact" && slidesOpen === "false") {
+    await page.locator("#pptSlidesPaneBtn").click();
+  }
   await page
     .locator("#slideListContainer .slide-card")
     .first()
@@ -825,6 +834,103 @@ async function waitForAlert(diagnostics, text) {
 }
 
 await runScenario(
+  "wide PPT workspace supports three panes and canvas-first focus mode",
+  async (page) => {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await setup(page, { slides: customCanvasSlides });
+    await selectMainSlide(page, 0);
+    await page
+      .locator("#customSlideEditor [data-custom-editor='status']")
+      .first()
+      .filter({ hasText: "슬라이드를 불러왔습니다" })
+      .waitFor();
+
+    const workspace = page.locator("#pptWorkspace");
+    assert.equal(await workspace.getAttribute("data-layout-mode"), "wide");
+    assert.equal(await workspace.getAttribute("data-slides-open"), "true");
+    assert.equal(await workspace.getAttribute("data-inspector-open"), "true");
+    assert.equal(await page.locator("#editorSaveBtn").isDisabled(), true);
+
+    const normalWidth = await page
+      .locator("#customSlideEditor .canvas-container")
+      .evaluate((node) => Math.round(node.getBoundingClientRect().width));
+    assert.ok(normalWidth >= 720, `three-pane canvas stayed narrow: ${normalWidth}`);
+
+    await page.locator("#pptFocusModeBtn").click();
+    await page.waitForFunction(
+      (before) =>
+        document.querySelector("#customSlideEditor .canvas-container")
+          ?.getBoundingClientRect().width > before + 200,
+      normalWidth
+    );
+    assert.equal(await workspace.getAttribute("data-focus-mode"), "true");
+    assert.equal(await page.locator("#slideListPanel").getAttribute("inert"), "");
+    assert.equal(await page.locator("#slideForm").getAttribute("inert"), "");
+
+    const focusWidth = await page
+      .locator("#customSlideEditor .canvas-container")
+      .evaluate((node) => Math.round(node.getBoundingClientRect().width));
+    assert.ok(focusWidth >= 960, `focus canvas stayed narrow: ${focusWidth}`);
+    assert.equal(await page.locator("#editorSaveBtn").isDisabled(), true);
+
+    await page.locator("#pptFocusModeBtn").click();
+    await page.waitForFunction(
+      (expected) =>
+        Math.abs(
+          document.querySelector("#customSlideEditor .canvas-container")
+            ?.getBoundingClientRect().width - expected
+        ) <= 2,
+      normalWidth
+    );
+    assert.equal(await workspace.getAttribute("data-focus-mode"), "false");
+    assert.equal(await page.locator("#slideListPanel").getAttribute("inert"), null);
+    assert.equal(await page.locator("#slideForm").getAttribute("inert"), null);
+  }
+);
+
+await runScenario(
+  "compact PPT workspace opens one drawer and Escape closes it",
+  async (page) => {
+    await page.setViewportSize({ width: 1024, height: 900 });
+    await setup(page);
+    const workspace = page.locator("#pptWorkspace");
+
+    assert.equal(await workspace.getAttribute("data-layout-mode"), "compact");
+    assert.equal(await workspace.getAttribute("data-slides-open"), "true");
+    assert.equal(await workspace.getAttribute("data-inspector-open"), "false");
+
+    await selectMainSlide(page, 0);
+    await page.locator("#pptInspectorPaneBtn").click();
+    assert.equal(await workspace.getAttribute("data-slides-open"), "false");
+    assert.equal(await workspace.getAttribute("data-inspector-open"), "true");
+
+    await page.keyboard.press("Escape");
+    assert.equal(await workspace.getAttribute("data-inspector-open"), "false");
+    assert.equal(await page.locator("#editorSaveBtn").isDisabled(), true);
+  }
+);
+
+await runScenario(
+  "mobile PPT workspace keeps panels in flow and hides pane toggles",
+  async (page) => {
+    await page.setViewportSize({ width: 899, height: 900 });
+    await setup(page);
+    const workspace = page.locator("#pptWorkspace");
+
+    assert.equal(await workspace.getAttribute("data-layout-mode"), "mobile");
+    assert.equal(await workspace.getAttribute("data-slides-open"), "true");
+    assert.equal(await workspace.getAttribute("data-inspector-open"), "true");
+    assert.equal(await page.locator("#slideListPanel").isVisible(), true);
+    assert.equal(await page.locator("#pptSlidesPaneBtn").isHidden(), true);
+
+    await selectMainSlide(page, 0);
+    assert.equal(await page.locator("#slideForm").isVisible(), true);
+    assert.equal(await page.locator("#pptInspectorPaneBtn").isHidden(), true);
+    assert.equal(await page.locator("#pptFocusModeBtn").isHidden(), true);
+  }
+);
+
+await runScenario(
   "workspace width follows the active product without widening scripture",
   async (page) => {
     await page.setViewportSize({ width: 1440, height: 1000 });
@@ -878,7 +984,7 @@ await runScenario(
 await runScenario(
   "custom canvas grows with the browser and recovers after a hidden view",
   async (page) => {
-    await page.setViewportSize({ width: 1024, height: 900 });
+    await page.setViewportSize({ width: 1280, height: 900 });
     await setup(page, { slides: customCanvasSlides });
     await selectMainSlide(page, 0);
     const status = page
@@ -894,14 +1000,14 @@ await runScenario(
     await page.waitForFunction(
       (before) =>
         document.querySelector("#customSlideEditor .canvas-container")
-          ?.getBoundingClientRect().width > before + 200,
+          ?.getBoundingClientRect().width > before + 80,
       narrowWidth
     );
 
     const wideWidth = await page.locator(
       "#customSlideEditor .canvas-container"
     ).evaluate((node) => Math.round(node.getBoundingClientRect().width));
-    assert.ok(wideWidth >= 900, `custom canvas stayed narrow: ${wideWidth}`);
+    assert.ok(wideWidth >= 720, `custom canvas stayed narrow: ${wideWidth}`);
 
     await page.locator("#navExtractor").click();
     await page.locator("#navPpt").click();
@@ -919,7 +1025,7 @@ await runScenario(
 await runScenario(
   "title preview rerenders at the current stage width",
   async (page) => {
-    await page.setViewportSize({ width: 1024, height: 900 });
+    await page.setViewportSize({ width: 1280, height: 900 });
     await setup(page);
     await selectMainSlide(page, 0);
     await page.locator("#slideType").selectOption("title");
@@ -933,7 +1039,7 @@ await runScenario(
     await page.waitForFunction(
       (before) =>
         document.querySelector("#slidePreview > div")
-          ?.getBoundingClientRect().width > before + 200,
+          ?.getBoundingClientRect().width > before + 80,
       initial
     );
 
