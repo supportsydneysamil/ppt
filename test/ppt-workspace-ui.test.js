@@ -138,8 +138,21 @@ describe("PPT three-pane layout", () => {
   it("gives the slide list a rail and the editor the remaining width", () => {
     assert.match(
       css,
-      /\.ppt-interface\s*\{[\s\S]*grid-template-columns:\s*260px minmax\(0,\s*1fr\)/
+      /\.ppt-interface\s*\{[\s\S]*grid-template-columns:\s*280px minmax\(0,\s*1fr\)/
     );
+  });
+
+  it("reserves readable Korean label width in the slide rail", () => {
+    assert.match(
+      css,
+      /\.ppt-interface\s*\{[\s\S]*grid-template-columns:\s*280px minmax\(0,\s*1fr\)/
+    );
+    assert.match(css, /\.slide-card-main h4\s*\{[\s\S]*word-break:\s*keep-all/);
+    assert.match(
+      css,
+      /\.slide-card-actions\s*\{[\s\S]*grid-column:\s*2/
+    );
+    assert.match(html, /id="slidePanelCollapseBtn"/);
   });
 
   it("places the stage and inspector in distinct editor columns", () => {
@@ -154,7 +167,7 @@ describe("PPT three-pane layout", () => {
   it("splits custom-editor stage and side chrome without moving its DOM", () => {
     assert.match(
       css,
-      /\.slide-editor-panel\[data-slide-type="custom"\][\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\) clamp\(280px,\s*22vw,\s*320px\)/
+      /\.slide-editor-panel\[data-slide-type="custom"\][\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\) clamp\(280px,\s*21vw,\s*300px\)/
     );
   });
 

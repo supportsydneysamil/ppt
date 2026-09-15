@@ -1959,7 +1959,7 @@ body {
 /* PPT Interface Grid */
 .ppt-interface {
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
+  grid-template-columns: 280px minmax(0, 1fr);
   gap: 16px;
   align-items: start;
   position: relative;
@@ -1977,6 +1977,7 @@ body {
 
 /* Slide List Panel */
 .slide-list-panel {
+  position: relative;
   background: var(--panel);
   border-radius: 16px;
   padding: 16px;
@@ -1984,6 +1985,35 @@ body {
   display: flex;
   flex-direction: column;
   align-self: start;
+}
+
+.slide-panel-collapse {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.slide-panel-collapse svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
+.slide-list-header {
+  padding-right: 34px;
 }
 
 .slide-list-header {
@@ -2153,7 +2183,8 @@ body {
 }
 
 .slide-card-header {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: flex-start;
   gap: 10px;
 }
@@ -2170,15 +2201,22 @@ body {
 .slide-card-main h4 {
   margin: 0 0 4px;
   font-size: 14px;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
 }
 
 .slide-card-main p {
   margin: 0;
   font-size: 12px;
   opacity: 0.8;
+  word-break: keep-all;
+  line-height: 1.4;
 }
 
 .slide-card-actions {
+  grid-column: 2;
+  justify-self: end;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -2299,7 +2337,7 @@ body {
   padding: var(--sp-5);
   border: 1px solid var(--border);
   display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(280px, 22vw, 320px);
+  grid-template-columns: minmax(0, 1fr) clamp(280px, 21vw, 300px);
   grid-template-areas:
     "header header"
     "stage inspector";
@@ -3493,7 +3531,7 @@ body[data-theme="light"] .rte-textarea {
   grid-column: 1 / -1;
   grid-row: 2;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(280px, 22vw, 320px);
+  grid-template-columns: minmax(0, 1fr) clamp(280px, 21vw, 300px);
   grid-template-areas:
     "bar side"
     "tools side"
@@ -3550,14 +3588,15 @@ body[data-theme="light"] .rte-textarea {
   visibility: hidden;
 }
 
-.ppt-interface[data-slides-open="false"] .slide-list-panel::before {
-  content: "▤";
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  color: var(--muted);
+.ppt-interface[data-slides-open="false"] .slide-panel-collapse {
+  top: 6px;
+  right: 6px;
   visibility: visible;
+  transform: rotate(180deg);
+}
+
+.ppt-interface[data-slides-open="false"] .slide-list-panel::before {
+  display: none;
 }
 
 .ppt-interface[data-inspector-open="false"] .slide-editor-panel {
@@ -3578,6 +3617,12 @@ body[data-theme="light"] .rte-textarea {
 
 .ppt-interface[data-focus-mode="true"] {
   grid-template-columns: 44px minmax(0, 1fr);
+}
+
+@media (min-width: 1280px) {
+  #pptSlidesPaneBtn {
+    display: none;
+  }
 }
 
 @media (min-width: 900px) and (max-width: 1279px) {
@@ -3694,6 +3739,10 @@ body[data-theme="light"] .rte-textarea {
 
 @media (max-width: 899px) {
   .ppt-pane-toggle {
+    display: none;
+  }
+
+  .slide-panel-collapse {
     display: none;
   }
 

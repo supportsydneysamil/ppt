@@ -846,6 +846,7 @@ const pptFocusModeBtn = document.getElementById("pptFocusModeBtn");
 const customEditorPopoutBtn = document.getElementById("customEditorPopoutBtn");
 const pptWorkspace = document.getElementById("pptWorkspace");
 const slideListPanel = document.getElementById("slideListPanel");
+const slidePanelCollapseBtn = document.getElementById("slidePanelCollapseBtn");
 const templateGallery = document.getElementById("templateGallery");
 const templateGalleryGrid = document.getElementById("templateGalleryGrid");
 const templateGalleryEmpty = document.getElementById("templateGalleryEmpty");
@@ -1038,6 +1039,15 @@ function applyPptWorkspaceUi() {
       ? "슬라이드 닫기"
       : "슬라이드 열기";
   }
+  if (slidePanelCollapseBtn) {
+    const expanded = String(pptWorkspaceUi.slidesOpen);
+    const label = pptWorkspaceUi.slidesOpen
+      ? "슬라이드 목록 닫기"
+      : "슬라이드 목록 열기";
+    slidePanelCollapseBtn.setAttribute("aria-expanded", expanded);
+    slidePanelCollapseBtn.setAttribute("aria-label", label);
+    slidePanelCollapseBtn.title = label;
+  }
   if (pptInspectorPaneBtn) {
     pptInspectorPaneBtn.setAttribute(
       "aria-expanded",
@@ -1059,8 +1069,13 @@ function applyPptWorkspaceUi() {
   }
 
   if (slideListPanel) {
-    slideListPanel.inert =
+    const listContentInert =
       pptWorkspaceUi.mode !== "mobile" && !pptWorkspaceUi.slidesOpen;
+    for (const region of slideListPanel.querySelectorAll(
+      ".slide-list-header, .slide-list-toolbar, .slide-cards"
+    )) {
+      region.inert = listContentInert;
+    }
   }
   const inspectorInert =
     pptWorkspaceUi.mode !== "mobile" && !pptWorkspaceUi.inspectorOpen;
@@ -2550,6 +2565,9 @@ navExtractor.addEventListener("click", () => switchView("extractor"));
 navPpt.addEventListener("click", () => switchView("ppt"));
 syncWorkspaceLayoutState("extractor");
 pptSlidesPaneBtn?.addEventListener("click", () => {
+  dispatchPptWorkspaceUi({ type: "toggle-slides" });
+});
+slidePanelCollapseBtn?.addEventListener("click", () => {
   dispatchPptWorkspaceUi({ type: "toggle-slides" });
 });
 pptInspectorPaneBtn?.addEventListener("click", () => {

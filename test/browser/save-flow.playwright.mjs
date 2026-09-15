@@ -982,7 +982,7 @@ await runScenario(
       normalWidth
     );
     assert.equal(await workspace.getAttribute("data-focus-mode"), "true");
-    assert.equal(await page.locator("#slideListPanel").getAttribute("inert"), "");
+    assert.equal(await page.locator(".slide-cards").getAttribute("inert"), "");
     assert.equal(await page.locator("#slideForm").getAttribute("inert"), "");
 
     const focusWidth = await page
@@ -1001,7 +1001,7 @@ await runScenario(
       normalWidth
     );
     assert.equal(await workspace.getAttribute("data-focus-mode"), "false");
-    assert.equal(await page.locator("#slideListPanel").getAttribute("inert"), null);
+    assert.equal(await page.locator(".slide-cards").getAttribute("inert"), null);
     assert.equal(await page.locator("#slideForm").getAttribute("inert"), null);
   }
 );
