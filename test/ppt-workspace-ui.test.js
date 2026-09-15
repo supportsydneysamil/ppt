@@ -736,6 +736,21 @@ describe("PPT panel collapse affordances", () => {
     );
   });
 
+  it("keeps a functional category fallback when React chrome is unavailable", () => {
+    assert.match(
+      html,
+      /custom-editor-ribbon--fallback[\s\S]*?role="tablist"[\s\S]*?>디자인<[\s\S]*?>삽입<[\s\S]*?>정렬<[\s\S]*?>배치</
+    );
+    assert.match(html, /data-fallback-ribbon-panel="design"/);
+    assert.match(html, /data-fallback-ribbon-panel="insert"/);
+    assert.match(html, /data-fallback-ribbon-panel="align"/);
+    assert.match(html, /data-fallback-ribbon-panel="arrange"/);
+    assert.match(
+      css,
+      /\.custom-editor-ribbon--fallback:has\(#fallbackRibbonInsert:checked\)[\s\S]*?data-fallback-ribbon-panel="insert"/
+    );
+  });
+
   it("gives the layer list rows instead of loose buttons", () => {
     assert.match(chromeSource, /data-editor-ui="layers"/);
     assert.match(chromeSource, /data-editor-ui="layers-empty"/);

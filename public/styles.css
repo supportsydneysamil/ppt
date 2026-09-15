@@ -3481,6 +3481,9 @@ body[data-theme="light"] .rte-textarea {
 }
 
 .custom-editor-ribbon-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: none;
   height: var(--ctrl-h-xs);
   padding: 0 12px;
@@ -3532,6 +3535,34 @@ body[data-theme="light"] .rte-textarea {
 
 .custom-editor-ribbon-panel[hidden] {
   display: none;
+}
+
+.custom-editor-ribbon--fallback [data-fallback-ribbon-panel] {
+  display: none;
+}
+
+.custom-editor-ribbon--fallback:has(#fallbackRibbonDesign:checked)
+  [data-fallback-ribbon-panel="design"],
+.custom-editor-ribbon--fallback:has(#fallbackRibbonInsert:checked)
+  [data-fallback-ribbon-panel="insert"],
+.custom-editor-ribbon--fallback:has(#fallbackRibbonAlign:checked)
+  [data-fallback-ribbon-panel="align"],
+.custom-editor-ribbon--fallback:has(#fallbackRibbonArrange:checked)
+  [data-fallback-ribbon-panel="arrange"] {
+  display: flex;
+}
+
+.custom-editor-ribbon--fallback:has(#fallbackRibbonDesign:checked)
+  label[for="fallbackRibbonDesign"],
+.custom-editor-ribbon--fallback:has(#fallbackRibbonInsert:checked)
+  label[for="fallbackRibbonInsert"],
+.custom-editor-ribbon--fallback:has(#fallbackRibbonAlign:checked)
+  label[for="fallbackRibbonAlign"],
+.custom-editor-ribbon--fallback:has(#fallbackRibbonArrange:checked)
+  label[for="fallbackRibbonArrange"] {
+  color: var(--ink);
+  background: var(--panel-soft);
+  box-shadow: inset 0 -2px 0 var(--brand);
 }
 
 .custom-editor-ribbon-group {
