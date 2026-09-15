@@ -157,6 +157,36 @@ describe("PPT three-pane layout", () => {
   });
 });
 
+describe("PPT compact and mobile layouts", () => {
+  it("uses overlay drawers only between 900px and 1279px", () => {
+    assert.match(
+      css,
+      /@media\s*\(min-width:\s*900px\)\s*and\s*\(max-width:\s*1279px\)[\s\S]*\.slide-list-panel\s*\{[\s\S]*position:\s*absolute/
+    );
+    assert.match(
+      css,
+      /@media\s*\(min-width:\s*900px\)\s*and\s*\(max-width:\s*1279px\)[\s\S]*\.editor-form\s*\{[\s\S]*position:\s*absolute/
+    );
+  });
+
+  it("returns panels to normal flow below 900px", () => {
+    assert.match(
+      css,
+      /@media\s*\(max-width:\s*899px\)[\s\S]*\.slide-list-panel\s*\{[\s\S]*position:\s*static/
+    );
+    assert.match(
+      css,
+      /@media\s*\(max-width:\s*899px\)[\s\S]*\.editor-form\s*\{[\s\S]*position:\s*static/
+    );
+  });
+
+  it("closes compact drawers from stage clicks and Escape", () => {
+    assert.match(appSource, /function closeCompactWorkspaceDrawers\(/);
+    assert.match(appSource, /type:\s*"close-drawers"/);
+    assert.match(appSource, /event\.key\s*!={2}\s*"Escape"/);
+  });
+});
+
 describe("PPT workspace controls", () => {
   it("exposes accessible slides, inspector, and focus controls", () => {
     assert.match(html, /id="pptSlidesPaneBtn"[\s\S]*aria-controls="slideListPanel"/);

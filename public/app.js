@@ -1087,6 +1087,17 @@ function dispatchPptWorkspaceUi(action) {
   applyPptWorkspaceUi();
 }
 
+function closeCompactWorkspaceDrawers() {
+  if (
+    pptWorkspaceUi.mode !== "compact" ||
+    (!pptWorkspaceUi.slidesOpen && !pptWorkspaceUi.inspectorOpen)
+  ) {
+    return false;
+  }
+  dispatchPptWorkspaceUi({ type: "close-drawers" });
+  return true;
+}
+
 function syncWorkspaceLayoutState(viewName) {
   const currentView =
     viewName ??
@@ -2541,6 +2552,31 @@ pptInspectorPaneBtn?.addEventListener("click", () => {
 pptFocusModeBtn?.addEventListener("click", () => {
   dispatchPptWorkspaceUi({ type: "toggle-focus" });
 });
+slideEditor?.addEventListener("pointerdown", (event) => {
+  if (
+    event.target.closest?.(
+      ".editor-form, .custom-editor-side, .editor-actions, .custom-editor-context-toolbar"
+    )
+  ) {
+    return;
+  }
+  closeCompactWorkspaceDrawers();
+});
+document.addEventListener(
+  "keydown",
+  (event) => {
+    if (
+      event.key !== "Escape" ||
+      document.querySelector("dialog[open]") ||
+      !closeCompactWorkspaceDrawers()
+    ) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+  },
+  true
+);
 window.addEventListener("resize", () => {
   if (pptWorkspaceResizeFrame !== null) {
     cancelAnimationFrame(pptWorkspaceResizeFrame);

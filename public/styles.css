@@ -3571,7 +3571,183 @@ body[data-theme="light"] .rte-textarea {
   grid-template-columns: 44px minmax(0, 1fr);
 }
 
-@media (max-width: 900px) {
+@media (min-width: 900px) and (max-width: 1279px) {
+  .ppt-interface[data-layout-mode="compact"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ppt-interface[data-layout-mode="compact"]::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 15;
+    background: rgba(5, 5, 5, 0.48);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 160ms ease;
+  }
+
+  .ppt-interface[data-layout-mode="compact"][data-slides-open="true"]::before,
+  .ppt-interface[data-layout-mode="compact"][data-inspector-open="true"]::before {
+    opacity: 1;
+  }
+
+  .ppt-interface[data-layout-mode="compact"] .slide-list-panel {
+    position: absolute;
+    z-index: 20;
+    top: 0;
+    left: 0;
+    width: min(320px, calc(100vw - 48px));
+    max-height: calc(100vh - 150px);
+    overflow: auto;
+    transition: opacity 160ms ease, transform 160ms ease, visibility 160ms ease;
+  }
+
+  .ppt-interface[data-layout-mode="compact"][data-slides-open="false"]
+    .slide-list-panel {
+    visibility: hidden;
+    opacity: 0;
+    transform: translateX(-12px);
+    pointer-events: none;
+  }
+
+  .ppt-interface[data-layout-mode="compact"][data-slides-open="true"]
+    .slide-list-panel {
+    visibility: visible;
+    opacity: 1;
+    transform: none;
+    padding: 16px;
+  }
+
+  .ppt-interface[data-layout-mode="compact"][data-slides-open="true"]
+    .slide-list-panel
+    > * {
+    visibility: visible;
+  }
+
+  .ppt-interface[data-layout-mode="compact"] .slide-editor-panel {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "header"
+      "stage";
+    position: relative;
+  }
+
+  .ppt-interface[data-layout-mode="compact"] .editor-form {
+    position: absolute;
+    z-index: 22;
+    top: 72px;
+    right: 24px;
+    width: min(340px, calc(100vw - 80px));
+    max-height: calc(100vh - 190px);
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--panel);
+  }
+
+  .ppt-interface[data-layout-mode="compact"]
+    .slide-editor-panel[data-slide-type="custom"]
+    .custom-editor[data-react-chrome="true"]:not([hidden]) {
+    grid-column: 1;
+    grid-row: 2;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "bar"
+      "tools"
+      "stage"
+      "status";
+  }
+
+  .ppt-interface[data-layout-mode="compact"] .custom-editor-side {
+    position: absolute;
+    z-index: 21;
+    top: 72px;
+    right: 24px;
+    width: min(340px, calc(100vw - 80px));
+    max-height: calc(100vh - 190px);
+    overflow: auto;
+    padding: 164px 16px 16px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--panel);
+  }
+
+  .ppt-interface[data-layout-mode="compact"][data-inspector-open="false"]
+    .editor-form,
+  .ppt-interface[data-layout-mode="compact"][data-inspector-open="false"]
+    .custom-editor-side {
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
+@media (max-width: 899px) {
+  .ppt-pane-toggle {
+    display: none;
+  }
+
+  .ppt-interface[data-layout-mode="mobile"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ppt-interface[data-layout-mode="mobile"] .slide-list-panel {
+    position: static;
+    width: auto;
+    max-height: none;
+    padding: 16px;
+    overflow: visible;
+    visibility: visible;
+  }
+
+  .ppt-interface[data-layout-mode="mobile"] .slide-list-panel > * {
+    visibility: visible;
+  }
+
+  .ppt-interface[data-layout-mode="mobile"] .slide-list-panel::before {
+    display: none;
+  }
+
+  .ppt-interface[data-layout-mode="mobile"] .slide-editor-panel {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "header"
+      "stage"
+      "inspector";
+  }
+
+  .ppt-interface[data-layout-mode="mobile"] .editor-form {
+    position: static;
+    width: auto;
+    max-height: none;
+    overflow: visible;
+    visibility: visible;
+  }
+
+  .ppt-interface[data-layout-mode="mobile"]
+    .slide-editor-panel[data-slide-type="custom"]
+    .custom-editor[data-react-chrome="true"]:not([hidden]) {
+    grid-column: 1;
+    grid-row: 2;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "bar"
+      "tools"
+      "stage"
+      "side"
+      "status";
+  }
+
+  .ppt-interface[data-layout-mode="mobile"] .custom-editor-side {
+    position: static;
+    width: auto;
+    max-height: none;
+    overflow: visible;
+    visibility: visible;
+    padding: 0;
+  }
+
   .custom-editor-props {
     grid-template-columns: minmax(0, 1fr);
   }
