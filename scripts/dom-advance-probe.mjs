@@ -2,6 +2,7 @@
 // DOM text widths. Canvas measureText resolves unicode-range faces differently
 // and disagrees with layout, so it cannot be used to check the generated CSS.
 import { chromium } from 'playwright';
+import { FONT_SUBSTITUTES } from '../public/pptx-fonts/manifest.js';
 
 const baseURL = process.argv[2] || 'http://localhost:3311';
 const FAMILY = process.argv[3] || 'Malgun Gothic';
@@ -9,7 +10,10 @@ const FAMILY = process.argv[3] || 'Malgun Gothic';
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
 await page.goto(baseURL, { waitUntil: 'domcontentloaded' });
-await page.addStyleTag({ url: '/pptx-font-fallbacks.css' });
+// Substitutes now ship one stylesheet per family, loaded on demand.
+for (const entry of FONT_SUBSTITUTES) {
+  await page.addStyleTag({ url: `/pptx-fonts/${entry.id}.css` });
+}
 await page.evaluate(() => document.fonts.ready);
 await page.waitForTimeout(800);
 

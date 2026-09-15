@@ -3,6 +3,7 @@
 // @font-face wins, the Noto-derived size-adjust/overrides are being applied to
 // the wrong font, which invalidates the correction.
 import { chromium } from 'playwright';
+import { FONT_SUBSTITUTES } from '../public/pptx-fonts/manifest.js';
 
 const baseURL = process.argv[2] || 'http://localhost:3311';
 
@@ -10,7 +11,10 @@ const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1200, height: 900 } });
 await page.goto(baseURL, { waitUntil: 'domcontentloaded' });
 // Loading the preview CSS is what registers the aliased families.
-await page.addStyleTag({ url: '/pptx-font-fallbacks.css' });
+// Substitutes now ship one stylesheet per family, loaded on demand.
+for (const entry of FONT_SUBSTITUTES) {
+  await page.addStyleTag({ url: `/pptx-fonts/${entry.id}.css` });
+}
 await page.evaluate(() => document.fonts.ready);
 await page.waitForTimeout(800);
 

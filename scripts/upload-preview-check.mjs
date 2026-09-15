@@ -34,10 +34,14 @@ await page.locator('#slideEditor').waitFor({ state: 'visible' });
 
 await page.locator('#slideType').selectOption('simple');
 await page.locator('input[name="sourceType"][value="upload"]').check();
+// Font detection and substitute loading sit on the path to first paint, so
+// time the whole window from file pick to a mounted slide.
+const startedAt = Date.now();
 await page.locator('#userPptxFile').setInputFiles(pptxPath);
 
 // The viewer mounts asynchronously; wait for a real slide wrapper to appear.
 await page.locator('#slidePreview [data-slide-index]').first().waitFor({ timeout: 60000 });
+console.log(`time to first mounted slide: ${Date.now() - startedAt}ms`);
 await page.waitForTimeout(2500);
 
 const cdp = await page.context().newCDPSession(page);
@@ -50,6 +54,26 @@ const { nodeId: textNodeId } = await cdp.send('DOM.querySelector', {
 const platformFonts = textNodeId
   ? (await cdp.send('CSS.getPlatformFontsForNode', { nodeId: textNodeId })).fonts
   : [];
+
+const fontPlan = await page.evaluate(() => {
+  const plan = window.__pptxFontPlan;
+  if (!plan) return null;
+  return {
+    usedLocally: plan.available.map((e) => `${e.family} -> ${e.resolvedAs}`),
+    substituted: plan.missing.map((e) => e.family),
+  };
+});
+console.log('font plan:', fontPlan);
+
+// Only the substituted families may pull a stylesheet over the wire.
+const loadedSheets = await page.evaluate(() =>
+  performance
+    .getEntriesByType('resource')
+    .map((e) => e.name)
+    .filter((n) => n.includes('pptx-fonts/') && n.endsWith('.css'))
+    .map((n) => n.split('/').pop())
+);
+console.log('loaded stylesheets:', loadedSheets);
 
 const report = await page.evaluate(() => {
   const box = document.getElementById('slidePreview');

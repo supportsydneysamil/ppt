@@ -1805,6 +1805,48 @@ function renderTemplateGallery() {
   }
 }
 
+// Vite turns this into one lazily loadable chunk per family, so a machine that
+// has the genuine Office fonts downloads none of them.
+const pptxFontSheets = import.meta.glob('./pptx-fonts/*.css');
+let missingDeckFontsPromise = null;
+
+/**
+ * Loads a substitute stylesheet for each Office font this machine lacks, and
+ * leaves the rest alone so the genuine font renders untouched. Detection runs
+ * once per session; installing a font mid-session is not worth tracking.
+ */
+function loadMissingDeckFonts() {
+  if (!missingDeckFontsPromise) {
+    missingDeckFontsPromise = (async () => {
+      const [{ FONT_SUBSTITUTES }, availability] = await Promise.all([
+        import('./pptx-fonts/manifest.js'),
+        import('./pptx-font-availability.js'),
+      ]);
+      const { createCanvasMeasurer, planFontSubstitutes } = availability;
+      const { available, missing } = planFontSubstitutes(
+        FONT_SUBSTITUTES,
+        createCanvasMeasurer()
+      );
+      previewFontPlan = { available, missing };
+
+      await Promise.all(
+        missing.map((entry) => {
+          const load = pptxFontSheets[`./pptx-fonts/${entry.id}.css`];
+          return load ? load() : null;
+        })
+      );
+      // Substituted faces use font-display: block, so wait for them rather than
+      // let the first paint measure a fallback and lay text out twice.
+      if (missing.length && document.fonts?.ready) await document.fonts.ready;
+    })();
+  }
+  return missingDeckFontsPromise;
+}
+
+// Exposed for the preview diagnostics script.
+let previewFontPlan = null;
+Object.defineProperty(window, '__pptxFontPlan', { get: () => previewFontPlan });
+
 function cleanupPreviewResources() {
   const state = slidePreview.__pptxPreviewState;
   if (!state) return;
@@ -3316,10 +3358,9 @@ function renderPreview(slideOverride) {
         };
 
         try {
-          // Font CSS is large because Korean is split into unicode ranges. Load
-          // it only when a PPTX is previewed; the browser then fetches only the
-          // glyph chunks used by that deck.
-          await import('./pptx-font-fallbacks.css');
+          // Substitutes must be registered before the deck lays out, and only
+          // for fonts this machine is actually missing.
+          await loadMissingDeckFonts();
           const { PptxViewer, RECOMMENDED_ZIP_LIMITS } = await import('@aiden0z/pptx-renderer');
           if (slidePreview.__pptxPreviewState !== previewState) return;
 

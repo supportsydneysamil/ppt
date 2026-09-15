@@ -1,5 +1,13 @@
-// Generates public/pptx-font-fallbacks.css so the PPTX preview can substitute
-// Office fonts it cannot ship.
+// Generates the substitute stylesheets the PPTX preview falls back to when an
+// Office font is not installed, one file per family plus a manifest.
+//
+// The preview detects at runtime whether each family is actually available on
+// the machine. When it is, nothing here is loaded and the genuine font renders
+// as-is, which is exact. Only the missing families pull in a substitute. That
+// is why the families are split into separate files rather than one bundle, and
+// why the manifest carries the names a genuine font may be installed under:
+// Windows exposes Malgun Gothic as both "Malgun Gothic" and "맑은 고딕", and
+// the same font is absent on macOS and Linux.
 //
 // Every number here is derived from the font binaries, not tuned against a
 // screenshot: Hangul advances are uniform within a font, so the horizontal
@@ -23,7 +31,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const outputPath = path.join(rootDir, "public", "pptx-font-fallbacks.css");
+const outputDir = path.join(rootDir, "public", "pptx-fonts");
 
 // Where an original Office font may be installed. Used for measurement only;
 // these files are never copied or served.
@@ -53,50 +61,66 @@ const SPACE = 0x20;
 // GulimChe, Dotum and DotumChe, and batang.ttc holds Batang and Gungsuh.
 // Aliases with no `file` have no installed original to measure, so they are
 // substituted without adjustment rather than with a guessed ratio.
+//
+// `localNames` are the names the genuine font may be registered under on any
+// platform. Hitting one of them means the substitute is skipped entirely, so
+// only names of the real font belong here, or of a font metric-compatible with
+// it by design. A mere lookalike would silently lose the match to the original.
 const groups = [
   {
     packageName: "@fontsource-variable/noto-sans-kr",
     sourceFamily: "Noto Sans KR Variable",
     aliases: [
-      { family: "Malgun Gothic", file: "malgun.ttf" },
-      { family: "맑은 고딕", file: "malgun.ttf" },
-      { family: "Gulim", file: "gulim.ttc", face: "Gulim" },
-      { family: "굴림", file: "gulim.ttc", face: "Gulim" },
-      { family: "Dotum", file: "gulim.ttc", face: "Dotum" },
-      { family: "돋움", file: "gulim.ttc", face: "Dotum" },
-      { family: "HY견고딕" },
-      { family: "NanumSquare Bold" },
+      { family: "Malgun Gothic", id: "malgun-gothic", file: "malgun.ttf", localNames: ["Malgun Gothic", "맑은 고딕"] },
+      { family: "맑은 고딕", id: "malgun-gothic-ko", file: "malgun.ttf", localNames: ["맑은 고딕", "Malgun Gothic"] },
+      { family: "Gulim", id: "gulim", file: "gulim.ttc", face: "Gulim", localNames: ["Gulim", "굴림"] },
+      { family: "굴림", id: "gulim-ko", file: "gulim.ttc", face: "Gulim", localNames: ["굴림", "Gulim"] },
+      { family: "Dotum", id: "dotum", file: "gulim.ttc", face: "Dotum", localNames: ["Dotum", "돋움"] },
+      { family: "돋움", id: "dotum-ko", file: "gulim.ttc", face: "Dotum", localNames: ["돋움", "Dotum"] },
+      { family: "HY견고딕", id: "hy-gothic-extra", localNames: ["HY견고딕", "HYGothic-Extra"] },
+      { family: "NanumSquare Bold", id: "nanum-square-bold", localNames: ["NanumSquare Bold", "NanumSquare"] },
     ],
   },
   {
     packageName: "@fontsource-variable/noto-serif-kr",
     sourceFamily: "Noto Serif KR Variable",
     aliases: [
-      { family: "Batang", file: "batang.ttc", face: "Batang" },
-      { family: "바탕", file: "batang.ttc", face: "Batang" },
-      { family: "Gungsuh", file: "batang.ttc", face: "Gungsuh" },
-      { family: "궁서", file: "batang.ttc", face: "Gungsuh" },
+      { family: "Batang", id: "batang", file: "batang.ttc", face: "Batang", localNames: ["Batang", "바탕"] },
+      { family: "바탕", id: "batang-ko", file: "batang.ttc", face: "Batang", localNames: ["바탕", "Batang"] },
+      { family: "Gungsuh", id: "gungsuh", file: "batang.ttc", face: "Gungsuh", localNames: ["Gungsuh", "궁서"] },
+      { family: "궁서", id: "gungsuh-ko", file: "batang.ttc", face: "Gungsuh", localNames: ["궁서", "Gungsuh"] },
     ],
   },
   {
     packageName: "@fontsource/carlito",
     sourceFamily: "Carlito",
     aliases: [
-      { family: "Calibri", file: "Calibri.ttf" },
-      { family: "Calibri Light", file: "calibril.ttf" },
-      { family: "Aptos", file: "Aptos.ttf" },
-      { family: "Aptos Display", file: "Aptos-Display.ttf" },
+      // Carlito is a metric-compatible clone of Calibri, so a local Carlito is
+      // as good as the original here.
+      { family: "Calibri", id: "calibri", file: "Calibri.ttf", localNames: ["Calibri", "Carlito"] },
+      { family: "Calibri Light", id: "calibri-light", file: "calibril.ttf", localNames: ["Calibri Light"] },
+      { family: "Aptos", id: "aptos", file: "Aptos.ttf", localNames: ["Aptos"] },
+      { family: "Aptos Display", id: "aptos-display", file: "Aptos-Display.ttf", localNames: ["Aptos Display"] },
     ],
   },
   {
     packageName: "@fontsource/arimo",
     sourceFamily: "Arimo",
-    aliases: [{ family: "Arial", file: "arial.ttf" }],
+    aliases: [
+      { family: "Arial", id: "arial", file: "arial.ttf", localNames: ["Arial", "Liberation Sans", "Arimo"] },
+    ],
   },
   {
     packageName: "@fontsource/tinos",
     sourceFamily: "Tinos",
-    aliases: [{ family: "Times New Roman", file: "times.ttf" }],
+    aliases: [
+      {
+        family: "Times New Roman",
+        id: "times-new-roman",
+        file: "times.ttf",
+        localNames: ["Times New Roman", "Liberation Serif", "Tinos"],
+      },
+    ],
   },
 ];
 
@@ -182,7 +206,8 @@ function excludeSpace(rangeList) {
 const report = [];
 
 function buildFaces(css, group, alias, measurements) {
-  const packageUrl = `../node_modules/${group.packageName}/files/`;
+  // Relative to public/pptx-fonts/, so two levels up to the repo root.
+  const packageUrl = `../../node_modules/${group.packageName}/files/`;
   const blocks = css.match(/@font-face \{[\s\S]*?\}/gu) ?? [];
   const out = [];
   const hasSpaceFace = measurements.spaceAdjust != null;
@@ -211,7 +236,7 @@ function buildFaces(css, group, alias, measurements) {
     let rewritten = block
       .replace(`font-family: '${group.sourceFamily}'`, `font-family: '${alias.family}'`)
       .replace("font-display: swap", "font-display: block")
-      .replace("url(./files/", `url(${packageUrl}`)
+      .replaceAll("url(./files/", `url(${packageUrl}`)
       // Chrome does not instantiate the weight axis for the legacy
       // 'woff2-variations' hint; it loads the default (Thin) instance and
       // synthesises bold, which pads every advance. Plain 'woff2' lets it use
@@ -237,7 +262,7 @@ function buildFaces(css, group, alias, measurements) {
       spaceSourceBlock.block
         .replace(`font-family: '${group.sourceFamily}'`, `font-family: '${alias.family}'`)
         .replace("font-display: swap", "font-display: block")
-        .replace("url(./files/", `url(${packageUrl}`)
+        .replaceAll("url(./files/", `url(${packageUrl}`)
         .replace(/unicode-range: [^;]+;/u, "unicode-range: U+20;")
         .replace(/\n\}$/u, `\n${metricDescriptors(measurements.spaceAdjust).join("\n")}\n}`)
     );
@@ -246,16 +271,21 @@ function buildFaces(css, group, alias, measurements) {
   return out.join("\n\n");
 }
 
-const sections = [
-  "/* Generated by scripts/generate-pptx-font-fallbacks.mjs — do not edit by hand.",
-  " *",
-  " * Substitutes Office fonts that cannot be shipped. size-adjust and the metric",
-  " * overrides are computed from the original font binaries, so they hold for any",
-  " * deck rather than the one they were checked against. Fonts with no installed",
-  " * original are aliased without adjustment. Latin advances are left alone",
-  " * because they differ per glyph and no single ratio is correct.",
-  " */",
-];
+const header = (family) =>
+  [
+    "/* Generated by scripts/generate-pptx-font-fallbacks.mjs — do not edit by hand.",
+    " *",
+    ` * Substitute for the Office family "${family}", loaded only when that font`,
+    " * is not installed on the machine viewing the preview. size-adjust and the",
+    " * metric overrides are computed from the original font binary, so they hold",
+    " * for any deck rather than the one they were checked against. Latin advances",
+    " * are left alone because they differ per glyph and no single ratio is right.",
+    " */",
+  ].join("\n");
+
+await fs.rm(outputDir, { recursive: true, force: true });
+await fs.mkdir(outputDir, { recursive: true });
+const manifest = [];
 
 for (const group of groups) {
   const packageDir = path.join(rootDir, "node_modules", group.packageName);
@@ -300,11 +330,37 @@ for (const group of groups) {
         : "-",
     });
 
-    sections.push(`\n/* PowerPoint family: ${alias.family} */\n`, buildFaces(css, group, alias, measurements));
+    const file = `${alias.id}.css`;
+    await fs.writeFile(
+      path.join(outputDir, file),
+      `${header(alias.family)}\n\n${buildFaces(css, group, alias, measurements)}\n`
+    );
+    manifest.push({ family: alias.family, id: alias.id, localNames: alias.localNames });
   }
 }
 
-await fs.writeFile(outputPath, `${sections.join("\n")}\n`);
+const manifestBody = manifest
+  .map(
+    (entry) =>
+      `  { family: ${JSON.stringify(entry.family)}, id: ${JSON.stringify(entry.id)},` +
+      ` localNames: ${JSON.stringify(entry.localNames)} },`
+  )
+  .join("\n");
+
+await fs.writeFile(
+  path.join(outputDir, "manifest.js"),
+  [
+    "// Generated by scripts/generate-pptx-font-fallbacks.mjs — do not edit by hand.",
+    "//",
+    "// localNames are the names the genuine Office font may be installed under on",
+    "// any platform. If one of them resolves, the preview uses that font directly",
+    "// and never loads the substitute stylesheet.",
+    "export const FONT_SUBSTITUTES = [",
+    manifestBody,
+    "];",
+    "",
+  ].join("\n")
+);
 
 console.log("family              measured from      size-adjust   space        vertical");
 for (const row of report) {
@@ -313,4 +369,4 @@ for (const row of report) {
     `${row.spaceAdjust.padEnd(12)} ${row.vertical}`
   );
 }
-console.log(`\nwrote ${path.relative(rootDir, outputPath)}`);
+console.log(`\nwrote ${manifest.length} stylesheets + manifest.js to ${path.relative(rootDir, outputDir)}`);
