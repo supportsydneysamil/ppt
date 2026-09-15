@@ -1211,10 +1211,14 @@ await runScenario(
     const extractorShellWidth = await page.locator(".page").evaluate(
       (node) => Math.round(node.getBoundingClientRect().width)
     );
-    const extractorContentWidth = await page.locator("#view-extractor").evaluate(
-      (node) => Math.round(node.getBoundingClientRect().width)
-    );
+    const extractorViewportWidth = await page
+      .locator("#view-extractor")
+      .evaluate((node) => Math.round(node.getBoundingClientRect().width));
+    const extractorContentWidth = await page
+      .locator("#view-extractor > .hero")
+      .evaluate((node) => Math.round(node.getBoundingClientRect().width));
     assert.ok(extractorShellWidth >= 1390);
+    assert.ok(extractorViewportWidth >= 1390);
     assert.equal(extractorContentWidth, 932);
     assert.equal(
       await page.locator(".page").getAttribute("data-workspace"),
