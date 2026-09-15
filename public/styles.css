@@ -3904,7 +3904,7 @@ body[data-theme="light"] .rte-textarea {
     width: min(340px, calc(100vw - 80px));
     max-height: calc(100vh - 190px);
     overflow: auto;
-    padding: 164px 16px 16px;
+    padding: calc(164px + var(--inspector-header-h) + var(--sp-5)) 16px 16px;
     border: 1px solid var(--border);
     border-radius: 12px;
     background: var(--panel);
@@ -3944,8 +3944,22 @@ body[data-theme="light"] .rte-textarea {
     display: none;
   }
 
-  #slidePanelCollapseBtn {
+  #slidePanelCollapseBtn,
+  #inspectorPanelCollapseBtn {
     display: none;
+  }
+
+  /* Stacked vertically there is no side-by-side seam to divide. The
+     `.inspector-header` label stays, and earns its keep as a section break —
+     but unpinned, or it would follow the page scroll instead of the form's. */
+  .ppt-interface[data-layout-mode="mobile"] .editor-form,
+  .ppt-interface[data-layout-mode="mobile"] .custom-editor-side {
+    border-left: 0;
+    padding-left: 0;
+  }
+
+  .ppt-interface[data-layout-mode="mobile"] .inspector-header {
+    position: static;
   }
 
   .ppt-interface[data-layout-mode="mobile"] {

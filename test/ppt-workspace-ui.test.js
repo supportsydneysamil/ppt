@@ -334,4 +334,42 @@ describe("PPT panel collapse affordances", () => {
       /--inspector-header-h:\s*calc\(var\(--ctrl-h-sm\) \+ var\(--sp-3\) \+ 1px\)/
     );
   });
+
+  it("drops the seam divider where the panels are not side by side", () => {
+    assert.match(
+      css,
+      /@media\s*\(max-width:\s*899px\)[\s\S]*?\[data-layout-mode="mobile"\] \.custom-editor-side\s*\{[\s\S]*?border-left:\s*0/
+    );
+    assert.match(
+      css,
+      /@media\s*\(max-width:\s*899px\)[\s\S]*?\.inspector-header\s*\{\s*position:\s*static/
+    );
+  });
+
+  it("clears the taller overlaid form in the compact custom drawer", () => {
+    assert.match(
+      css,
+      /padding:\s*calc\(164px \+ var\(--inspector-header-h\) \+ var\(--sp-5\)\) 16px 16px/
+    );
+  });
+
+  it("names the panel and the inspector distinctly", () => {
+    assert.match(html, /<div class="editor-header">\s*<h3>슬라이드 편집<\/h3>/);
+    assert.match(html, /<div class="inspector-header">\s*<h4>상세 설정<\/h4>/);
+  });
+
+  it("states each toggle's label once, in the markup", () => {
+    // The chevrons only ever collapse and the rails only ever expand, so every
+    // label is constant and lives in the HTML. app.js syncs aria-expanded only.
+    assert.match(html, /id="slidePanelCollapseBtn"[\s\S]*?슬라이드 목록 닫기/);
+    assert.match(html, /id="inspectorPanelCollapseBtn"[\s\S]*?속성 패널 닫기/);
+    for (const label of [
+      "슬라이드 목록 닫기",
+      "슬라이드 목록 열기",
+      "속성 패널 닫기",
+      "속성 패널 열기",
+    ]) {
+      assert.doesNotMatch(appSource, new RegExp(`"${label}"`));
+    }
+  });
 });

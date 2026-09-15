@@ -1045,13 +1045,10 @@ function applyPptWorkspaceUi() {
       : "슬라이드 열기";
   }
   if (slidePanelCollapseBtn) {
-    const expanded = String(pptWorkspaceUi.slidesOpen);
-    const label = pptWorkspaceUi.slidesOpen
-      ? "슬라이드 목록 닫기"
-      : "슬라이드 목록 열기";
-    slidePanelCollapseBtn.setAttribute("aria-expanded", expanded);
-    slidePanelCollapseBtn.setAttribute("aria-label", label);
-    slidePanelCollapseBtn.title = label;
+    slidePanelCollapseBtn.setAttribute(
+      "aria-expanded",
+      String(pptWorkspaceUi.slidesOpen)
+    );
   }
   if (pptInspectorPaneBtn) {
     pptInspectorPaneBtn.setAttribute(
@@ -1063,13 +1060,10 @@ function applyPptWorkspaceUi() {
       : "속성 열기";
   }
   if (inspectorPanelCollapseBtn) {
-    const expanded = String(pptWorkspaceUi.inspectorOpen);
-    const label = pptWorkspaceUi.inspectorOpen
-      ? "속성 패널 닫기"
-      : "속성 패널 열기";
-    inspectorPanelCollapseBtn.setAttribute("aria-expanded", expanded);
-    inspectorPanelCollapseBtn.setAttribute("aria-label", label);
-    inspectorPanelCollapseBtn.title = label;
+    inspectorPanelCollapseBtn.setAttribute(
+      "aria-expanded",
+      String(pptWorkspaceUi.inspectorOpen)
+    );
   }
   if (pptFocusModeBtn) {
     pptFocusModeBtn.hidden = pptWorkspaceUi.mode === "mobile";
