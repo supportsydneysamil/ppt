@@ -24,6 +24,7 @@ export default defineConfig({
       input: {
         main: path.join(rootDir, "public", "index.html"),
         webview: path.join(rootDir, "public", "scripture-web-view.html"),
+        customEditorPopout: path.join(rootDir, "public", "custom-editor-popout.html"),
       },
     },
   },

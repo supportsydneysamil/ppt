@@ -1,0 +1,57 @@
+body {
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+.popout-shell {
+  min-height: 100vh;
+  padding: 16px;
+}
+
+.popout-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.popout-header h1 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.popout-status {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.popout-editor.custom-editor[data-react-chrome="true"] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-areas:
+    "bar side"
+    "tools side"
+    "stage side"
+    "status side";
+  gap: 12px 16px;
+}
+
+.popout-editor .custom-editor-bar { grid-area: bar; }
+.popout-editor .custom-editor-toolbar { grid-area: tools; }
+.popout-editor .custom-editor-body { grid-area: stage; }
+.popout-editor .custom-editor-side {
+  grid-area: side;
+  grid-template-columns: minmax(0, 1fr);
+  max-height: calc(100vh - 110px);
+  overflow: auto;
+}
+.popout-editor .custom-editor-status,
+.popout-editor .custom-editor-error { grid-area: status; }
+
+@media (max-width: 899px) {
+  .popout-editor.custom-editor[data-react-chrome="true"] {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "bar" "tools" "stage" "side" "status";
+  }
+}

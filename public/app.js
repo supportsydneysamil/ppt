@@ -49,6 +49,11 @@ import {
   createPptWorkspaceUiState,
   reducePptWorkspaceUi,
 } from "./ppt-workspace-ui.js";
+import {
+  clearRecovery,
+  createPopoutSequence,
+  writeRecovery,
+} from "./custom-editor-popout-protocol.js";
 import { buildHymnSubtitle } from "@lib/cover-title-content.js";
 import {
   TEMPLATE_SCHEMA_ERROR,
@@ -838,6 +843,7 @@ const pptTabbarActions = document.getElementById("pptTabbarActions");
 const pptSlidesPaneBtn = document.getElementById("pptSlidesPaneBtn");
 const pptInspectorPaneBtn = document.getElementById("pptInspectorPaneBtn");
 const pptFocusModeBtn = document.getElementById("pptFocusModeBtn");
+const customEditorPopoutBtn = document.getElementById("customEditorPopoutBtn");
 const pptWorkspace = document.getElementById("pptWorkspace");
 const slideListPanel = document.getElementById("slideListPanel");
 const templateGallery = document.getElementById("templateGallery");
@@ -2552,6 +2558,7 @@ pptInspectorPaneBtn?.addEventListener("click", () => {
 pptFocusModeBtn?.addEventListener("click", () => {
   dispatchPptWorkspaceUi({ type: "toggle-focus" });
 });
+customEditorPopoutBtn?.addEventListener("click", openCustomEditorPopout);
 slideEditor?.addEventListener("pointerdown", (event) => {
   if (
     event.target.closest?.(
@@ -5180,6 +5187,81 @@ let customSlideBridgePromise = null;
 let customEditorSession = null;
 let customEditorSessionPromise = null;
 let customEditorModel = null;
+let customPopout = null;
+
+function finishCustomPopout(sessionState) {
+  const active = customPopout;
+  if (!active) return;
+  if (sessionState && customEditorSession?.isActive(active.slideId)) {
+    customEditorSession.importSession(active.slideId, sessionState);
+  }
+  clearRecovery(localStorage, active.sessionId);
+  active.channel.close();
+  clearInterval(active.closedTimer);
+  customSlideEditorRoot.inert = false;
+  delete customSlideEditorRoot.dataset.popoutActive;
+  customPopout = null;
+  workspaceReflow?.schedule({ force: true });
+}
+
+function openCustomEditorPopout() {
+  if (
+    customPopout ||
+    !currentSlideId ||
+    slideTypeSelect.value !== "custom" ||
+    !customEditorSession?.isActive(currentSlideId)
+  ) {
+    return;
+  }
+  const sessionState = customEditorSession.exportSession(currentSlideId);
+  if (!sessionState) return;
+
+  const sessionId = crypto.randomUUID();
+  const slideId = currentSlideId;
+  const popup = window.open(
+    `/custom-editor-popout.html?session=${encodeURIComponent(sessionId)}&slide=${encodeURIComponent(slideId)}`,
+    `samil-custom-${sessionId}`,
+    "width=1440,height=900"
+  );
+  if (!popup) {
+    showToast("새 창을 열 수 없습니다. 팝업 차단을 확인하세요.");
+    return;
+  }
+
+  const channel = new BroadcastChannel(`samil-custom-editor:${sessionId}`);
+  const sequence = createPopoutSequence({ sessionId, slideId });
+  customSlideEditorRoot.inert = true;
+  customSlideEditorRoot.dataset.popoutActive = "true";
+  const active = { sessionId, slideId, popup, channel, sequence, closedTimer: null };
+  customPopout = active;
+
+  channel.onmessage = async ({ data }) => {
+    const accepted = sequence.accept(data);
+    if (!accepted.valid || customPopout !== active) return;
+    if (data.type === "READY") {
+      channel.postMessage(
+        sequence.next("INITIALIZE_SESSION", {
+          session: sessionState,
+          slideName: slideNameInput.value,
+        })
+      );
+    } else if (data.type === "EDITOR_CHANGED") {
+      await customEditorSession.importSession(slideId, data.payload.session);
+      writeRecovery(localStorage, sessionId, data.payload.session);
+    } else if (data.type === "SAVE_REQUEST") {
+      await customEditorSession.importSession(slideId, data.payload.session);
+      const saved = await saveCurrentSlide({ silent: true });
+      channel.postMessage(sequence.next("SAVE_RESULT", { saved }));
+    } else if (data.type === "FINAL_SNAPSHOT") {
+      await customEditorSession.importSession(slideId, data.payload.session);
+      channel.postMessage(sequence.next("FINAL_ACK", {}));
+      setTimeout(() => finishCustomPopout(), 100);
+    }
+  };
+  active.closedTimer = setInterval(() => {
+    if (popup.closed) finishCustomPopout();
+  }, 500);
+}
 
 function activePptStageWidth() {
   if (slideTypeSelect.value === "custom") {
@@ -5389,6 +5471,9 @@ function setHidden(el, hidden) {
 function updateSettingsVisibility(overrideMode) {
   const type = slideTypeSelect.value;
   slideEditor.dataset.slideType = type;
+  if (customEditorPopoutBtn) {
+    customEditorPopoutBtn.hidden = type !== "custom";
+  }
   const sourceType =
     overrideMode ||
     (document.querySelector('input[name="sourceType"]:checked') || {}).value ||

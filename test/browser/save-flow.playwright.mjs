@@ -834,6 +834,38 @@ async function waitForAlert(diagnostics, text) {
 }
 
 await runScenario(
+  "custom editor popout mirrors edits and restores inline ownership",
+  async (page) => {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    const state = await setup(page);
+    await page.locator("#addSlideBtn").click();
+    await page.locator("#slideType").selectOption("custom");
+    await page.locator("#customSlideEditor:not([hidden])").waitFor();
+
+    const popupReady = page.waitForEvent("popup");
+    await page.locator("#customEditorPopoutBtn").click();
+    const popup = await popupReady;
+    await popup.getByText("주 창과 연결됨").waitFor({ timeout: 15000 });
+    assert.equal(await popup.locator("[data-custom-editor='canvas']").count(), 1);
+    assert.equal(await page.locator("#customSlideEditor").getAttribute("inert"), "");
+
+    await popup.locator("[data-editor-action='add-text']").click();
+    await page.locator("#editorSaveBtn:not([disabled])").waitFor();
+    await popup.getByRole("button", { name: "저장" }).click();
+    await popup.getByText("저장됨").waitFor();
+    assert.equal(state.counts.slidePost, 1);
+
+    const closed = popup.waitForEvent("close");
+    await popup.getByRole("button", { name: "주 창으로 합치기" }).click();
+    await closed;
+    await page.waitForFunction(
+      () => !document.querySelector("#customSlideEditor")?.hasAttribute("inert")
+    );
+    assert.equal(await page.locator("#editorSaveBtn").isDisabled(), true);
+  }
+);
+
+await runScenario(
   "wide PPT workspace supports three panes and canvas-first focus mode",
   async (page) => {
     await page.setViewportSize({ width: 1440, height: 1000 });
