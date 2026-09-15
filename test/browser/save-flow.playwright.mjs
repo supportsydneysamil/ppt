@@ -1018,7 +1018,6 @@ await runScenario(
     assert.equal(await workspace.getAttribute("data-inspector-open"), "false");
 
     await selectMainSlide(page, 0);
-    await page.locator("#pptInspectorPaneBtn").click();
     assert.equal(await workspace.getAttribute("data-slides-open"), "false");
     assert.equal(await workspace.getAttribute("data-inspector-open"), "true");
 

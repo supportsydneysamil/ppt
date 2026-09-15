@@ -3791,6 +3791,7 @@ function applySlideSelection(id) {
   if (slide) {
     emptyEditorState.style.display = "none";
     slideEditor.style.display = "grid";
+    dispatchPptWorkspaceUi({ type: "show-inspector" });
     slideRuntimeDraft = {};
     slideResetDraft = null;
     populateEditor(slide);

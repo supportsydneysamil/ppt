@@ -119,6 +119,19 @@ describe("PPT workspace UI state", () => {
       }
     );
   });
+
+  it("opens the inspector after selecting a slide in compact mode", () => {
+    const compact = createPptWorkspaceUiState(1024, { slidesOpen: true });
+    assert.deepEqual(
+      reducePptWorkspaceUi(compact, { type: "show-inspector" }),
+      {
+        mode: "compact",
+        focusMode: false,
+        slidesOpen: false,
+        inspectorOpen: true,
+      }
+    );
+  });
 });
 
 describe("PPT three-pane layout", () => {

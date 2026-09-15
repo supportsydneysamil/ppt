@@ -87,5 +87,13 @@ export function reducePptWorkspaceUi(state, action = {}) {
       inspectorOpen: false,
     };
   }
+  if (action.type === "show-inspector" && state.mode === "compact") {
+    return {
+      ...state,
+      focusMode: false,
+      slidesOpen: false,
+      inspectorOpen: true,
+    };
+  }
   return state;
 }
