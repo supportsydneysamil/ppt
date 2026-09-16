@@ -277,14 +277,62 @@ export function CustomEditorChrome({ inspectorHost = null }) {
             <div className="custom-editor-fit-segment" role="radiogroup" aria-label="이미지 표시 방식">
               <label className="custom-editor-fit-option">
                 <input type="radio" value="contain" data-editor-field="fit" name={`${ribbonId}-imageFit`} />
-                <span>맞춤</span>
+                <span>전체 보기</span>
               </label>
               <label className="custom-editor-fit-option">
                 <input type="radio" value="cover" data-editor-field="fit" name={`${ribbonId}-imageFit`} />
-                <span>채우기</span>
+                <span>프레임 채우기</span>
+              </label>
+              <label className="custom-editor-fit-option">
+                <input type="radio" value="stretch" data-editor-field="fit" name={`${ribbonId}-imageFit`} />
+                <span>늘여서 채우기</span>
               </label>
             </div>
           </div>
+          <div className="custom-editor-cover-controls" data-image-cover-controls>
+            <div className="custom-editor-row">
+              <span className="field-label">초점 위치</span>
+              <div className="custom-editor-focal-grid" role="group" aria-label="이미지 초점 위치">
+                <button type="button" data-editor-action="image-focal-0-0" aria-label="왼쪽 위"></button>
+                <button type="button" data-editor-action="image-focal-0.5-0" aria-label="가운데 위"></button>
+                <button type="button" data-editor-action="image-focal-1-0" aria-label="오른쪽 위"></button>
+                <button type="button" data-editor-action="image-focal-0-0.5" aria-label="왼쪽 가운데"></button>
+                <button type="button" data-editor-action="image-focal-0.5-0.5" aria-label="정가운데"></button>
+                <button type="button" data-editor-action="image-focal-1-0.5" aria-label="오른쪽 가운데"></button>
+                <button type="button" data-editor-action="image-focal-0-1" aria-label="왼쪽 아래"></button>
+                <button type="button" data-editor-action="image-focal-0.5-1" aria-label="가운데 아래"></button>
+                <button type="button" data-editor-action="image-focal-1-1" aria-label="오른쪽 아래"></button>
+              </div>
+            </div>
+            <label className="custom-editor-row">
+              <span className="field-label">확대</span>
+              <div className="custom-editor-controls">
+                <input type="range" min="1" max="3" step="0.05" data-editor-field="imageZoom" aria-label="이미지 자르기 확대" />
+                <output className="custom-editor-readout" data-editor-readout="imageZoom">100%</output>
+              </div>
+            </label>
+            <label className="custom-editor-row">
+              <span className="field-label">가로 초점</span>
+              <div className="custom-editor-controls">
+                <input type="range" min="0" max="1" step="0.01" data-editor-field="focalX" aria-label="이미지 가로 초점" />
+                <output className="custom-editor-readout" data-editor-readout="focalX">50%</output>
+              </div>
+            </label>
+            <label className="custom-editor-row">
+              <span className="field-label">세로 초점</span>
+              <div className="custom-editor-controls">
+                <input type="range" min="0" max="1" step="0.01" data-editor-field="focalY" aria-label="이미지 세로 초점" />
+                <output className="custom-editor-readout" data-editor-readout="focalY">50%</output>
+              </div>
+            </label>
+            <button type="button" className="ghost small" data-editor-action="reset-image-crop">
+              자르기 초기화
+            </button>
+            <p className="hint">프레임을 채우기 위해 이미지 일부가 잘립니다.</p>
+          </div>
+          <p className="hint custom-editor-stretch-warning">
+            이미지 비율이 달라져 왜곡될 수 있습니다.
+          </p>
           <div className="custom-editor-row">
             <span className="field-label">뒤집기</span>
             <div className="custom-editor-controls">
@@ -306,9 +354,6 @@ export function CustomEditorChrome({ inspectorHost = null }) {
               placeholder="이미지의 내용이나 목적을 설명하세요"
             ></textarea>
           </label>
-          <p className="hint">
-            맞춤은 전체 이미지를 보이고, 채우기는 프레임을 빈틈없이 채웁니다.
-          </p>
         </div>
 
         <div className="custom-editor-panel" data-editor-panel="shape" hidden>

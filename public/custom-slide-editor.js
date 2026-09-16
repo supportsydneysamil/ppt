@@ -3075,9 +3075,25 @@ export async function createCustomSlideEditor(root, options = {}) {
       return;
     }
     readout.textContent =
-      name === "opacity"
+      name === "opacity" || name === "focalX" || name === "focalY"
         ? `${Math.round((Number(input.value) || 0) * 100)}%`
-        : input.value ?? "";
+        : name === "imageZoom"
+          ? `${Math.round((Number(input.value) || 1) * 100)}%`
+          : input.value ?? "";
+  }
+
+  function syncImageFocalButtons(image) {
+    const focalX = image?.customFocalX ?? 0.5;
+    const focalY = image?.customFocalY ?? 0.5;
+    for (const button of queryAllHosts(
+      '[data-editor-action^="image-focal-"]'
+    )) {
+      const [, , x, y] = button.dataset.editorAction.split("-");
+      button.setAttribute(
+        "aria-pressed",
+        String(Number(x) === focalX && Number(y) === focalY)
+      );
+    }
   }
 
   function syncStrokeFields(active) {
@@ -3133,9 +3149,13 @@ export async function createCustomSlideEditor(root, options = {}) {
       case "image":
         showPanels(["image", "common"]);
         setFieldValue("fit", target.customFit ?? "contain");
+        setFieldValue("focalX", target.customFocalX ?? 0.5);
+        setFieldValue("focalY", target.customFocalY ?? 0.5);
+        setFieldValue("imageZoom", target.customImageZoom ?? 1);
         setFieldValue("flipH", Boolean(target.flipX));
         setFieldValue("flipV", Boolean(target.flipY));
         setFieldValue("altText", target.customAltText ?? "");
+        syncImageFocalButtons(target);
         setStatus("이미지가 선택되었습니다.");
         break;
       case "line": {
@@ -3986,7 +4006,30 @@ export async function createCustomSlideEditor(root, options = {}) {
       case "fit": {
         // Re-fit inside the authored box so toggling never drifts.
         const box = imageBoxFromObject(active);
-        applyImageFit(active, input.value, box.width, box.height);
+        applyImageFit(active, input.value, box.width, box.height, {
+          focalX: active.customFocalX,
+          focalY: active.customFocalY,
+          imageZoom: active.customImageZoom,
+        });
+        syncImageFocalButtons(active);
+        break;
+      }
+      case "focalX":
+      case "focalY":
+      case "imageZoom": {
+        const box = imageBoxFromObject(active);
+        const options = {
+          focalX:
+            name === "focalX" ? Number(input.value) : active.customFocalX,
+          focalY:
+            name === "focalY" ? Number(input.value) : active.customFocalY,
+          imageZoom:
+            name === "imageZoom"
+              ? Number(input.value)
+              : active.customImageZoom,
+        };
+        applyImageFit(active, active.customFit, box.width, box.height, options);
+        syncImageFocalButtons(active);
         break;
       }
       case "flipH":
@@ -4045,6 +4088,29 @@ export async function createCustomSlideEditor(root, options = {}) {
     if (destroyed) {
       return;
     }
+    if (action.startsWith("image-focal-")) {
+      const selected = selectedFabricObjects(canvas);
+      const [, , x, y] = action.split("-");
+      const image =
+        selected.length === 1 && selected[0].elementType === "image"
+          ? selected[0]
+          : null;
+      if (image) {
+        const box = imageBoxFromObject(image);
+        applyImageFit(image, image.customFit, box.width, box.height, {
+          focalX: Number(x),
+          focalY: Number(y),
+          imageZoom: image.customImageZoom,
+        });
+        setFieldValue("focalX", image.customFocalX);
+        setFieldValue("focalY", image.customFocalY);
+        syncImageFocalButtons(image);
+        image.setCoords();
+        canvas.requestRenderAll();
+        queueHistory();
+      }
+      return;
+    }
     switch (action) {
       case "add-text":
         addElement(centeredElement("text"));
@@ -4078,6 +4144,29 @@ export async function createCustomSlideEditor(root, options = {}) {
             : null;
         if (pendingImageReplacementId) {
           dom.file?.click();
+        }
+        break;
+      }
+      case "reset-image-crop": {
+        const selected = selectedFabricObjects(canvas);
+        const image =
+          selected.length === 1 && selected[0].elementType === "image"
+            ? selected[0]
+            : null;
+        if (image) {
+          const box = imageBoxFromObject(image);
+          applyImageFit(image, image.customFit, box.width, box.height, {
+            focalX: 0.5,
+            focalY: 0.5,
+            imageZoom: 1,
+          });
+          setFieldValue("focalX", 0.5);
+          setFieldValue("focalY", 0.5);
+          setFieldValue("imageZoom", 1);
+          syncImageFocalButtons(image);
+          image.setCoords();
+          canvas.requestRenderAll();
+          queueHistory();
         }
         break;
       }

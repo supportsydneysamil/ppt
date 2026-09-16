@@ -379,7 +379,7 @@ describe("normalizeCustomSlide", () => {
           width: 100,
           height: 100,
           src: "/uploads/a.png",
-          fit: "stretch",
+          fit: "warp",
         },
       ],
     });
