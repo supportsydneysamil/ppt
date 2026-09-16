@@ -249,6 +249,41 @@ describe("normalizeCustomSlide", () => {
     assert.equal(normalized.elements[1].altText, "설".repeat(500));
   });
 
+  it("normalizes stretch and clamps image crop controls", () => {
+    const normalized = normalizeCustomSlide({
+      elements: [
+        { type: "image", src: "/uploads/default.png" },
+        {
+          type: "image",
+          src: "/uploads/crop.png",
+          fit: "stretch",
+          focalX: -2,
+          focalY: 4,
+          imageZoom: 9,
+        },
+      ],
+    });
+
+    assert.deepEqual(
+      {
+        fit: normalized.elements[0].fit,
+        focalX: normalized.elements[0].focalX,
+        focalY: normalized.elements[0].focalY,
+        imageZoom: normalized.elements[0].imageZoom,
+      },
+      { fit: "contain", focalX: 0.5, focalY: 0.5, imageZoom: 1 }
+    );
+    assert.deepEqual(
+      {
+        fit: normalized.elements[1].fit,
+        focalX: normalized.elements[1].focalX,
+        focalY: normalized.elements[1].focalY,
+        imageZoom: normalized.elements[1].imageZoom,
+      },
+      { fit: "stretch", focalX: 0, focalY: 1, imageZoom: 3 }
+    );
+  });
+
   it("drops unsupported element types", () => {
     const normalized = normalizeCustomSlide({
       elements: [{ id: "bad", type: "video", x: 0, y: 0, width: 10, height: 10 }],

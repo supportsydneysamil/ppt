@@ -572,6 +572,84 @@ test("applyImageFit stores the authored layout box and stays stable across toggl
   assert.equal(image.customBoxHeight, 400);
 });
 
+test("cover fit uses focal position and zoom while stretch fills without cropping", () => {
+  const image = new fakeFabric.FabricImage({ width: 400, height: 200 });
+  image.set({ customNaturalWidth: 400, customNaturalHeight: 200 });
+
+  applyImageFit(image, "cover", 200, 200, {
+    focalX: 0,
+    focalY: 0,
+    imageZoom: 1,
+  });
+  assert.deepEqual(
+    {
+      cropX: image.cropX,
+      cropY: image.cropY,
+      width: image.width,
+      height: image.height,
+      scaleX: image.scaleX,
+      scaleY: image.scaleY,
+    },
+    { cropX: 0, cropY: 0, width: 200, height: 200, scaleX: 1, scaleY: 1 }
+  );
+
+  applyImageFit(image, "cover", 200, 200, {
+    focalX: 0.5,
+    focalY: 0.5,
+    imageZoom: 2,
+  });
+  assert.deepEqual(
+    {
+      cropX: image.cropX,
+      cropY: image.cropY,
+      width: image.width,
+      height: image.height,
+      scaleX: image.scaleX,
+      scaleY: image.scaleY,
+      focalX: image.customFocalX,
+      focalY: image.customFocalY,
+      imageZoom: image.customImageZoom,
+    },
+    {
+      cropX: 150,
+      cropY: 50,
+      width: 100,
+      height: 100,
+      scaleX: 2,
+      scaleY: 2,
+      focalX: 0.5,
+      focalY: 0.5,
+      imageZoom: 2,
+    }
+  );
+
+  applyImageFit(image, "stretch", 200, 200, {
+    focalX: 1,
+    focalY: 1,
+    imageZoom: 3,
+  });
+  assert.deepEqual(
+    {
+      cropX: image.cropX,
+      cropY: image.cropY,
+      width: image.width,
+      height: image.height,
+      scaleX: image.scaleX,
+      scaleY: image.scaleY,
+      fit: image.customFit,
+    },
+    {
+      cropX: 0,
+      cropY: 0,
+      width: 400,
+      height: 200,
+      scaleX: 0.5,
+      scaleY: 1,
+      fit: "stretch",
+    }
+  );
+});
+
 test("image descriptors serialize the authored box instead of letterboxed pixels", async () => {
   fakeFabric.__resetFakeFabric();
   fakeFabric.__setImageBehaviour({ width: 100, height: 50 });

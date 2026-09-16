@@ -5,6 +5,7 @@ import {
   normalizeCustomSlide,
 } from "./custom-slide-model.js";
 import { createCustomSlideHistory } from "./custom-slide-history.js";
+import { coverCropWindow } from "./custom-image-layout.js";
 import {
   applyTheme,
   CUSTOM_SLIDE_THEMES,
@@ -2325,37 +2326,52 @@ export function buildFabricObject(fabric, element) {
  * pixels: without the box, serializing would shrink the element to the letterbox
  * and toggling contain/cover would drift.
  */
-export function applyImageFit(image, fit, boxWidth, boxHeight) {
+export function applyImageFit(image, fit, boxWidth, boxHeight, cropOptions = {}) {
   const naturalWidth = image.customNaturalWidth || image.width || 1;
   const naturalHeight = image.customNaturalHeight || image.height || 1;
+  const crop = coverCropWindow(
+    naturalWidth,
+    naturalHeight,
+    boxWidth,
+    boxHeight,
+    cropOptions
+  );
   const box = {
     customBoxWidth: Math.max(0, boxWidth),
     customBoxHeight: Math.max(0, boxHeight),
+    customFocalX: crop.focalX,
+    customFocalY: crop.focalY,
+    customImageZoom: crop.imageZoom,
   };
 
   if (fit === "cover") {
-    const boxRatio = boxWidth / boxHeight;
-    const naturalRatio = naturalWidth / naturalHeight;
-    let cropWidth = naturalWidth;
-    let cropHeight = naturalHeight;
-
-    if (naturalRatio > boxRatio) {
-      cropWidth = naturalHeight * boxRatio;
-    } else {
-      cropHeight = naturalWidth / boxRatio;
-    }
-
     image.set({
       ...box,
-      cropX: (naturalWidth - cropWidth) / 2,
-      cropY: (naturalHeight - cropHeight) / 2,
-      width: cropWidth,
-      height: cropHeight,
-      scaleX: boxWidth / cropWidth,
-      scaleY: boxHeight / cropHeight,
-      customFitScaleX: boxWidth / cropWidth,
-      customFitScaleY: boxHeight / cropHeight,
+      cropX: crop.x,
+      cropY: crop.y,
+      width: crop.width,
+      height: crop.height,
+      scaleX: boxWidth / crop.width,
+      scaleY: boxHeight / crop.height,
+      customFitScaleX: boxWidth / crop.width,
+      customFitScaleY: boxHeight / crop.height,
       customFit: "cover",
+    });
+    return;
+  }
+
+  if (fit === "stretch") {
+    image.set({
+      ...box,
+      cropX: 0,
+      cropY: 0,
+      width: naturalWidth,
+      height: naturalHeight,
+      scaleX: boxWidth / naturalWidth,
+      scaleY: boxHeight / naturalHeight,
+      customFitScaleX: boxWidth / naturalWidth,
+      customFitScaleY: boxHeight / naturalHeight,
+      customFit: "stretch",
     });
     return;
   }
@@ -2460,7 +2476,17 @@ export async function buildFabricImage(fabric, element) {
     customSrc: element.src,
     customAltText: element.altText ?? "",
   });
-  applyImageFit(image, element.fit, element.width || image.width, element.height || image.height);
+  applyImageFit(
+    image,
+    element.fit,
+    element.width || image.width,
+    element.height || image.height,
+    {
+      focalX: element.focalX,
+      focalY: element.focalY,
+      imageZoom: element.imageZoom,
+    }
+  );
   return tagObject(image, element, fabric);
 }
 
@@ -2557,6 +2583,9 @@ export function fabricObjectToDescriptor(object) {
         flipH: Boolean(object.flipX),
         flipV: Boolean(object.flipY),
         altText: object.customAltText ?? "",
+        focalX: object.customFocalX ?? 0.5,
+        focalY: object.customFocalY ?? 0.5,
+        imageZoom: object.customImageZoom ?? 1,
       };
     }
     case "roundRect":
