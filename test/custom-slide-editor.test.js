@@ -13,6 +13,8 @@ import {
   alignBoxesTogether,
   distributeBoxes,
   serializeAfterRestoringSelection,
+  isActiveSelection,
+  selectedFabricObjects,
   applyImageFit,
   buildFabricObject,
   buildFabricImage,
@@ -352,6 +354,24 @@ test("alignBoxesTogether and distributeBoxes operate on the selection", () => {
   assert.equal(distributed[0].x, 10);
   assert.equal(distributed[2].x, 200);
   assert.ok(distributed[1].x > 10 && distributed[1].x < 200);
+});
+
+test("a multi-selection is recognized whichever casing fabric reports", () => {
+  for (const type of ["activeselection", "activeSelection"]) {
+    assert.ok(isActiveSelection({ type }), `${type} should read as a selection`);
+  }
+  assert.ok(!isActiveSelection({ type: "rect" }));
+  assert.ok(!isActiveSelection(null));
+});
+
+test("selectedFabricObjects returns every member of a multi-selection", () => {
+  const members = [
+    { left: 10, top: 10, role: "element" },
+    { left: 80, top: 40, role: "element" },
+  ];
+  const selection = new fakeFabric.ActiveSelection(members);
+  const canvas = { getActiveObject: () => selection };
+  assert.deepEqual(selectedFabricObjects(canvas), members);
 });
 
 test("serializeAfterRestoringSelection discards ActiveSelection before reading coords", () => {

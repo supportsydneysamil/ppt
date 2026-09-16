@@ -84,7 +84,8 @@ export class Shadow {
 
 export class ActiveSelection extends FakeObject {
   constructor(objects = [], options = {}) {
-    super({ type: "activeSelection", originX: "center", originY: "center", ...options });
+    // Matches what Fabric 6 exposes on the instance: the class name lowercased.
+    super({ type: "activeselection", originX: "center", originY: "center", ...options });
     this._objects = [...objects];
     this.role = "selection";
     if (objects.length === 0) {

@@ -1866,8 +1866,12 @@ export function decideKeyboardCommand(event) {
   return null;
 }
 
+// Fabric 6 reports `type` lowercased ("activeselection"), older builds and
+// serialized data use "activeSelection". Both must count as a multi-selection,
+// or every command that acts on the selection stays disabled.
 export function isActiveSelection(object) {
-  return Boolean(object && object.type === "activeSelection");
+  const type = object?.type;
+  return typeof type === "string" && type.toLowerCase() === "activeselection";
 }
 
 export function selectedFabricObjects(canvas) {
