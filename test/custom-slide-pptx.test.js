@@ -454,6 +454,68 @@ describe("appendCustomSlide", () => {
     );
   });
 
+  it("exports focal cover crop and stretch with exact authored boxes", async () => {
+    const { slideXml } = await render({
+      elements: [
+        element({
+          id: "left-cover",
+          type: "image",
+          src: "/uploads/left.png",
+          fit: "cover",
+          width: 200,
+          height: 200,
+          focalX: 0,
+          focalY: 0,
+          imageZoom: 1,
+        }),
+        element({
+          id: "zoom-cover",
+          type: "image",
+          src: "/uploads/zoom.png",
+          fit: "cover",
+          x: 300,
+          width: 200,
+          height: 200,
+          focalX: 1,
+          focalY: 1,
+          imageZoom: 2,
+        }),
+        element({
+          id: "stretch",
+          type: "image",
+          src: "/uploads/stretch.png",
+          fit: "stretch",
+          x: 600,
+          width: 200,
+          height: 200,
+        }),
+      ],
+    });
+
+    const [left, zoom, stretch] = pictureGeometry(slideXml).map(roundedGeometry);
+    assert.deepEqual(left, {
+      x: 0,
+      y: 0,
+      w: 2.0833,
+      h: 2.0833,
+      crop: { left: 0, top: 0, right: 50000, bottom: 0 },
+    });
+    assert.deepEqual(zoom, {
+      x: 3.1249,
+      y: 0,
+      w: 2.0833,
+      h: 2.0833,
+      crop: { left: 75000, top: 50000, right: 0, bottom: 0 },
+    });
+    assert.deepEqual(stretch, {
+      x: 6.2498,
+      y: 0,
+      w: 2.0833,
+      h: 2.0833,
+      crop: null,
+    });
+  });
+
   it("falls back to the element box when image dimensions are unavailable", async () => {
     const { slideXml } = await render(
       {
