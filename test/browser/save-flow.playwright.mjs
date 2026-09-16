@@ -1202,7 +1202,23 @@ await runScenario(
       .waitFor();
 
     const inspector = page.locator("#customSlideInspector");
-    await inspector.getByRole("radio", { name: "채우기" }).check();
+    await inspector.getByRole("radio", { name: "프레임 채우기" }).check();
+    await inspector.getByRole("button", { name: "오른쪽 아래" }).click();
+    await inspector.getByLabel("이미지 자르기 확대").fill("2");
+    assert.equal(await inspector.getByLabel("이미지 가로 초점").inputValue(), "1");
+    assert.equal(await inspector.getByLabel("이미지 세로 초점").inputValue(), "1");
+    assert.equal(await inspector.getByLabel("이미지 자르기 확대").inputValue(), "2");
+
+    await inspector.getByRole("radio", { name: "늘여서 채우기" }).check();
+    await inspector
+      .getByText("이미지 비율이 달라져 왜곡될 수 있습니다.")
+      .waitFor();
+    await inspector.getByRole("radio", { name: "프레임 채우기" }).check();
+    assert.equal(await inspector.getByLabel("이미지 자르기 확대").inputValue(), "2");
+    await inspector.getByRole("button", { name: "자르기 초기화" }).click();
+    assert.equal(await inspector.getByLabel("이미지 가로 초점").inputValue(), "0.5");
+    assert.equal(await inspector.getByLabel("이미지 세로 초점").inputValue(), "0.5");
+    assert.equal(await inspector.getByLabel("이미지 자르기 확대").inputValue(), "1");
     await inspector.getByLabel("좌우 뒤집기").check();
     await inspector.getByLabel("상하 뒤집기").check();
     await inspector.getByLabel("이미지 대체 텍스트").fill("강단 위의 성경");
@@ -1224,7 +1240,15 @@ await runScenario(
       .filter({ hasText: "이미지를 교체했습니다." })
       .waitFor();
     await waitForCount(() => state.counts.uploadPost, 2, "image upload count");
-    assert.equal(await inspector.getByRole("radio", { name: "채우기" }).isChecked(), true);
+    assert.equal(
+      await inspector
+        .getByRole("radio", { name: "프레임 채우기" })
+        .isChecked(),
+      true
+    );
+    assert.equal(await inspector.getByLabel("이미지 가로 초점").inputValue(), "0.5");
+    assert.equal(await inspector.getByLabel("이미지 세로 초점").inputValue(), "0.5");
+    assert.equal(await inspector.getByLabel("이미지 자르기 확대").inputValue(), "1");
     assert.equal(await inspector.getByLabel("좌우 뒤집기").isChecked(), true);
     assert.equal(
       await inspector.getByLabel("이미지 대체 텍스트").inputValue(),

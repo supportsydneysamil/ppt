@@ -19,7 +19,7 @@ const ELEMENT_TYPES = new Set([
 
 const TEXT_ALIGNS = new Set(["left", "center", "right"]);
 const TEXT_VALIGNS = new Set(["top", "middle", "bottom"]);
-const IMAGE_FITS = new Set(["contain", "cover"]);
+const IMAGE_FITS = new Set(["contain", "cover", "stretch"]);
 
 function finiteNumber(value, fallback = 0) {
   return Number.isFinite(value) ? value : fallback;
@@ -449,6 +449,9 @@ function normalizeImageElement(element, index, canvasWidth, canvasHeight) {
     flipH: Boolean(element.flipH),
     flipV: Boolean(element.flipV),
     altText: normalizeAltText(element.altText),
+    focalX: clamp(finiteNumber(element.focalX, 0.5), 0, 1),
+    focalY: clamp(finiteNumber(element.focalY, 0.5), 0, 1),
+    imageZoom: clamp(finiteNumber(element.imageZoom, 1), 1, 3),
   };
 }
 
@@ -723,6 +726,9 @@ function elementToFabricObject(element) {
         flipX: element.flipH,
         flipY: element.flipV,
         customAltText: element.altText,
+        customFocalX: element.focalX,
+        customFocalY: element.focalY,
+        customImageZoom: element.imageZoom,
       };
     case "rect":
       return {
@@ -952,6 +958,21 @@ function fabricObjectToElement(object, orderIndex) {
         flipH: Boolean(object.flipH ?? object.flipX),
         flipV: Boolean(object.flipV ?? object.flipY),
         altText: normalizeAltText(object.altText ?? object.customAltText),
+        focalX: clamp(
+          finiteNumber(object.focalX ?? object.customFocalX, 0.5),
+          0,
+          1
+        ),
+        focalY: clamp(
+          finiteNumber(object.focalY ?? object.customFocalY, 0.5),
+          0,
+          1
+        ),
+        imageZoom: clamp(
+          finiteNumber(object.imageZoom ?? object.customImageZoom, 1),
+          1,
+          3
+        ),
       };
     case "rect":
       return {

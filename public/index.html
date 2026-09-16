@@ -1279,13 +1279,34 @@
                     <div class="custom-editor-fit-segment" role="radiogroup" aria-label="이미지 표시 방식">
                       <label class="custom-editor-fit-option">
                         <input type="radio" value="contain" data-editor-field="fit" name="fallbackImageFit" />
-                        <span>맞춤</span>
+                        <span>전체 보기</span>
                       </label>
                       <label class="custom-editor-fit-option">
                         <input type="radio" value="cover" data-editor-field="fit" name="fallbackImageFit" />
-                        <span>채우기</span>
+                        <span>프레임 채우기</span>
+                      </label>
+                      <label class="custom-editor-fit-option">
+                        <input type="radio" value="stretch" data-editor-field="fit" name="fallbackImageFit" />
+                        <span>늘여서 채우기</span>
                       </label>
                     </div>
+                  </div>
+                  <div class="custom-editor-cover-controls" data-image-cover-controls>
+                    <div class="custom-editor-focal-grid" aria-label="이미지 초점 위치">
+                      <button type="button" data-editor-action="image-focal-0-0"></button>
+                      <button type="button" data-editor-action="image-focal-0.5-0"></button>
+                      <button type="button" data-editor-action="image-focal-1-0"></button>
+                      <button type="button" data-editor-action="image-focal-0-0.5"></button>
+                      <button type="button" data-editor-action="image-focal-0.5-0.5"></button>
+                      <button type="button" data-editor-action="image-focal-1-0.5"></button>
+                      <button type="button" data-editor-action="image-focal-0-1"></button>
+                      <button type="button" data-editor-action="image-focal-0.5-1"></button>
+                      <button type="button" data-editor-action="image-focal-1-1"></button>
+                    </div>
+                    <input type="range" min="1" max="3" step="0.05" data-editor-field="imageZoom" aria-label="이미지 자르기 확대" />
+                    <input type="range" min="0" max="1" step="0.01" data-editor-field="focalX" aria-label="이미지 가로 초점" />
+                    <input type="range" min="0" max="1" step="0.01" data-editor-field="focalY" aria-label="이미지 세로 초점" />
+                    <button type="button" class="ghost small" data-editor-action="reset-image-crop">자르기 초기화</button>
                   </div>
                   <div class="custom-editor-row custom-editor-image-flips">
                     <span class="field-label">뒤집기</span>
@@ -1296,7 +1317,6 @@
                     <span class="field-label">대체 텍스트</span>
                     <textarea rows="2" maxlength="500" data-editor-field="altText" aria-label="이미지 대체 텍스트"></textarea>
                   </label>
-                  <p class="hint">맞춤은 전체 이미지를 보이고, 채우기는 프레임을 빈틈없이 채웁니다.</p>
                 </div>
 
                 <div class="custom-editor-panel" data-editor-panel="shape" hidden>

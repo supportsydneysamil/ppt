@@ -773,6 +773,18 @@ describe("PPT panel collapse affordances", () => {
       chromeSource,
       /type="radio"[\s\S]*?value="cover"[\s\S]*?data-editor-field="fit"/
     );
+    assert.match(
+      chromeSource,
+      /type="radio"[\s\S]*?value="stretch"[\s\S]*?data-editor-field="fit"/
+    );
+    assert.match(chromeSource, />전체 보기</);
+    assert.match(chromeSource, />프레임 채우기</);
+    assert.match(chromeSource, />늘여서 채우기</);
+    assert.match(chromeSource, /data-editor-field="focalX"/);
+    assert.match(chromeSource, /data-editor-field="focalY"/);
+    assert.match(chromeSource, /data-editor-field="imageZoom"/);
+    assert.match(chromeSource, /data-editor-action="image-focal-0-1"/);
+    assert.match(chromeSource, /data-editor-action="reset-image-crop"/);
     assert.match(chromeSource, /field="flipH"/);
     assert.match(chromeSource, /field="flipV"/);
     assert.match(

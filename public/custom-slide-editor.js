@@ -5,6 +5,7 @@ import {
   normalizeCustomSlide,
 } from "./custom-slide-model.js";
 import { createCustomSlideHistory } from "./custom-slide-history.js";
+import { coverCropWindow } from "./custom-image-layout.js";
 import {
   applyTheme,
   CUSTOM_SLIDE_THEMES,
@@ -2325,37 +2326,52 @@ export function buildFabricObject(fabric, element) {
  * pixels: without the box, serializing would shrink the element to the letterbox
  * and toggling contain/cover would drift.
  */
-export function applyImageFit(image, fit, boxWidth, boxHeight) {
+export function applyImageFit(image, fit, boxWidth, boxHeight, cropOptions = {}) {
   const naturalWidth = image.customNaturalWidth || image.width || 1;
   const naturalHeight = image.customNaturalHeight || image.height || 1;
+  const crop = coverCropWindow(
+    naturalWidth,
+    naturalHeight,
+    boxWidth,
+    boxHeight,
+    cropOptions
+  );
   const box = {
     customBoxWidth: Math.max(0, boxWidth),
     customBoxHeight: Math.max(0, boxHeight),
+    customFocalX: crop.focalX,
+    customFocalY: crop.focalY,
+    customImageZoom: crop.imageZoom,
   };
 
   if (fit === "cover") {
-    const boxRatio = boxWidth / boxHeight;
-    const naturalRatio = naturalWidth / naturalHeight;
-    let cropWidth = naturalWidth;
-    let cropHeight = naturalHeight;
-
-    if (naturalRatio > boxRatio) {
-      cropWidth = naturalHeight * boxRatio;
-    } else {
-      cropHeight = naturalWidth / boxRatio;
-    }
-
     image.set({
       ...box,
-      cropX: (naturalWidth - cropWidth) / 2,
-      cropY: (naturalHeight - cropHeight) / 2,
-      width: cropWidth,
-      height: cropHeight,
-      scaleX: boxWidth / cropWidth,
-      scaleY: boxHeight / cropHeight,
-      customFitScaleX: boxWidth / cropWidth,
-      customFitScaleY: boxHeight / cropHeight,
+      cropX: crop.x,
+      cropY: crop.y,
+      width: crop.width,
+      height: crop.height,
+      scaleX: boxWidth / crop.width,
+      scaleY: boxHeight / crop.height,
+      customFitScaleX: boxWidth / crop.width,
+      customFitScaleY: boxHeight / crop.height,
       customFit: "cover",
+    });
+    return;
+  }
+
+  if (fit === "stretch") {
+    image.set({
+      ...box,
+      cropX: 0,
+      cropY: 0,
+      width: naturalWidth,
+      height: naturalHeight,
+      scaleX: boxWidth / naturalWidth,
+      scaleY: boxHeight / naturalHeight,
+      customFitScaleX: boxWidth / naturalWidth,
+      customFitScaleY: boxHeight / naturalHeight,
+      customFit: "stretch",
     });
     return;
   }
@@ -2460,7 +2476,17 @@ export async function buildFabricImage(fabric, element) {
     customSrc: element.src,
     customAltText: element.altText ?? "",
   });
-  applyImageFit(image, element.fit, element.width || image.width, element.height || image.height);
+  applyImageFit(
+    image,
+    element.fit,
+    element.width || image.width,
+    element.height || image.height,
+    {
+      focalX: element.focalX,
+      focalY: element.focalY,
+      imageZoom: element.imageZoom,
+    }
+  );
   return tagObject(image, element, fabric);
 }
 
@@ -2557,6 +2583,9 @@ export function fabricObjectToDescriptor(object) {
         flipH: Boolean(object.flipX),
         flipV: Boolean(object.flipY),
         altText: object.customAltText ?? "",
+        focalX: object.customFocalX ?? 0.5,
+        focalY: object.customFocalY ?? 0.5,
+        imageZoom: object.customImageZoom ?? 1,
       };
     }
     case "roundRect":
@@ -3046,9 +3075,25 @@ export async function createCustomSlideEditor(root, options = {}) {
       return;
     }
     readout.textContent =
-      name === "opacity"
+      name === "opacity" || name === "focalX" || name === "focalY"
         ? `${Math.round((Number(input.value) || 0) * 100)}%`
-        : input.value ?? "";
+        : name === "imageZoom"
+          ? `${Math.round((Number(input.value) || 1) * 100)}%`
+          : input.value ?? "";
+  }
+
+  function syncImageFocalButtons(image) {
+    const focalX = image?.customFocalX ?? 0.5;
+    const focalY = image?.customFocalY ?? 0.5;
+    for (const button of queryAllHosts(
+      '[data-editor-action^="image-focal-"]'
+    )) {
+      const [, , x, y] = button.dataset.editorAction.split("-");
+      button.setAttribute(
+        "aria-pressed",
+        String(Number(x) === focalX && Number(y) === focalY)
+      );
+    }
   }
 
   function syncStrokeFields(active) {
@@ -3104,9 +3149,13 @@ export async function createCustomSlideEditor(root, options = {}) {
       case "image":
         showPanels(["image", "common"]);
         setFieldValue("fit", target.customFit ?? "contain");
+        setFieldValue("focalX", target.customFocalX ?? 0.5);
+        setFieldValue("focalY", target.customFocalY ?? 0.5);
+        setFieldValue("imageZoom", target.customImageZoom ?? 1);
         setFieldValue("flipH", Boolean(target.flipX));
         setFieldValue("flipV", Boolean(target.flipY));
         setFieldValue("altText", target.customAltText ?? "");
+        syncImageFocalButtons(target);
         setStatus("이미지가 선택되었습니다.");
         break;
       case "line": {
@@ -3957,7 +4006,30 @@ export async function createCustomSlideEditor(root, options = {}) {
       case "fit": {
         // Re-fit inside the authored box so toggling never drifts.
         const box = imageBoxFromObject(active);
-        applyImageFit(active, input.value, box.width, box.height);
+        applyImageFit(active, input.value, box.width, box.height, {
+          focalX: active.customFocalX,
+          focalY: active.customFocalY,
+          imageZoom: active.customImageZoom,
+        });
+        syncImageFocalButtons(active);
+        break;
+      }
+      case "focalX":
+      case "focalY":
+      case "imageZoom": {
+        const box = imageBoxFromObject(active);
+        const options = {
+          focalX:
+            name === "focalX" ? Number(input.value) : active.customFocalX,
+          focalY:
+            name === "focalY" ? Number(input.value) : active.customFocalY,
+          imageZoom:
+            name === "imageZoom"
+              ? Number(input.value)
+              : active.customImageZoom,
+        };
+        applyImageFit(active, active.customFit, box.width, box.height, options);
+        syncImageFocalButtons(active);
         break;
       }
       case "flipH":
@@ -4016,6 +4088,29 @@ export async function createCustomSlideEditor(root, options = {}) {
     if (destroyed) {
       return;
     }
+    if (action.startsWith("image-focal-")) {
+      const selected = selectedFabricObjects(canvas);
+      const [, , x, y] = action.split("-");
+      const image =
+        selected.length === 1 && selected[0].elementType === "image"
+          ? selected[0]
+          : null;
+      if (image) {
+        const box = imageBoxFromObject(image);
+        applyImageFit(image, image.customFit, box.width, box.height, {
+          focalX: Number(x),
+          focalY: Number(y),
+          imageZoom: image.customImageZoom,
+        });
+        setFieldValue("focalX", image.customFocalX);
+        setFieldValue("focalY", image.customFocalY);
+        syncImageFocalButtons(image);
+        image.setCoords();
+        canvas.requestRenderAll();
+        queueHistory();
+      }
+      return;
+    }
     switch (action) {
       case "add-text":
         addElement(centeredElement("text"));
@@ -4049,6 +4144,29 @@ export async function createCustomSlideEditor(root, options = {}) {
             : null;
         if (pendingImageReplacementId) {
           dom.file?.click();
+        }
+        break;
+      }
+      case "reset-image-crop": {
+        const selected = selectedFabricObjects(canvas);
+        const image =
+          selected.length === 1 && selected[0].elementType === "image"
+            ? selected[0]
+            : null;
+        if (image) {
+          const box = imageBoxFromObject(image);
+          applyImageFit(image, image.customFit, box.width, box.height, {
+            focalX: 0.5,
+            focalY: 0.5,
+            imageZoom: 1,
+          });
+          setFieldValue("focalX", 0.5);
+          setFieldValue("focalY", 0.5);
+          setFieldValue("imageZoom", 1);
+          syncImageFocalButtons(image);
+          image.setCoords();
+          canvas.requestRenderAll();
+          queueHistory();
         }
         break;
       }

@@ -548,6 +548,51 @@ test("image controls synchronize fit, flips, and alternative text", async () => 
   await ctx.editor.destroy();
 });
 
+test("cover controls adjust focal position and zoom, then reset safely", async () => {
+  const ctx = await createEditor();
+  fakeFabric.__setImageBehaviour({ width: 400, height: 200 });
+  await ctx.editor.load(imageSlide());
+  const [image] = ctx.canvas.getObjects();
+  select(ctx, image);
+
+  setField(ctx, "fit", "cover");
+  setField(ctx, "focalX", 0.25);
+  setField(ctx, "focalY", 0.75);
+  setField(ctx, "imageZoom", 2);
+  assert.deepEqual(
+    {
+      focalX: ctx.editor.serialize().elements[0].focalX,
+      focalY: ctx.editor.serialize().elements[0].focalY,
+      imageZoom: ctx.editor.serialize().elements[0].imageZoom,
+      cropX: image.cropX,
+      cropY: image.cropY,
+    },
+    { focalX: 0.25, focalY: 0.75, imageZoom: 2, cropX: 62.5, cropY: 75 }
+  );
+
+  action(ctx.root, "image-focal-0-1").click();
+  await flush();
+  assert.equal(ctx.editor.serialize().elements[0].focalX, 0);
+  assert.equal(ctx.editor.serialize().elements[0].focalY, 1);
+
+  action(ctx.root, "reset-image-crop").click();
+  await flush();
+  assert.deepEqual(
+    {
+      focalX: ctx.editor.serialize().elements[0].focalX,
+      focalY: ctx.editor.serialize().elements[0].focalY,
+      imageZoom: ctx.editor.serialize().elements[0].imageZoom,
+    },
+    { focalX: 0.5, focalY: 0.5, imageZoom: 1 }
+  );
+
+  setField(ctx, "fit", "stretch");
+  assert.equal(ctx.editor.serialize().elements[0].fit, "stretch");
+  assert.notEqual(image.scaleX, image.scaleY);
+
+  await ctx.editor.destroy();
+});
+
 test("aligning a letterboxed image keeps the canvas and the model in sync", async () => {
   const ctx = await createEditor();
   fakeFabric.__setImageBehaviour({ width: 100, height: 50 });
