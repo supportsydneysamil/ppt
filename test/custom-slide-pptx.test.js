@@ -430,6 +430,30 @@ describe("appendCustomSlide", () => {
     });
   });
 
+  it("exports native image flips and alternative text", async () => {
+    const { slideXml } = await render({
+      elements: [
+        element({
+          id: "native-image",
+          type: "image",
+          src: "/uploads/native.png",
+          fit: "cover",
+          flipH: true,
+          flipV: true,
+          altText: "강단 위의 성경",
+        }),
+      ],
+    });
+
+    const picture = objectByName(slideXml, "custom:native-image");
+    assert.equal(transform(picture).flipH, true);
+    assert.equal(transform(picture).flipV, true);
+    assert.equal(
+      picture.getElementsByTagName("p:cNvPr")[0].getAttribute("descr"),
+      "강단 위의 성경"
+    );
+  });
+
   it("falls back to the element box when image dimensions are unavailable", async () => {
     const { slideXml } = await render(
       {

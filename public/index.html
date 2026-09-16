@@ -1271,14 +1271,32 @@
 
                 <div class="custom-editor-panel" data-editor-panel="image" hidden>
                   <div class="custom-editor-panel-label">이미지</div>
-                  <label class="custom-editor-row">
-                    <span class="field-label">맞춤</span>
-                    <select data-editor-field="fit" aria-label="이미지 맞춤 방식">
-                      <option value="contain">전체 보이기 (contain)</option>
-                      <option value="cover">영역 채우기 (cover)</option>
-                    </select>
+                  <div class="custom-editor-image-actions">
+                    <button type="button" class="ghost small" data-editor-action="replace-image">이미지 교체</button>
+                  </div>
+                  <div class="custom-editor-row">
+                    <span class="field-label">표시 방식</span>
+                    <div class="custom-editor-fit-segment" role="radiogroup" aria-label="이미지 표시 방식">
+                      <label class="custom-editor-fit-option">
+                        <input type="radio" value="contain" data-editor-field="fit" name="fallbackImageFit" />
+                        <span>맞춤</span>
+                      </label>
+                      <label class="custom-editor-fit-option">
+                        <input type="radio" value="cover" data-editor-field="fit" name="fallbackImageFit" />
+                        <span>채우기</span>
+                      </label>
+                    </div>
+                  </div>
+                  <div class="custom-editor-row custom-editor-image-flips">
+                    <span class="field-label">뒤집기</span>
+                    <label><input type="checkbox" data-editor-field="flipH" /> 좌우</label>
+                    <label><input type="checkbox" data-editor-field="flipV" /> 상하</label>
+                  </div>
+                  <label class="custom-editor-row custom-editor-row--stack custom-editor-image-alt">
+                    <span class="field-label">대체 텍스트</span>
+                    <textarea rows="2" maxlength="500" data-editor-field="altText" aria-label="이미지 대체 텍스트"></textarea>
                   </label>
-                  <p class="hint">이미지는 업로드가 완료된 후에만 슬라이드에 저장됩니다.</p>
+                  <p class="hint">맞춤은 전체 이미지를 보이고, 채우기는 프레임을 빈틈없이 채웁니다.</p>
                 </div>
 
                 <div class="custom-editor-panel" data-editor-panel="shape" hidden>

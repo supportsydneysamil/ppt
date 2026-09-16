@@ -763,6 +763,28 @@ describe("PPT panel collapse affordances", () => {
     );
   });
 
+  it("exposes native image controls with accessible inspector fields", () => {
+    assert.match(chromeSource, /data-editor-action="replace-image"/);
+    assert.match(
+      chromeSource,
+      /type="radio"[\s\S]*?value="contain"[\s\S]*?data-editor-field="fit"/
+    );
+    assert.match(
+      chromeSource,
+      /type="radio"[\s\S]*?value="cover"[\s\S]*?data-editor-field="fit"/
+    );
+    assert.match(chromeSource, /field="flipH"/);
+    assert.match(chromeSource, /field="flipV"/);
+    assert.match(
+      chromeSource,
+      /maxLength=\{500\}[\s\S]*?data-editor-field="altText"/
+    );
+    assert.match(html, /data-editor-action="replace-image"/);
+    assert.match(html, /data-editor-field="flipH"/);
+    assert.match(html, /data-editor-field="flipV"/);
+    assert.match(html, /data-editor-field="altText"/);
+  });
+
   it("gives the layer list rows instead of loose buttons", () => {
     assert.match(chromeSource, /data-editor-ui="layers"/);
     assert.match(chromeSource, /data-editor-ui="layers-empty"/);

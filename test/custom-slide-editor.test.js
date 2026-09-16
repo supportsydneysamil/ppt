@@ -588,17 +588,26 @@ test("image descriptors serialize the authored box instead of letterboxed pixels
     rotation: 0,
     opacity: 1,
     zIndex: 0,
+    flipH: true,
+    flipV: true,
+    altText: "강단 위의 성경",
   };
 
   const image = await buildFabricImage(fakeFabric, element);
   assert.equal(image.customBoxWidth, 600);
   assert.equal(image.customBoxHeight, 400);
+  assert.equal(image.flipX, true);
+  assert.equal(image.flipY, true);
+  assert.equal(image.customAltText, "강단 위의 성경");
 
   const descriptor = fabricObjectToDescriptor(image);
   assert.equal(descriptor.width, 600);
   assert.equal(descriptor.height, 400);
   assert.equal(descriptor.scaleX, 1);
   assert.equal(descriptor.scaleY, 1);
+  assert.equal(descriptor.flipH, true);
+  assert.equal(descriptor.flipV, true);
+  assert.equal(descriptor.altText, "강단 위의 성경");
 
   const slide = fabricObjectsToCustomSlide([descriptor]);
   assert.deepEqual(
@@ -609,8 +618,21 @@ test("image descriptors serialize the authored box instead of letterboxed pixels
       height: slide.elements[0].height,
       fit: slide.elements[0].fit,
       src: slide.elements[0].src,
+      flipH: slide.elements[0].flipH,
+      flipV: slide.elements[0].flipV,
+      altText: slide.elements[0].altText,
     },
-    { x: 340, y: 160, width: 600, height: 400, fit: "contain", src: "/uploads/photo.png" }
+    {
+      x: 340,
+      y: 160,
+      width: 600,
+      height: 400,
+      fit: "contain",
+      src: "/uploads/photo.png",
+      flipH: true,
+      flipV: true,
+      altText: "강단 위의 성경",
+    }
   );
 });
 

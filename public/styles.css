@@ -3831,6 +3831,86 @@ body[data-theme="light"] .rte-textarea {
   color: var(--brand);
 }
 
+.custom-editor-image-actions {
+  display: flex;
+}
+
+.custom-editor-image-actions .ghost {
+  min-height: var(--ctrl-h-sm);
+  gap: 6px;
+}
+
+.custom-editor-fit-segment {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel);
+}
+
+.custom-editor-fit-option {
+  position: relative;
+  display: flex;
+  min-width: 0;
+}
+
+.custom-editor-fit-option input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.custom-editor-fit-option span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: var(--ctrl-h-xs);
+  padding: 0 8px;
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+.custom-editor-fit-option:hover span {
+  color: var(--ink);
+  background: var(--panel-soft);
+}
+
+.custom-editor-fit-option input:checked + span {
+  color: var(--ink);
+  background: var(--brand-tint-strong);
+  box-shadow: inset 0 0 0 1px var(--brand-edge);
+}
+
+.custom-editor-fit-option input:focus-visible + span {
+  box-shadow: var(--focus-ring);
+}
+
+.custom-editor-image-alt {
+  gap: 6px;
+}
+
+.custom-editor-image-flips {
+  grid-template-columns: var(--custom-label-width) auto auto;
+}
+
+.custom-editor-image-flips label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .custom-editor-empty {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);

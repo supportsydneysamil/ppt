@@ -6,6 +6,7 @@ const DEFAULT_BACKGROUND = "#ffffff";
 const MAX_ZINDEX = 10000;
 const MAX_ID_RETRIES = 8;
 const MAX_PATH_DECODE_PASSES = 5;
+const MAX_ALT_TEXT_LENGTH = 500;
 
 const ELEMENT_TYPES = new Set([
   "text",
@@ -96,6 +97,12 @@ function fabricShadowToModel(shadow) {
 
 function normalizeImageFit(value) {
   return IMAGE_FITS.has(value) ? value : "contain";
+}
+
+function normalizeAltText(value) {
+  return typeof value === "string"
+    ? value.trim().slice(0, MAX_ALT_TEXT_LENGTH)
+    : "";
 }
 
 function normalizeRotation(value) {
@@ -439,6 +446,9 @@ function normalizeImageElement(element, index, canvasWidth, canvasHeight) {
     ...common,
     src: normalizeImageSrc(element.src),
     fit: normalizeImageFit(element.fit),
+    flipH: Boolean(element.flipH),
+    flipV: Boolean(element.flipV),
+    altText: normalizeAltText(element.altText),
   };
 }
 
@@ -710,6 +720,9 @@ function elementToFabricObject(element) {
         type: "image",
         src: element.src,
         fit: element.fit,
+        flipX: element.flipH,
+        flipY: element.flipV,
+        customAltText: element.altText,
       };
     case "rect":
       return {
@@ -936,6 +949,9 @@ function fabricObjectToElement(object, orderIndex) {
         ...common,
         src: normalizeImageSrc(object.src),
         fit: normalizeImageFit(object.fit),
+        flipH: Boolean(object.flipH ?? object.flipX),
+        flipV: Boolean(object.flipV ?? object.flipY),
+        altText: normalizeAltText(object.altText ?? object.customAltText),
       };
     case "rect":
       return {
