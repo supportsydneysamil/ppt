@@ -107,8 +107,124 @@ body {
   width: 1333px;
   height: 750px;
   position: relative;
-  transform-origin: top left;
+  transform-origin: center center;
   box-shadow: 0 26px 80px rgba(0, 0, 0, 0.42);
+}
+
+.fullscreen-start {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 18px;
+  padding: 24px;
+  color: #fff;
+  text-align: center;
+  background: rgba(0, 0, 0, 0.88);
+}
+
+.fullscreen-start p {
+  margin: 0;
+  font-size: clamp(22px, 4vw, 42px);
+  font-weight: 700;
+}
+
+.fullscreen-start button {
+  border: 2px solid #fff;
+  border-radius: 999px;
+  padding: 14px 24px;
+  color: #000;
+  background: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.fullscreen-hint {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.fullscreen-start.is-unsupported .fullscreen-hint {
+  display: none;
+}
+
+.blackout-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: #000;
+}
+
+.fullscreen-start[hidden],
+.blackout-layer[hidden] {
+  display: none;
+}
+
+body.is-presenting {
+  width: 100vw;
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+  background: #000;
+  cursor: none;
+}
+
+body.is-presenting .webview-shell {
+  width: 100vw;
+  height: 100vh;
+  min-height: 0;
+  display: block;
+  padding: 0;
+  background: #000;
+}
+
+body.is-presenting .webview-topbar {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 20;
+  border: 0;
+  border-radius: 0;
+  padding: 16px;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  pointer-events: none;
+}
+
+body.is-presenting .webview-topbar > div:first-child {
+  visibility: hidden;
+}
+
+body.is-presenting .stage-shell,
+body.is-presenting .stage-viewport {
+  width: 100vw;
+  height: 100vh;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: #000;
+  box-shadow: none;
+}
+
+body.is-presenting .stage-canvas {
+  box-shadow: none;
+}
+
+body.is-presenting .presenter-controls {
+  opacity: 0;
+  transform: translateY(-10px);
+  transition: opacity 160ms ease, transform 160ms ease;
+  pointer-events: none;
+}
+
+body.is-presenting .presenter-controls.controls-visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+  cursor: default;
 }
 
 .slide-frame {
@@ -199,5 +315,12 @@ body {
   .topbar-actions {
     width: 100%;
     justify-content: space-between;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .presenter-controls,
+  .fullscreen-start {
+    transition: none;
   }
 }

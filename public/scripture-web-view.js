@@ -1,3 +1,5 @@
+import { createScripturePresenter } from "./scripture-web-presenter.js";
+
 const BASE_WIDTH = 1333;
 const BASE_HEIGHT = 750;
 
@@ -129,19 +131,20 @@ function renderSlide() {
   updateControls();
 }
 
-function moveSlide(offset) {
-  if (!deckData) {
-    return;
-  }
-
-  const nextIndex = currentIndex + offset;
-  if (nextIndex < 0 || nextIndex >= deckData.slides.length) {
-    return;
-  }
-
-  currentIndex = nextIndex;
+function navigate(command) {
+  if (!deckData?.slides.length) return;
+  if (command === "first") currentIndex = 0;
+  if (command === "last") currentIndex = deckData.slides.length - 1;
+  if (command === "next") currentIndex = Math.min(currentIndex + 1, deckData.slides.length - 1);
+  if (command === "previous") currentIndex = Math.max(currentIndex - 1, 0);
   renderSlide();
 }
+
+const presenter = createScripturePresenter({
+  document,
+  window,
+  onNavigate: navigate,
+});
 
 async function loadSession() {
   const url = new URL(window.location.href);
@@ -167,21 +170,14 @@ async function loadSession() {
     currentIndex = 0;
     renderSlide();
     applyScale();
+    await presenter.attemptAutoFullscreen();
   } catch (err) {
     setMessage(err?.message || "웹 뷰를 불러오는 중 오류가 발생했습니다.");
   }
 }
 
-prevBtn.addEventListener("click", () => moveSlide(-1));
-nextBtn.addEventListener("click", () => moveSlide(1));
+prevBtn.addEventListener("click", () => navigate("previous"));
+nextBtn.addEventListener("click", () => navigate("next"));
 window.addEventListener("resize", applyScale);
-window.addEventListener("keydown", (event) => {
-  if (event.key === "ArrowLeft") {
-    moveSlide(-1);
-  } else if (event.key === "ArrowRight" || event.key === " ") {
-    event.preventDefault();
-    moveSlide(1);
-  }
-});
 
 loadSession();

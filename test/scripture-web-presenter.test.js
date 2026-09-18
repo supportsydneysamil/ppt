@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { JSDOM } from "jsdom";
 
@@ -8,6 +9,15 @@ import {
   navigationFromSwipe,
   navigationFromTap,
 } from "../public/scripture-web-presenter.js";
+
+const WEB_VIEW_HTML = readFileSync(
+  new URL("../public/scripture-web-view.html", import.meta.url),
+  "utf8"
+);
+const WEB_VIEW_CSS = readFileSync(
+  new URL("../public/scripture-web-view.css", import.meta.url),
+  "utf8"
+);
 
 const MARKUP = `<!doctype html><html lang="ko"><body>
   <div id="presenterControls">
@@ -101,6 +111,44 @@ function pointer(window, node, type, clientX, clientY = 300) {
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+describe("scripture presenter DOM contract", () => {
+  it("provides the presenter controls and overlays", () => {
+    const { document } = new JSDOM(WEB_VIEW_HTML).window;
+
+    for (const id of [
+      "presenterControls",
+      "fullscreenBtn",
+      "blackoutBtn",
+      "fullscreenStart",
+      "fullscreenStartBtn",
+      "fullscreenMessage",
+      "blackoutLayer",
+    ]) {
+      assert.ok(document.getElementById(id), `${id} is missing`);
+    }
+
+    assert.equal(
+      document.getElementById("blackoutBtn").getAttribute("aria-pressed"),
+      "false"
+    );
+    assert.equal(document.getElementById("blackoutLayer").hidden, true);
+    assert.match(
+      document.getElementById("fullscreenStartBtn").textContent,
+      /전체화면으로 시작/
+    );
+  });
+
+  it("provides fullscreen, blackout, and reduced-motion styles", () => {
+    assert.match(WEB_VIEW_CSS, /body\.is-presenting/);
+    assert.match(WEB_VIEW_CSS, /\.blackout-layer/);
+    assert.match(WEB_VIEW_CSS, /prefers-reduced-motion/);
+    assert.match(
+      WEB_VIEW_CSS,
+      /\.fullscreen-start\.is-unsupported\s+\.fullscreen-hint/
+    );
+  });
+});
 
 describe("scripture presenter input", () => {
   it("maps presentation keys and ignores Space on controls", () => {
