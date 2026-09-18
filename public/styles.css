@@ -4700,10 +4700,14 @@ body[data-theme="light"] .rte-textarea {
     margin-inline: auto;
   }
 
+  /* Scrolling clips at the box edge, and the toolbar button sits flush against
+     the top of it, so its 1px hover lift and 3px focus ring were being shaved
+     off. The gutter gives them room to paint. */
   .page[data-ppt-surface="gallery"] .template-gallery {
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
+    padding-top: 4px;
     padding-bottom: 48px;
   }
 
