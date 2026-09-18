@@ -55,10 +55,56 @@ export function createScriptureWebView({
     stageCanvas.appendChild(message);
   }
 
-  function applyScale() {
+  let scale = 1;
+
+  // The viewport paints the slide inside its padding and rounded corners, so
+  // the fit has to be measured against the content box, not the border box.
+  function measureStage() {
     const rect = stageViewport.getBoundingClientRect();
-    const scale = Math.min(rect.width / BASE_WIDTH, rect.height / BASE_HEIGHT);
-    stageCanvas.style.transform = `scale(${Math.max(scale, 0.1)})`;
+    const style = window.getComputedStyle?.(stageViewport);
+    const inset = (...edges) =>
+      edges.reduce((total, edge) => total + (parseFloat(style?.[edge]) || 0), 0);
+
+    return {
+      width:
+        rect.width -
+        inset(
+          "paddingLeft",
+          "paddingRight",
+          "borderLeftWidth",
+          "borderRightWidth",
+        ),
+      height:
+        rect.height -
+        inset(
+          "paddingTop",
+          "paddingBottom",
+          "borderTopWidth",
+          "borderBottomWidth",
+        ),
+    };
+  }
+
+  function applyFrameScale() {
+    const frame = stageCanvas.querySelector(".slide-frame");
+    if (frame) {
+      frame.style.transform = `scale(${scale})`;
+    }
+  }
+
+  // The canvas carries the scaled slide's real size while the frame inside it
+  // stays at design size, so nothing overflows and grid centring still works.
+  function applyScale() {
+    const { width, height } = measureStage();
+    // The floor only keeps the scale positive; a tiny window should still get
+    // a slide that fits rather than one clipped by the viewport.
+    scale = Math.max(
+      Math.min(width / BASE_WIDTH, height / BASE_HEIGHT) || 0,
+      0.01,
+    );
+    stageCanvas.style.width = `${BASE_WIDTH * scale}px`;
+    stageCanvas.style.height = `${BASE_HEIGHT * scale}px`;
+    applyFrameScale();
   }
 
   let resizeObserver = null;
@@ -196,6 +242,7 @@ export function createScriptureWebView({
         : renderSingleSlide(slide, deckData.theme);
 
     stageCanvas.appendChild(node);
+    applyFrameScale();
     updateControls();
   }
 
@@ -225,6 +272,9 @@ export function createScriptureWebView({
   async function loadSession() {
     const url = new URL(window.location.href);
     const sessionId = url.searchParams.get("session");
+
+    // Messages fill the canvas, so it needs its box before the first one.
+    applyScale();
 
     if (!sessionId) {
       setMessage("웹 뷰 세션 정보가 없습니다.", { closeable: true });

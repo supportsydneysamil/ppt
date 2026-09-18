@@ -116,7 +116,7 @@ function fixture({
           "auto fullscreen must run after the first slide renders",
         );
         assert.equal(
-          document.getElementById("stageCanvas").style.transform,
+          document.querySelector(".slide-frame").style.transform,
           "scale(1)",
         );
       },
@@ -171,6 +171,16 @@ function fixture({
   };
 }
 
+// The canvas carries the scaled slide's box and the frame inside it carries
+// the scale, so a correct fit means both agree.
+function stageFit(document) {
+  const canvas = document.getElementById("stageCanvas");
+  return {
+    transform: document.querySelector(".slide-frame")?.style.transform,
+    size: `${canvas.style.width} ${canvas.style.height}`,
+  };
+}
+
 describe("scripture web view", () => {
   it("navigates first/last boundaries without rebuilding unchanged slides", async () => {
     const f = fixture();
@@ -222,68 +232,168 @@ describe("scripture web view", () => {
 
     f.resize(666.5, 375);
     f.presenterOptions.onFullscreenChange(true);
-    assert.equal(
-      f.document.getElementById("stageCanvas").style.transform,
-      "scale(0.5)",
-    );
+    assert.deepEqual(stageFit(f.document), {
+      transform: "scale(0.5)",
+      size: "666.5px 375px",
+    });
     f.dom.window.close();
   });
 
   it("rescales when the viewport box settles after fullscreenchange", async () => {
     const f = fixture();
     await f.view.loadSession();
-    const canvas = f.document.getElementById("stageCanvas");
 
     assert.deepEqual(f.observers[0].targets, [
       f.document.getElementById("stageViewport"),
     ]);
 
     f.presenterOptions.onFullscreenChange(true);
-    assert.equal(
-      canvas.style.transform,
-      "scale(1)",
+    assert.deepEqual(
+      stageFit(f.document),
+      { transform: "scale(1)", size: "1333px 750px" },
       "the synchronous rescale can only see the stale viewport box",
     );
 
     f.resize(666.5, 375);
     f.notifyResizeObservers();
 
-    assert.equal(canvas.style.transform, "scale(0.5)");
+    assert.deepEqual(stageFit(f.document), {
+      transform: "scale(0.5)",
+      size: "666.5px 375px",
+    });
 
     f.view.destroy();
     assert.equal(f.observers[0].disconnected, true);
 
     f.resize(1333, 750);
     f.notifyResizeObservers();
-    assert.equal(canvas.style.transform, "scale(0.5)");
+    assert.deepEqual(stageFit(f.document), {
+      transform: "scale(0.5)",
+      size: "666.5px 375px",
+    });
     f.dom.window.close();
+  });
+
+  it("keeps the slide scaled to the current fit after navigating", async () => {
+    const f = fixture();
+    await f.view.loadSession();
+
+    f.resize(666.5, 375);
+    f.notifyResizeObservers();
+    f.view.navigate("next");
+
+    assert.deepEqual(stageFit(f.document), {
+      transform: "scale(0.5)",
+      size: "666.5px 375px",
+    });
+    f.dom.window.close();
+  });
+
+  it("scales the slide to fit inside the viewport padding and border", async () => {
+    const f = fixture();
+    f.dom.window.getComputedStyle = () => ({
+      paddingLeft: "12px",
+      paddingRight: "12px",
+      paddingTop: "12px",
+      paddingBottom: "12px",
+      borderLeftWidth: "1px",
+      borderRightWidth: "1px",
+      borderTopWidth: "1px",
+      borderBottomWidth: "1px",
+    });
+    // 1333 + 26px of padding and border leaves exactly the design width.
+    f.resize(1359, 776);
+    await f.view.loadSession();
+
+    assert.deepEqual(stageFit(f.document), {
+      transform: "scale(1)",
+      size: "1333px 750px",
+    });
+
+    f.resize(692.5, 401);
+    f.notifyResizeObservers();
+    assert.deepEqual(stageFit(f.document), {
+      transform: "scale(0.5)",
+      size: "666.5px 375px",
+    });
+    f.dom.window.close();
+  });
+
+  it("lets the stage shrink below the slide's design size", () => {
+    const css = readFileSync(
+      new URL("../public/scripture-web-view.css", import.meta.url),
+      "utf8",
+    );
+
+    for (const selector of [".stage-shell", ".stage-viewport"]) {
+      const block = css.match(new RegExp(`\\${selector}\\s*\\{([^}]*)\\}`))?.[1];
+      assert.match(block ?? "", /min-width:\s*0/, `${selector} must shrink`);
+      assert.match(block ?? "", /min-height:\s*0/, `${selector} must shrink`);
+    }
+
+    const shell = css.match(/\.webview-shell\s*\{([^}]*)\}/)?.[1] ?? "";
+    assert.match(
+      shell,
+      /height:\s*100vh/,
+      "the shell needs a definite height so the stage row cannot grow",
+    );
+    assert.doesNotMatch(shell, /min-height:\s*100vh/);
+  });
+
+  it("keeps the panel chrome on the slide box so the frame cannot drift", () => {
+    const css = readFileSync(
+      new URL("../public/scripture-web-view.css", import.meta.url),
+      "utf8",
+    );
+    const block = (selector) =>
+      css.match(new RegExp(`\\${selector}\\s*\\{([^}]*)\\}`))?.[1] ?? "";
+
+    // The viewport is the window-shaped area, so any chrome on it would frame
+    // a different shape than the 16:9 slide.
+    const viewport = block(".stage-viewport");
+    for (const property of ["border", "border-radius", "background", "padding"]) {
+      assert.doesNotMatch(
+        viewport,
+        new RegExp(`(^|[^-])${property}:`, "m"),
+        `.stage-viewport must not carry ${property}`,
+      );
+    }
+
+    const canvas = block(".stage-canvas");
+    assert.match(canvas, /border-radius:\s*30px/);
+    assert.match(canvas, /overflow:\s*hidden/, "the radius must clip the slide");
+    // A real border would shrink the content box away from the slide's size.
+    assert.doesNotMatch(canvas, /(^|[^-])border:/m);
+    assert.match(canvas, /box-shadow:/);
   });
 
   it("rescales on a post-layout frame when ResizeObserver is missing", async () => {
     const f = fixture({ resizeObserver: "missing" });
     await f.view.loadSession();
-    const canvas = f.document.getElementById("stageCanvas");
 
     f.presenterOptions.onFullscreenChange(true);
-    assert.equal(
-      canvas.style.transform,
-      "scale(1)",
+    assert.deepEqual(
+      stageFit(f.document),
+      { transform: "scale(1)", size: "1333px 750px" },
       "the synchronous rescale can only see the stale viewport box",
     );
 
     f.resize(666.5, 375);
     f.flushFrames();
 
-    assert.equal(canvas.style.transform, "scale(0.5)");
+    assert.deepEqual(stageFit(f.document), {
+      transform: "scale(0.5)",
+      size: "666.5px 375px",
+    });
 
     f.presenterOptions.onFullscreenChange(false);
     f.view.destroy();
     f.resize(1333, 750);
     f.flushFrames();
 
-    assert.equal(
-      canvas.style.transform,
-      "scale(0.5)",
+    assert.deepEqual(
+      stageFit(f.document),
+      { transform: "scale(0.5)", size: "666.5px 375px" },
       "destroy must drop the pending post-layout frame",
     );
     f.dom.window.close();
