@@ -148,6 +148,27 @@ describe("scripture presenter DOM contract", () => {
       /\.fullscreen-start\.is-unsupported\s+\.fullscreen-hint/
     );
   });
+
+  it("ties the presentation cursor to the visible controls window", () => {
+    assert.match(
+      WEB_VIEW_CSS,
+      /body\.is-presenting\s*\{[^}]*cursor:\s*none/,
+      "the presenting page must hide the cursor by default"
+    );
+    assert.match(
+      WEB_VIEW_CSS,
+      /body\.is-presenting:has\(\.presenter-controls\.controls-visible\)\s*\{[^}]*cursor:\s*default/,
+      "the cursor must return whenever the controls are visible"
+    );
+  });
+
+  it("keeps presenting controls in one row on narrow screens", () => {
+    assert.match(
+      WEB_VIEW_CSS,
+      /@media \(max-width: 900px\)[\s\S]*body\.is-presenting \.webview-topbar/,
+      "the narrow-screen topbar must not stack while presenting"
+    );
+  });
 });
 
 describe("scripture presenter input", () => {

@@ -224,6 +224,10 @@ body.is-presenting .presenter-controls.controls-visible {
   opacity: 1;
   transform: translateY(0);
   pointer-events: auto;
+}
+
+/* 컨트롤이 보이는 동안에는 포인터도 함께 보여야 한다. */
+body.is-presenting:has(.presenter-controls.controls-visible) {
   cursor: default;
 }
 
@@ -315,6 +319,16 @@ body.is-presenting .presenter-controls.controls-visible {
   .topbar-actions {
     width: 100%;
     justify-content: space-between;
+  }
+
+  body.is-presenting .webview-topbar {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  body.is-presenting .presenter-controls {
+    width: auto;
+    justify-content: flex-end;
   }
 }
 
