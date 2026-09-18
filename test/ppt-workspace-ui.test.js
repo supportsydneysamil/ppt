@@ -500,15 +500,24 @@ describe("PPT panel collapse affordances", () => {
       html,
       /<div class="preview-stage">\s*<div id="slidePreview" class="slide-preview-box">/
     );
+    // Both axes: a short window used to clip the 16:9 box, and a narrow one
+    // used to shrink it below 640px. overflow: auto lets the stage scroll
+    // instead of doing either.
     assert.match(
       css,
-      /\.page\[data-ppt-surface="editor"\] \.preview-stage \{\s*overflow-y:\s*auto/
+      /\.page\[data-ppt-surface="editor"\] \.preview-stage \{\s*overflow:\s*auto/
     );
     assert.match(
       css,
       /\.page\[data-ppt-surface="editor"\] \.custom-editor-body \{[\s\S]*?overflow-y:\s*auto/
     );
     assert.match(css, /\.slide-preview-box \{[\s\S]*?width:\s*100%;\s*aspect-ratio:\s*16 \/ 9/);
+    // The list is fixed and the inspector barely gives, so the stage used to
+    // absorb every pixel a narrowing window took.
+    assert.match(
+      css,
+      /\.ppt-interface\[data-layout-mode="wide"\] \.slide-preview-box:not\(\.preview-scroll-mode\) \{\s*min-width:\s*640px/
+    );
   });
 
   it("keeps the shell's rules in the breakpoint that needs them", () => {
@@ -733,6 +742,62 @@ describe("PPT panel collapse affordances", () => {
     assert.match(header, /<h3>슬라이드 편집<\/h3>/);
     assert.match(header, /id="editorSaveBtn"/);
     assert.doesNotMatch(header, /custom-editor-ribbon/);
+  });
+
+  it("splits the editor header into view and slide-action groups", () => {
+    const headerEnd = html.indexOf('<form id="slideForm"');
+    const header = html.slice(html.indexOf('<div class="editor-header">'), headerEnd);
+    const viewGroup = header.indexOf('aria-label="보기"');
+    const docGroup = header.indexOf('aria-label="슬라이드 작업"');
+    assert.ok(viewGroup > -1 && docGroup > viewGroup);
+
+    // The view controls belong to the workspace, the rest to the slide.
+    const view = header.slice(viewGroup, docGroup);
+    assert.match(view, /id="pptInspectorPaneBtn"/);
+    assert.match(view, /id="pptFocusModeBtn"/);
+    assert.match(view, /id="customEditorPopoutBtn"/);
+
+    const doc = header.slice(docGroup);
+    assert.match(doc, /id="editorCancelBtn"[^>]*>되돌리기</);
+    assert.match(
+      doc,
+      /id="editorDownloadBtn"[\s\S]*?id="editorSaveBtn"[\s\S]*?id="editorMoreBtn"/
+    );
+  });
+
+  it("keeps saving from rearranging the editor command bar", () => {
+    const headerEnd = html.indexOf('<form id="slideForm"');
+    const header = html.slice(html.indexOf('<div class="editor-header">'), headerEnd);
+    // A button that appears only after a save would shift its neighbours and
+    // read as a different toolbar, so availability is the only thing that moves.
+    assert.doesNotMatch(header, /id="editorDownloadBtn"[^>]*style="display:none;"/);
+    assert.doesNotMatch(header, /id="editorDeleteBtn"[^>]*style="display:none;"/);
+    assert.doesNotMatch(appSource, /editorDownloadBtn\.style\.display/);
+    assert.doesNotMatch(appSource, /editorDeleteBtn\.style\.display/);
+    assert.doesNotMatch(appSource, /editorCancelBtn\.style\.display/);
+    assert.match(appSource, /editorDownloadBtn\.disabled = unsaved/);
+  });
+
+  it("puts reset and delete behind the editor overflow menu", () => {
+    assert.match(
+      html,
+      /id="editorMoreBtn"[\s\S]*?aria-haspopup="menu"[\s\S]*?id="editorMoreMenu"[\s\S]*?id="editorResetBtn"[\s\S]*?id="editorDeleteBtn"/
+    );
+    assert.match(appSource, /function closeEditorMoreMenu\(/);
+    assert.match(appSource, /function toggleEditorMoreMenu\(/);
+  });
+
+  it("reverts only to a saved record and discards new slides through delete", () => {
+    assert.match(appSource, /function discardUnsavedSlide\(/);
+    // Revert with no saved record behind it would silently delete the slide.
+    assert.match(
+      appSource,
+      /function cancelEdit\(\)[\s\S]*?if \(isSlideUnsaved\(slide\)\) return;/
+    );
+    assert.match(
+      appSource,
+      /async function deleteCurrentSlide\(\)[\s\S]*?isSlideUnsaved\(slide\)\)\s*\{\s*discardUnsavedSlide/
+    );
   });
 
   it("keeps the ribbon in one column in compact and mobile layouts", () => {

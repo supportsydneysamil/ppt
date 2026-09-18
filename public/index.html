@@ -406,42 +406,69 @@
         <div class="slide-editor-panel" id="slideEditor" style="display:none;">
           <div class="editor-header">
             <h3>슬라이드 편집</h3>
+            <!-- Two groups, fixed order: what the workspace shows, then what
+                 happens to the slide. Nothing here appears or disappears when a
+                 slide is saved; only availability changes, so the bar never
+                 reflows under the pointer. -->
             <div class="editor-actions">
-              <button
-                id="pptInspectorPaneBtn"
-                type="button"
-                class="ghost small ppt-pane-toggle"
-                aria-controls="slideForm customSlideInspector"
-                aria-expanded="true"
+              <div class="editor-actions-group" role="group" aria-label="보기">
+                <button
+                  id="pptInspectorPaneBtn"
+                  type="button"
+                  class="ghost small ppt-pane-toggle"
+                  aria-controls="slideForm customSlideInspector"
+                  aria-expanded="true"
+                >
+                  속성
+                </button>
+                <button
+                  id="pptFocusModeBtn"
+                  type="button"
+                  class="ghost small"
+                  aria-pressed="false"
+                >
+                  집중 모드
+                </button>
+                <button
+                  id="customEditorPopoutBtn"
+                  type="button"
+                  class="ghost small"
+                  hidden
+                >
+                  새 창으로 열기
+                </button>
+              </div>
+              <div
+                class="editor-actions-group editor-actions-group--doc"
+                role="group"
+                aria-label="슬라이드 작업"
               >
-                속성
-              </button>
-              <button
-                id="pptFocusModeBtn"
-                type="button"
-                class="ghost small"
-                aria-pressed="false"
-              >
-                집중 모드
-              </button>
-              <button
-                id="customEditorPopoutBtn"
-                type="button"
-                class="ghost small"
-                hidden
-              >
-                새 창으로 열기
-              </button>
-              <button id="editorCancelBtn" class="ghost small">취소</button>
-              <button id="editorResetBtn" class="ghost small">슬라이드 초기화</button>
-              <button id="editorDeleteBtn" class="ghost small danger" style="display:none;">삭제</button>
-              <button id="editorDownloadBtn" class="ghost small icon-btn" style="display:none;" title="PPTX 다운로드" aria-label="PPTX 다운로드">
-                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M12 3a1 1 0 0 1 1 1v9.17l2.59-2.58a1 1 0 1 1 1.41 1.42l-4.3 4.29a1 1 0 0 1-1.4 0l-4.3-4.29a1 1 0 1 1 1.41-1.42L11 13.17V4a1 1 0 0 1 1-1z"></path>
-                  <path d="M5 20a1 1 0 0 1-1-1v-2a1 1 0 1 1 2 0v1h12v-1a1 1 0 1 1 2 0v2a1 1 0 0 1-1 1H5z"></path>
-                </svg>
-              </button>
-              <button id="editorSaveBtn" class="cta small">저장</button>
+                <button id="editorCancelBtn" type="button" class="ghost small">되돌리기</button>
+                <button id="editorDownloadBtn" type="button" class="ghost small icon-btn" title="PPTX 다운로드" aria-label="PPTX 다운로드">
+                  <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M12 3a1 1 0 0 1 1 1v9.17l2.59-2.58a1 1 0 1 1 1.41 1.42l-4.3 4.29a1 1 0 0 1-1.4 0l-4.3-4.29a1 1 0 1 1 1.41-1.42L11 13.17V4a1 1 0 0 1 1-1z"></path>
+                    <path d="M5 20a1 1 0 0 1-1-1v-2a1 1 0 1 1 2 0v1h12v-1a1 1 0 1 1 2 0v2a1 1 0 0 1-1 1H5z"></path>
+                  </svg>
+                </button>
+                <button id="editorSaveBtn" type="button" class="cta small">저장</button>
+                <div class="editor-more-menu">
+                  <button
+                    id="editorMoreBtn"
+                    type="button"
+                    class="ghost small icon-btn"
+                    aria-haspopup="menu"
+                    aria-expanded="false"
+                    aria-label="추가 작업"
+                    title="추가 작업"
+                  >
+                    ⋯
+                  </button>
+                  <div id="editorMoreMenu" class="bulk-dropdown" hidden role="menu">
+                    <button id="editorResetBtn" type="button" class="bulk-dropdown-item" role="menuitem">슬라이드 초기화</button>
+                    <button id="editorDeleteBtn" type="button" class="bulk-dropdown-item danger" role="menuitem">슬라이드 삭제</button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 

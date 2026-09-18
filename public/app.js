@@ -890,6 +890,8 @@ const slideResetConfirmBtn = document.getElementById("slideResetConfirmBtn");
 const slideResetStatus = document.getElementById("slideResetStatus");
 
 const editorDeleteBtn = document.getElementById("editorDeleteBtn");
+const editorMoreBtn = document.getElementById("editorMoreBtn");
+const editorMoreMenu = document.getElementById("editorMoreMenu");
 
 const slideFontSizeSelect = document.getElementById("slideFontSize");
 const editorDownloadBtn = document.getElementById("editorDownloadBtn");
@@ -1404,7 +1406,16 @@ function refreshSaveState() {
       !draft || duplicateInProgress || isSaveBusy(getSaveState());
   }
   if (editorCancelBtn) {
-    editorCancelBtn.disabled = !slideDirty;
+    // Revert needs a saved record to restore. A slide that never reached the
+    // server has nothing behind it, so dropping it belongs to delete.
+    const activeSlide = currentSlideId
+      ? slides.find((entry) => entry.id === currentSlideId)
+      : null;
+    const unsaved = isSlideUnsaved(activeSlide);
+    editorCancelBtn.disabled = !slideDirty || unsaved;
+    editorCancelBtn.title = unsaved
+      ? "아직 저장된 상태가 없습니다. 이 슬라이드를 버리려면 추가 작업에서 삭제하세요"
+      : "저장된 상태로 되돌립니다";
   }
   if (editorResetBtn) {
     editorResetBtn.disabled = !draft || isCurrentSlideAtResetDefaults(draft);
@@ -2993,6 +3004,33 @@ function updateSlideListControls() {
 function closeBulkDropdown() {
   if (bulkActionDropdown) bulkActionDropdown.hidden = true;
   if (bulkActionMenuBtn) bulkActionMenuBtn.classList.remove("open");
+}
+
+// Reset and delete are rare and hard to undo, so they sit behind the overflow
+// button rather than next to save.
+function closeEditorMoreMenu() {
+  if (!editorMoreMenu || editorMoreMenu.hidden) {
+    return;
+  }
+  editorMoreMenu.hidden = true;
+  editorMoreBtn?.classList.remove("open");
+  editorMoreBtn?.setAttribute("aria-expanded", "false");
+}
+
+function toggleEditorMoreMenu() {
+  if (!editorMoreMenu || !editorMoreBtn) {
+    return;
+  }
+  const wasOpen = !editorMoreMenu.hidden;
+  closeBulkDropdown();
+  closeAddSlideDropdown();
+  if (wasOpen) {
+    closeEditorMoreMenu();
+    return;
+  }
+  editorMoreMenu.hidden = false;
+  editorMoreBtn.classList.add("open");
+  editorMoreBtn.setAttribute("aria-expanded", "true");
 }
 
 function openAddSlideDropdown() {
@@ -5686,9 +5724,11 @@ function closeSlideResetDialog({ restoreFocus = true } = {}) {
     slideResetModal.close();
   }
   if (restoreFocus) {
+    // Reset lives in the closed overflow menu, so focus returns to the button
+    // that opens it rather than to an element nobody can see.
     const focusTarget = editorResetBtn.disabled
       ? slideNameInput
-      : editorResetBtn;
+      : editorMoreBtn || slideNameInput;
     if (focusTarget && !focusTarget.disabled) {
       focusTarget.focus();
     }
@@ -5814,15 +5854,16 @@ async function confirmCurrentSlideReset() {
   }
 }
 
+// Saving must not rearrange the command bar. Download is the only action the
+// server gates, so it stays in place and says why it is unavailable instead of
+// appearing from nowhere once the slide lands.
 function updateButtonsState(slide) {
-  if (slide.saved) {
-    editorDownloadBtn.style.display = "inline-flex";
-    editorDeleteBtn.style.display = "inline-flex";
-    editorCancelBtn.style.display = "inline-flex";
-  } else {
-    editorDownloadBtn.style.display = "none";
-    editorDeleteBtn.style.display = "none";
-    editorCancelBtn.style.display = "inline-flex";
+  const unsaved = isSlideUnsaved(slide);
+  if (editorDownloadBtn) {
+    editorDownloadBtn.disabled = unsaved;
+    editorDownloadBtn.title = unsaved
+      ? "저장한 뒤에 PPTX로 다운로드할 수 있습니다"
+      : "PPTX 다운로드";
   }
 }
 
@@ -7273,7 +7314,14 @@ addSlideEndBtn.addEventListener("click", () => {
 duplicateSlideBtn.addEventListener("click", duplicateCurrentSlide);
 
 editorSaveBtn.addEventListener("click", () => saveCurrentSlide());
-editorResetBtn.addEventListener("click", resetCurrentSlide);
+editorMoreBtn?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  toggleEditorMoreMenu();
+});
+editorResetBtn.addEventListener("click", () => {
+  closeEditorMoreMenu();
+  resetCurrentSlide();
+});
 editorCancelBtn.addEventListener("click", cancelEdit);
 slideResetBackBtn.addEventListener("click", () => closeSlideResetDialog());
 slideResetConfirmBtn.addEventListener("click", () => {
@@ -7293,6 +7341,12 @@ slideResetModal.addEventListener("click", (event) => {
 async function deleteCurrentSlide() {
   if (!currentSlideId) return;
   if (blockedBySaveInProgress()) return;
+
+  const slide = slides.find((entry) => entry.id === currentSlideId);
+  if (slide && isSlideUnsaved(slide)) {
+    discardUnsavedSlide(currentSlideId);
+    return;
+  }
 
   if (!confirm("정말 이 슬라이드를 삭제하시겠습니까?")) {
     return;
@@ -7320,7 +7374,21 @@ async function deleteCurrentSlide() {
   }
 }
 
-// Cancel restores the current slide in place. It is not navigation, so it
+// A slide that never reached the server leaves the working list outright;
+// there is no record to restore and nothing to delete remotely.
+function discardUnsavedSlide(slideId) {
+  const neighborId = resolveAdjacentSlideId(slides, slideId);
+  slides = slides.filter((entry) => entry.id !== slideId);
+  syncWorkingSlidesToState();
+  if (neighborId) {
+    applySlideSelection(neighborId);
+  } else {
+    resetEditorSelection();
+    renderSlideList();
+  }
+}
+
+// Revert restores the current slide in place. It is not navigation, so it
 // must not go through the unsaved-changes guard.
 function cancelEdit() {
   if (!currentSlideId) return;
@@ -7328,19 +7396,7 @@ function cancelEdit() {
 
   const slide = slides.find((s) => s.id === currentSlideId);
   if (!slide) return;
-
-  if (isSlideUnsaved(slide)) {
-    const neighborId = resolveAdjacentSlideId(slides, currentSlideId);
-    slides = slides.filter((entry) => entry.id !== currentSlideId);
-    syncWorkingSlidesToState();
-    if (neighborId) {
-      applySlideSelection(neighborId);
-    } else {
-      resetEditorSelection();
-      renderSlideList();
-    }
-    return;
-  }
+  if (isSlideUnsaved(slide)) return;
 
   slideRuntimeDraft = {};
   slideResetDraft = null;
@@ -7351,7 +7407,10 @@ function cancelEdit() {
   refreshSaveState();
 }
 
-editorDeleteBtn.addEventListener("click", deleteCurrentSlide);
+editorDeleteBtn.addEventListener("click", () => {
+  closeEditorMoreMenu();
+  deleteCurrentSlide();
+});
 editorDownloadBtn.addEventListener("click", downloadSlide);
 selectAllSlidesCheckbox.addEventListener("change", () => {
   setAllSlidesSelected(selectAllSlidesCheckbox.checked);
@@ -7390,6 +7449,14 @@ document.addEventListener("click", (e) => {
   ) {
     closeTemplateWorkspaceMenu();
   }
+  if (
+    editorMoreMenu &&
+    !editorMoreMenu.hidden &&
+    !editorMoreMenu.contains(e.target) &&
+    !editorMoreBtn?.contains(e.target)
+  ) {
+    closeEditorMoreMenu();
+  }
   if (templateGalleryGrid && !templateGalleryGrid.contains(e.target)) {
     closeTemplateCardMenus();
   }
@@ -7397,6 +7464,10 @@ document.addEventListener("click", (e) => {
 
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
+  if (editorMoreMenu && !editorMoreMenu.hidden) {
+    closeEditorMoreMenu();
+    editorMoreBtn?.focus();
+  }
   if (addSlideDropdown && !addSlideDropdown.hidden) {
     closeAddSlideDropdown();
     addSlideMenuBtn.focus();

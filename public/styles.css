@@ -2484,10 +2484,34 @@ body {
 
 .editor-actions {
   display: flex;
-  gap: 8px;
+  /* The gap between the two groups is wider than the gap inside them, which is
+     what separates "what the workspace shows" from "what happens to the
+     slide" without drawing a rule that would break when the row wraps. */
+  gap: var(--sp-4);
   flex-wrap: wrap;
+  align-items: center;
   justify-content: flex-end;
   margin-left: auto;
+}
+
+.editor-actions-group {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.editor-actions-group--doc {
+  justify-content: flex-end;
+}
+
+.editor-more-menu {
+  position: relative;
+}
+
+#editorMoreBtn.open {
+  background: var(--bg-accent);
+  color: var(--ink);
 }
 
 /* Unsaved work is easy to miss on the canvas, where there is no form to look at. */
@@ -3161,7 +3185,9 @@ body {
     justify-content: flex-start;
   }
 
-  .editor-actions .cta {
+  /* Once the row wraps, the slide actions keep the trailing edge so save stays
+     where it is on every width. */
+  .editor-actions-group--doc {
     margin-left: auto;
   }
 

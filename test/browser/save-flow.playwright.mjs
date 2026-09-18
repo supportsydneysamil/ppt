@@ -802,6 +802,17 @@ async function fillName(page, value) {
   await page.locator("#slideName").fill(value);
 }
 
+// Reset and delete sit behind the editor overflow button, so reaching either
+// one means opening that menu first. Clicking an item closes it again.
+async function clickEditorMenuItem(page, selector) {
+  const menu = page.locator("#editorMoreMenu");
+  if (!(await menu.isVisible())) {
+    await page.locator("#editorMoreBtn").click();
+    await menu.waitFor({ state: "visible" });
+  }
+  await page.locator(selector).click();
+}
+
 async function fillCustomBackground(page, value) {
   const input = page
     .locator("#customSlideEditor [data-custom-editor='background']")
@@ -1553,7 +1564,7 @@ await runScenario("template delete and duplicate write membership", async (page)
   assert.equal(state.templates[0].slides.length, 3);
   assert.equal(state.counts.templateSlidePut, 0, "no content was written");
 
-  await page.locator("#editorDeleteBtn").click();
+  await clickEditorMenuItem(page, "#editorDeleteBtn");
   await page.waitForFunction(
     () => document.querySelectorAll("#slideListContainer .slide-card").length === 2
   );
@@ -1966,7 +1977,7 @@ await runScenario(
       "cancel must not roll the draft back mid-save"
     );
 
-    await page.locator("#editorResetBtn").click();
+    await clickEditorMenuItem(page, "#editorResetBtn");
     await expectToast(page, "저장이 진행 중입니다");
     assert.equal(
       await page.locator("#slideName").inputValue(),
@@ -1974,7 +1985,7 @@ await runScenario(
       "reset must not roll the draft back mid-save"
     );
 
-    await page.locator("#editorDeleteBtn").click();
+    await clickEditorMenuItem(page, "#editorDeleteBtn");
     await page
       .locator("#slideListContainer .slide-card")
       .first()
@@ -2355,25 +2366,33 @@ await runScenario("cancel preserves committed template structure", async (page) 
   assert.equal(await page.locator("#templateWorkspaceBar").isVisible(), true);
 });
 
-await runScenario("cancel of a new slide selects the adjacent neighbor", async (page) => {
+// Revert needs a saved record to restore, so a slide that never reached the
+// server is dropped through delete instead of through revert.
+await runScenario("deleting a new slide selects the adjacent neighbor", async (page) => {
   await setup(page);
   await selectMainSlide(page, 0);
   await page.locator("#addSlideBtn").click();
   assert.equal(await page.locator("#slideListContainer .slide-card").count(), 3);
   await fillName(page, "중간 신규");
 
-  await page.locator("#editorCancelBtn").click();
+  assert.equal(
+    await page.locator("#editorCancelBtn").isDisabled(),
+    true,
+    "a slide with no saved record has nothing to revert to"
+  );
+
+  await clickEditorMenuItem(page, "#editorDeleteBtn");
 
   assert.equal(
     await page.locator("#unsavedChangesModal").isVisible(),
     false,
-    "cancel must not go through the navigation guard"
+    "dropping a new slide must not go through the navigation guard"
   );
   assert.equal(await page.locator("#slideListContainer .slide-card").count(), 2);
   assert.equal(
     await page.locator(".slide-card.active").getAttribute("data-slide-id"),
     "main-2",
-    "a cancelled insert prefers the next neighbor"
+    "a dropped insert prefers the next neighbor"
   );
   assert.equal(await page.locator("#slideEditor").isVisible(), true);
   assert.equal(await page.locator("#slideName").inputValue(), "둘째 슬라이드");
@@ -2381,7 +2400,7 @@ await runScenario("cancel of a new slide selects the adjacent neighbor", async (
   await selectMainSlide(page, 1);
   await page.locator("#addSlideBtn").click();
   assert.equal(await page.locator("#slideListContainer .slide-card").count(), 3);
-  await page.locator("#editorCancelBtn").click();
+  await clickEditorMenuItem(page, "#editorDeleteBtn");
   assert.equal(await page.locator("#slideListContainer .slide-card").count(), 2);
   assert.equal(
     await page.locator(".slide-card.active").getAttribute("data-slide-id"),
@@ -2390,17 +2409,18 @@ await runScenario("cancel of a new slide selects the adjacent neighbor", async (
   );
 });
 
-await runScenario("cancel of the only new slide shows the empty editor", async (page) => {
+await runScenario("deleting the only new slide shows the empty editor", async (page) => {
   await setup(page, { slides: [slide("solo", "혼자")] });
   await selectMainSlide(page, 0);
-  await page.locator("#editorDeleteBtn").click();
+  await clickEditorMenuItem(page, "#editorDeleteBtn");
   await page.locator("#slideListContainer .slide-card").waitFor({ state: "detached" });
 
   await page.locator("#addSlideBtn").click();
   await page.locator("#slideEditor").waitFor({ state: "visible" });
   assert.equal(await page.locator("#slideListContainer .slide-card").count(), 1);
 
-  await page.locator("#editorCancelBtn").click();
+  // A new slide is dropped locally, so no confirmation stands in the way.
+  await clickEditorMenuItem(page, "#editorDeleteBtn");
 
   assert.equal(await page.locator("#slideListContainer .slide-card").count(), 0);
   assert.equal(await page.locator("#slideEditor").isVisible(), false);
@@ -2423,7 +2443,7 @@ await runScenario(
       buffer: validPptxBuffer,
     });
 
-    await page.locator("#editorResetBtn").click();
+    await clickEditorMenuItem(page, "#editorResetBtn");
     await page.locator("#slideResetModal").waitFor({ state: "visible" });
     assert.equal(
       await page.locator("#slideResetModal").getAttribute("role"),
@@ -2467,13 +2487,13 @@ await runScenario(
       "reset-me.pptx"
     );
 
-    await page.locator("#editorResetBtn").click();
+    await clickEditorMenuItem(page, "#editorResetBtn");
     await page.locator("#slideResetModal").waitFor({ state: "visible" });
     await page.mouse.click(4, 4);
     await page.locator("#slideResetModal").waitFor({ state: "hidden" });
     assert.equal(await page.locator("#adBodyContent").inputValue(), "초기화 전 초안");
 
-    await page.locator("#editorResetBtn").click();
+    await clickEditorMenuItem(page, "#editorResetBtn");
     await page.locator("#slideResetConfirmBtn").click();
     await page.locator("#slideResetModal").waitFor({ state: "hidden" });
     await expectToast(page, "슬라이드를 초기화했습니다");
@@ -2520,8 +2540,10 @@ await runScenario(
     assert.equal(state.counts.slidePost, 1);
 
     await page.locator("#slideFontSize").selectOption("48");
-    await page.locator("#editorResetBtn:not([disabled])").waitFor();
-    await page.locator("#editorResetBtn").click();
+    await page
+      .locator("#editorResetBtn:not([disabled])")
+      .waitFor({ state: "attached" });
+    await clickEditorMenuItem(page, "#editorResetBtn");
     await page.locator("#slideResetConfirmBtn").click();
     await page.locator("#slideResetModal").waitFor({ state: "hidden" });
 
@@ -2568,7 +2590,7 @@ await runScenario(
     await undoButton.click();
     await page.waitForFunction(() => globalThis.__customResetImageBlocked);
 
-    await page.locator("#editorResetBtn").click();
+    await clickEditorMenuItem(page, "#editorResetBtn");
     await page.locator("#slideResetConfirmBtn").click();
     await page.locator("#slideResetModal[aria-busy='true']").waitFor();
     const resetStatus = page.locator("#slideResetStatus");
@@ -2609,7 +2631,7 @@ await runScenario(
     );
     await setup(page, { slides: [scriptureWithImage] });
     await selectMainSlide(page, 0);
-    await page.locator("#editorResetBtn").click();
+    await clickEditorMenuItem(page, "#editorResetBtn");
     await page.locator("#slideResetConfirmBtn").click();
     assert.equal(await page.locator("#scriptureTestament").inputValue(), "");
     assert.equal(await page.locator("#scriptureBook").inputValue(), "");
@@ -2633,11 +2655,11 @@ await runScenario(
       "#customSlideEditor [data-custom-editor='status']"
     ).first();
     await status.filter({ hasText: "슬라이드를 불러왔습니다" }).waitFor();
-    await page.locator("#editorResetBtn").click();
+    await clickEditorMenuItem(page, "#editorResetBtn");
     await page.locator("#slideResetConfirmBtn").click();
     await page.locator("#slideType").selectOption("simple");
     await page.locator("#slideType").selectOption("custom");
-    await page.locator("#editorResetBtn[disabled]").waitFor();
+    await page.locator("#editorResetBtn[disabled]").waitFor({ state: "attached" });
     assert.equal(
       await page.locator("#editorResetBtn").isDisabled(),
       true,
@@ -2682,14 +2704,14 @@ await runScenario(
   async (page) => {
     await setup(page);
     await selectMainSlide(page, 0);
-    await page.locator("#editorResetBtn").click();
+    await clickEditorMenuItem(page, "#editorResetBtn");
     await page.locator("#slideResetModal").waitFor({ state: "visible" });
     await page.evaluate(() => {
       const content = document.querySelector("#slideContent");
       content.value = "";
       content.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    await page.locator("#editorResetBtn[disabled]").waitFor();
+    await page.locator("#editorResetBtn[disabled]").waitFor({ state: "attached" });
 
     await page.keyboard.press("Escape");
     await page.locator("#slideResetModal").waitFor({ state: "hidden" });
@@ -2704,7 +2726,7 @@ await runScenario(
 await runScenario("hymn reset applies its distinct defaults", async (page) => {
   await setup(page, { slides: [allTypeSlides[4]] });
   await selectMainSlide(page, 0);
-  await page.locator("#editorResetBtn").click();
+  await clickEditorMenuItem(page, "#editorResetBtn");
   await page.locator("#slideResetConfirmBtn").click();
 
   assert.equal(await page.locator("#slideType").inputValue(), "hymn");
@@ -2723,7 +2745,7 @@ await runScenario("reset works inside a template workspace", async (page) => {
   const state = await setup(page, { templates: [template] });
   await openTemplate(page);
   await page.locator("#slideContent").fill("초기화할 템플릿 초안");
-  await page.locator("#editorResetBtn").click();
+  await clickEditorMenuItem(page, "#editorResetBtn");
   await page.locator("#slideResetConfirmBtn").click();
 
   assert.equal(await page.locator("#slideContent").inputValue(), "");
@@ -2740,12 +2762,16 @@ await runScenario("reset keeps a new unsaved slide selected", async (page) => {
     .locator(".slide-card.active")
     .getAttribute("data-slide-id");
   await page.locator("#slideContent").fill("신규 초안");
-  await page.locator("#editorResetBtn").click();
+  await clickEditorMenuItem(page, "#editorResetBtn");
   await page.locator("#slideResetConfirmBtn").click();
 
   assert.equal(await page.locator("#slideContent").inputValue(), "");
   assert.equal(await page.locator("#editorSaveBtn").isEnabled(), true);
-  assert.equal(await page.locator("#editorCancelBtn").isEnabled(), true);
+  assert.equal(
+    await page.locator("#editorCancelBtn").isDisabled(),
+    true,
+    "a new slide has no saved record to revert to"
+  );
   assert.equal(
     await page.locator(".slide-card.active").getAttribute("data-slide-id"),
     newSlideId
@@ -2763,7 +2789,7 @@ await runScenario(
     ).first();
     await status.filter({ hasText: "슬라이드를 불러왔습니다" }).waitFor();
 
-    await page.locator("#editorResetBtn").click();
+    await clickEditorMenuItem(page, "#editorResetBtn");
     await page.locator("#slideResetConfirmBtn").click();
     await status.filter({ hasText: "편집 내용을 초기화했습니다" }).waitFor();
 
@@ -2783,7 +2809,7 @@ await runScenario(
     assert.equal(await page.locator("#editorSaveBtn").isDisabled(), true);
     assert.equal(state.slides[0].customSlide.elements.length, 1);
 
-    await page.locator("#editorResetBtn").click();
+    await clickEditorMenuItem(page, "#editorResetBtn");
     await page.locator("#slideResetConfirmBtn").click();
     await status.filter({ hasText: "편집 내용을 초기화했습니다" }).waitFor();
     await page.locator("#editorSaveBtn").click();
@@ -2809,7 +2835,7 @@ await runScenario(
 
     await selectMainSlide(page, 0);
     await imageRequest;
-    await page.locator("#editorResetBtn").click();
+    await clickEditorMenuItem(page, "#editorResetBtn");
     await page.locator("#slideResetConfirmBtn").click();
     await expectToast(page, "커스텀 슬라이드를 불러오는 중입니다");
 
