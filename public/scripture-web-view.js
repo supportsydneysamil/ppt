@@ -61,6 +61,41 @@ export function createScriptureWebView({
     stageCanvas.style.transform = `scale(${Math.max(scale, 0.1)})`;
   }
 
+  let resizeObserver = null;
+  let pendingFrame = null;
+
+  function cancelPendingFrame() {
+    if (pendingFrame !== null) {
+      window.cancelAnimationFrame(pendingFrame);
+      pendingFrame = null;
+    }
+  }
+
+  // Safari can fire fullscreenchange before the viewport box settles and may
+  // never follow up with resize, so rescale again once layout has caught up.
+  function scheduleRescale() {
+    if (resizeObserver || typeof window.requestAnimationFrame !== "function") {
+      return;
+    }
+    cancelPendingFrame();
+    pendingFrame = window.requestAnimationFrame(() => {
+      pendingFrame = window.requestAnimationFrame(() => {
+        pendingFrame = null;
+        applyScale();
+      });
+    });
+  }
+
+  if (typeof window.ResizeObserver === "function") {
+    resizeObserver = new window.ResizeObserver(() => applyScale());
+    resizeObserver.observe(stageViewport);
+  }
+
+  function handleFullscreenChange() {
+    applyScale();
+    scheduleRescale();
+  }
+
   function applyBackground(frame, theme) {
     const bg = frame.querySelector(".slide-bg");
     const overlay = frame.querySelector(".slide-overlay");
@@ -181,7 +216,7 @@ export function createScriptureWebView({
     document,
     window,
     onNavigate: navigate,
-    onFullscreenChange: applyScale,
+    onFullscreenChange: handleFullscreenChange,
     onBlackoutChange: (active) => {
       blackout = active;
     },
@@ -225,8 +260,16 @@ export function createScriptureWebView({
   nextBtn.addEventListener("click", () => navigate("next"));
   window.addEventListener("resize", applyScale);
 
+  function destroy() {
+    cancelPendingFrame();
+    resizeObserver?.disconnect();
+    resizeObserver = null;
+    window.removeEventListener("resize", applyScale);
+  }
+
   return {
     applyScale,
+    destroy,
     loadSession,
     navigate,
   };

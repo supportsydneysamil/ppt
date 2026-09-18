@@ -137,3 +137,80 @@ popup-opening behavior was changed.
   informational and unrelated to this presenter-only change.
 - Fullscreen behavior is covered with standard-only and WebKit-prefixed-only DOM
   mocks. No real-device Safari run was requested or performed.
+
+---
+
+# Follow-up: Stale Stage Scale After Fullscreen Change
+
+## Status
+
+Fixed the remaining Important issue from the final re-review. The scripture web
+view no longer depends on a synchronous `applyScale` at `fullscreenchange` time,
+so a viewport box that Safari updates after the event (and without a `resize`
+event) is now picked up. Scope was limited to `public/scripture-web-view.js` and
+`test/scripture-web-view.test.js`.
+
+## Root cause
+
+`onFullscreenChange` was wired directly to `applyScale`. That runs while the
+browser may still report the pre-fullscreen `stageViewport` box, and because
+Safari does not guarantee a following `resize` event, the stale transform
+persisted for the whole presentation.
+
+## Fix
+
+- Observe `stageViewport` with `ResizeObserver` when available, rescaling on
+  every settled layout rather than only at event time.
+- When `ResizeObserver` is missing, schedule a post-layout double
+  `requestAnimationFrame` rescale after each fullscreen change, replacing any
+  frame still pending.
+- Keep the synchronous rescale so browsers that already have the final box
+  update immediately.
+- Added `destroy()`, which cancels a pending frame, disconnects the observer,
+  and removes the `resize` listener.
+
+## RED evidence
+
+`node --test test/scripture-web-view.test.js` exited non-zero with 2 of 6
+failing, one per delayed-layout mechanism:
+
+- `rescales when the viewport box settles after fullscreenchange`
+  failed with `Cannot read properties of undefined (reading 'targets')`, proving
+  no `ResizeObserver` was ever created for `stageViewport`.
+- `rescales on a post-layout frame when ResizeObserver is missing`
+  failed with `expected 'scale(0.5)', actual 'scale(1)'`, proving the stale
+  scale survived the post-layout frame after a delayed fullscreen size update.
+
+Both tests assert `scale(1)` immediately after `onFullscreenChange`, so they
+fail if a purely synchronous rescale is reintroduced and can only pass through
+the delayed path.
+
+## GREEN evidence
+
+- `node --test test/scripture-web-presenter.test.js test/scripture-web-popup.test.js test/scripture-web-view.test.js test/browser-module-graph.test.js`
+  exited 0 with exactly 37 tests passed, 0 failed.
+- `npm run build` exited 0; Vite transformed 2,538 modules and built in 651ms.
+- `git diff --check` exited 0.
+- `prettier --check` reported both changed files already conform.
+- IDE diagnostics reported no errors in the two changed files.
+- `npm test` was again not run, per the standing instruction about the known
+  fresh-install dependency failure.
+
+## Cleanup coverage
+
+- The `ResizeObserver` test calls `destroy()`, asserts `disconnected`, then
+  resizes and notifies again to prove no further rescale happens.
+- The frame test schedules a rescale, calls `destroy()`, then resizes and
+  flushes frames to prove the pending frame was cancelled.
+
+## Concerns
+
+- `destroy()` is currently exercised only by tests; the page bootstrap never
+  tears the view down because the presenter window lives for the whole session.
+  It exists so the observer and frame have an owner, and so future teardown is
+  not left to garbage collection.
+- The double `requestAnimationFrame` path is a fallback for browsers without
+  `ResizeObserver`. If such a browser settled its fullscreen viewport later than
+  two frames, the fallback would still be stale; every currently supported
+  target, including Safari, provides `ResizeObserver`.
+- Vite's pre-existing large-chunk advisory remains, unchanged by this fix.
