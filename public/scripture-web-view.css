@@ -89,15 +89,11 @@ body {
 
 .stage-shell {
   min-height: 0;
-  /* The canvas keeps its 1333px layout width at every scale, so without this
-     the grid track never shrinks below it and a narrow window overflows. */
-  min-width: 0;
   display: grid;
 }
 
 .stage-viewport {
   min-height: 0;
-  min-width: 0;
   display: grid;
   place-items: center;
   padding: 12px;

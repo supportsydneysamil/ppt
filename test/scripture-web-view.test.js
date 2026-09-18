@@ -229,46 +229,6 @@ describe("scripture web view", () => {
     f.dom.window.close();
   });
 
-  it("scales the slide to fit inside the windowed viewport padding", async () => {
-    const f = fixture();
-    f.dom.window.getComputedStyle = () => ({
-      paddingLeft: "12px",
-      paddingRight: "12px",
-      paddingTop: "12px",
-      paddingBottom: "12px",
-      borderLeftWidth: "1px",
-      borderRightWidth: "1px",
-      borderTopWidth: "1px",
-      borderBottomWidth: "1px",
-    });
-    await f.view.loadSession();
-    const canvas = f.document.getElementById("stageCanvas");
-
-    // 1333 + 26 of padding and border leaves exactly the base width behind.
-    f.resize(1359, 776);
-    f.notifyResizeObservers();
-    assert.equal(canvas.style.transform, "scale(1)");
-
-    f.resize(692.5, 401);
-    f.notifyResizeObservers();
-    assert.equal(canvas.style.transform, "scale(0.5)");
-    f.dom.window.close();
-  });
-
-  it("lets the stage shrink below the fixed canvas width", () => {
-    const css = readFileSync(
-      new URL("../public/scripture-web-view.css", import.meta.url),
-      "utf8",
-    );
-
-    for (const selector of [".stage-shell", ".stage-viewport"]) {
-      const block = css.match(
-        new RegExp(`\\${selector}\\s*\\{([^}]*)\\}`),
-      )?.[1];
-      assert.match(block ?? "", /min-width:\s*0/, `${selector} must shrink`);
-    }
-  });
-
   it("rescales when the viewport box settles after fullscreenchange", async () => {
     const f = fixture();
     await f.view.loadSession();

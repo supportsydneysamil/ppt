@@ -55,27 +55,9 @@ export function createScriptureWebView({
     stageCanvas.appendChild(message);
   }
 
-  // The viewport paints the slide inside its padding, so scaling against the
-  // border box overflows that padding and the rounded corners clip the slide.
-  function measureStage() {
-    const rect = stageViewport.getBoundingClientRect();
-    const style = window.getComputedStyle?.(stageViewport);
-    const inset = (...edges) =>
-      edges.reduce((total, edge) => total + (parseFloat(style?.[edge]) || 0), 0);
-
-    return {
-      width:
-        rect.width -
-        inset("paddingLeft", "paddingRight", "borderLeftWidth", "borderRightWidth"),
-      height:
-        rect.height -
-        inset("paddingTop", "paddingBottom", "borderTopWidth", "borderBottomWidth"),
-    };
-  }
-
   function applyScale() {
-    const { width, height } = measureStage();
-    const scale = Math.min(width / BASE_WIDTH, height / BASE_HEIGHT);
+    const rect = stageViewport.getBoundingClientRect();
+    const scale = Math.min(rect.width / BASE_WIDTH, rect.height / BASE_HEIGHT);
     stageCanvas.style.transform = `scale(${Math.max(scale, 0.1)})`;
   }
 
