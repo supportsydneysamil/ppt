@@ -867,6 +867,10 @@ const bulkDeleteBtn = document.getElementById("bulkDeleteBtn");
 const bulkTemplateBtn = document.getElementById("bulkTemplateBtn");
 const bulkDownloadBtn = document.getElementById("bulkDownloadBtn");
 const templateDeleteBtn = document.getElementById("templateDeleteBtn");
+const templateDuplicateBtn = document.getElementById("templateDuplicateBtn");
+const templateSchemaExportBtn = document.getElementById("templateSchemaExportBtn");
+const templateWorkspaceMenuBtn = document.getElementById("templateWorkspaceMenuBtn");
+const templateWorkspaceMenu = document.getElementById("templateWorkspaceMenu");
 const slideEditor = document.getElementById("slideEditor");
 const emptyEditorState = document.getElementById("emptyEditorState");
 const addSlideBtn = document.getElementById("addSlideBtn");
@@ -1825,6 +1829,42 @@ function closeTemplateCardMenus() {
     });
 }
 
+function closeTemplateWorkspaceMenu() {
+  if (!templateWorkspaceMenu || templateWorkspaceMenu.hidden) {
+    return;
+  }
+  templateWorkspaceMenu.hidden = true;
+  templateWorkspaceMenuBtn?.classList.remove("open");
+  templateWorkspaceMenuBtn?.setAttribute("aria-expanded", "false");
+}
+
+function toggleTemplateWorkspaceMenu() {
+  if (!templateWorkspaceMenu || !templateWorkspaceMenuBtn) {
+    return;
+  }
+  const wasOpen = !templateWorkspaceMenu.hidden;
+  closeTemplateCardMenus();
+  closeBulkDropdown();
+  if (wasOpen) {
+    closeTemplateWorkspaceMenu();
+    return;
+  }
+  templateWorkspaceMenu.hidden = false;
+  templateWorkspaceMenuBtn.classList.add("open");
+  templateWorkspaceMenuBtn.setAttribute("aria-expanded", "true");
+}
+
+function duplicateActiveTemplate() {
+  return duplicateTemplateById(activeTemplateId);
+}
+
+function exportActiveTemplateSchema() {
+  if (!activeTemplateId) {
+    return;
+  }
+  exportTemplateSchemaById(activeTemplateId);
+}
+
 function buildTemplateThumbStrip(template) {
   const strip = document.createElement("div");
   strip.className = "template-card-thumbs";
@@ -1922,6 +1962,16 @@ function buildTemplateCard(template) {
     renameTemplateById(template.id);
   });
 
+  const duplicateItem = document.createElement("button");
+  duplicateItem.type = "button";
+  duplicateItem.className = "bulk-dropdown-item";
+  duplicateItem.textContent = "복제";
+  duplicateItem.addEventListener("click", (event) => {
+    event.stopPropagation();
+    closeTemplateCardMenus();
+    duplicateTemplateById(template.id);
+  });
+
   const deleteItem = document.createElement("button");
   deleteItem.type = "button";
   deleteItem.className = "bulk-dropdown-item danger";
@@ -1943,6 +1993,7 @@ function buildTemplateCard(template) {
   });
 
   menuDropdown.appendChild(renameItem);
+  menuDropdown.appendChild(duplicateItem);
   menuDropdown.appendChild(exportItem);
   menuDropdown.appendChild(deleteItem);
 
@@ -2677,9 +2728,22 @@ templateSchemaFileInput?.addEventListener("change", async () => {
 });
 templateBackBtn.addEventListener("click", () => {
   closeBulkDropdown();
+  closeTemplateWorkspaceMenu();
   closeTemplateWorkspace();
 });
 templateNameDisplay.addEventListener("click", renameActiveTemplate);
+templateWorkspaceMenuBtn?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  toggleTemplateWorkspaceMenu();
+});
+templateDuplicateBtn?.addEventListener("click", () => {
+  closeTemplateWorkspaceMenu();
+  duplicateActiveTemplate();
+});
+templateSchemaExportBtn?.addEventListener("click", () => {
+  closeTemplateWorkspaceMenu();
+  exportActiveTemplateSchema();
+});
 
 // --- Storage (Server Side) ---
 
@@ -6961,6 +7025,40 @@ async function createTemplateFromSelection() {
   }
 }
 
+async function duplicateTemplateById(templateId) {
+  const template = templates.find((entry) => entry.id === templateId);
+  if (!template) {
+    return;
+  }
+
+  if (blockedBySaveInProgress()) {
+    return;
+  }
+
+  try {
+    const resp = await fetch(
+      `/api/templates/${encodeURIComponent(template.id)}/duplicate`,
+      { method: "POST" }
+    );
+    const payload = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      throw new Error(payload.error || "템플릿 복제에 실패했습니다.");
+    }
+
+    const cloned = cloneTemplate(payload.template);
+    const index = templates.findIndex((entry) => entry.id === template.id);
+    if (index === -1) {
+      templates.push(cloned);
+    } else {
+      templates.splice(index + 1, 0, cloned);
+    }
+    renderTemplateGallery();
+    showToast(`템플릿을 복제했습니다: ${cloned.name}`);
+  } catch (err) {
+    alert(err.message || "템플릿 복제 중 오류가 발생했습니다.");
+  }
+}
+
 async function deleteTemplateById(templateId) {
   const template = templates.find((entry) => entry.id === templateId);
   if (!template) {
@@ -7284,6 +7382,14 @@ document.addEventListener("click", (e) => {
       closeAddSlideDropdown();
     }
   }
+  if (
+    templateWorkspaceMenu &&
+    !templateWorkspaceMenu.hidden &&
+    !templateWorkspaceMenu.contains(e.target) &&
+    !templateWorkspaceMenuBtn?.contains(e.target)
+  ) {
+    closeTemplateWorkspaceMenu();
+  }
   if (templateGalleryGrid && !templateGalleryGrid.contains(e.target)) {
     closeTemplateCardMenus();
   }
@@ -7298,12 +7404,19 @@ document.addEventListener("keydown", (e) => {
   if (bulkActionDropdown && !bulkActionDropdown.hidden) {
     closeBulkDropdown();
   }
+  if (templateWorkspaceMenu && !templateWorkspaceMenu.hidden) {
+    closeTemplateWorkspaceMenu();
+    templateWorkspaceMenuBtn?.focus();
+  }
 });
 
 bulkDeleteBtn.addEventListener("click", () => { closeBulkDropdown(); deleteSelectedSlides(); });
 bulkTemplateBtn.addEventListener("click", () => { closeBulkDropdown(); createTemplateFromSelection(); });
 bulkDownloadBtn.addEventListener("click", () => { closeBulkDropdown(); downloadSelectedSlidesBundle(); });
-templateDeleteBtn.addEventListener("click", deleteActiveTemplate);
+templateDeleteBtn.addEventListener("click", () => {
+  closeTemplateWorkspaceMenu();
+  deleteActiveTemplate();
+});
 
 [
   slideNameInput,

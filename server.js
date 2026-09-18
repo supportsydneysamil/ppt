@@ -21,6 +21,7 @@ import {
   applyTemplateSlideOrder,
   collectOrphanedAssets,
   collectSlideAssetPaths,
+  duplicateTemplate,
   insertTemplateSlide,
   removeTemplateSlides,
   replaceTemplateSlide,
@@ -679,6 +680,35 @@ app.post("/api/templates", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to create template" });
+  }
+});
+
+app.post("/api/templates/:id/duplicate", async (req, res) => {
+  try {
+    const templates = await readTemplates();
+    const source = templates.find((entry) => entry.id === req.params.id);
+    if (!source) {
+      return res.status(404).json({ error: "Template not found" });
+    }
+
+    // Private copies of every upload, so deleting one template never breaks
+    // the other. Slide ids are minted here too.
+    const result = duplicateTemplate(templates, req.params.id, {
+      id: createEntityId("template"),
+      now: new Date().toISOString(),
+      slides: await Promise.all(
+        (source.slides || []).map(cloneSlideWithAssets)
+      ),
+    });
+    if (!result.ok) {
+      return res.status(result.status).json({ error: result.error });
+    }
+
+    await writeTemplates(result.templates);
+    res.json({ success: true, template: result.template });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to duplicate template" });
   }
 });
 

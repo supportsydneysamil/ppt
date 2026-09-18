@@ -297,7 +297,27 @@
           title="클릭해서 템플릿 이름 수정"
         ></button>
         <div class="template-workspace-actions">
-          <button id="templateDeleteBtn" type="button" class="ghost small danger">템플릿 삭제</button>
+          <div class="template-workspace-menu">
+            <button
+              id="templateWorkspaceMenuBtn"
+              type="button"
+              class="template-card-menu-btn"
+              aria-label="템플릿 메뉴"
+              aria-haspopup="true"
+              aria-expanded="false"
+            >
+              ⋯
+            </button>
+            <div
+              id="templateWorkspaceMenu"
+              class="bulk-dropdown"
+              hidden
+            >
+              <button id="templateDuplicateBtn" type="button" class="bulk-dropdown-item">복제</button>
+              <button id="templateSchemaExportBtn" type="button" class="bulk-dropdown-item">스키마 내보내기</button>
+              <button id="templateDeleteBtn" type="button" class="bulk-dropdown-item danger">삭제</button>
+            </div>
+          </div>
         </div>
       </div>
 

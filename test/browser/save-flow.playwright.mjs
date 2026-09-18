@@ -2079,6 +2079,7 @@ await runScenario(
     // delete would race a template the server is still writing.
     await page.locator("#templateNameDisplay").click();
     await expectToast(page, "저장이 진행 중입니다");
+    await page.locator("#templateWorkspaceMenuBtn").click();
     await page.locator("#templateDeleteBtn").click();
 
     assert.deepEqual(
