@@ -83,9 +83,11 @@ export function createScripturePresenter({
     return typeof document.documentElement.requestFullscreen === "function";
   }
 
+  // 안내 문구와 버튼 표시만 바꾸고 안내 영역의 나머지 마크업은 그대로 둔다.
   function showFallback(message, canRetry) {
     fullscreenMessage.textContent = message;
     fullscreenStartBtn.hidden = !canRetry;
+    fullscreenStart.classList.toggle("is-unsupported", !canRetry);
     fullscreenStart.hidden = false;
   }
 
@@ -177,7 +179,7 @@ export function createScripturePresenter({
   }
 
   function handleKeydown(event) {
-    if (event.target?.closest?.(INTERACTIVE_SELECTOR)) {
+    if (event.ctrlKey || event.metaKey || event.altKey) {
       return;
     }
     if (event.key === "f" || event.key === "F") {
@@ -200,6 +202,11 @@ export function createScripturePresenter({
 
   function handlePointerDown(event) {
     swipeStart = { x: event.clientX, y: event.clientY };
+    swipeNavigated = false;
+  }
+
+  function handlePointerCancel() {
+    swipeStart = null;
     swipeNavigated = false;
   }
 
@@ -250,7 +257,9 @@ export function createScripturePresenter({
   on(document, "keydown", handleKeydown);
   on(document, "pointermove", handlePointerMove);
   on(stageViewport, "pointerdown", handlePointerDown);
-  on(stageViewport, "pointerup", handlePointerUp);
+  // 스와이프가 스테이지 밖에서 끝나도 놓치지 않도록 문서에서 마무리한다.
+  on(document, "pointerup", handlePointerUp);
+  on(document, "pointercancel", handlePointerCancel);
   on(stageViewport, "click", handleStageClick);
   on(controls, "pointerenter", handleControlsEnter);
   on(controls, "pointerleave", handleControlsLeave);

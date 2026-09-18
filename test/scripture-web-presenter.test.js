@@ -18,7 +18,10 @@ const MARKUP = `<!doctype html><html lang="ko"><body>
   <div id="stageViewport"><div id="stageCanvas"></div></div>
   <div id="fullscreenStart" hidden>
     <p id="fullscreenMessage"></p>
-    <button id="fullscreenStartBtn" type="button">전체화면으로 시작</button>
+    <button id="fullscreenStartBtn" type="button">
+      <span class="start-cta">전체화면으로 시작</span>
+    </button>
+    <p class="fullscreen-hint"><kbd>F</kbd> 키로도 시작할 수 있습니다</p>
   </div>
   <div id="blackoutLayer" hidden></div>
 </body></html>`;
@@ -32,6 +35,7 @@ function createFixture({ fullscreen = "granted" } = {}) {
   const requests = [];
   const moves = [];
   let fullscreenElement = null;
+  let outcome = fullscreen;
 
   Object.defineProperty(document, "fullscreenElement", {
     configurable: true,
@@ -41,7 +45,7 @@ function createFixture({ fullscreen = "granted" } = {}) {
   if (fullscreen !== "unsupported") {
     document.documentElement.requestFullscreen = async (options) => {
       requests.push(options);
-      if (fullscreen === "denied") {
+      if (outcome === "denied") {
         throw new Error("fullscreen denied by user activation policy");
       }
       fullscreenElement = document.documentElement;
@@ -60,12 +64,26 @@ function createFixture({ fullscreen = "granted" } = {}) {
     onNavigate: (direction) => moves.push(direction),
   });
 
-  return { window, document, presenter, requests, moves };
+  return {
+    window,
+    document,
+    presenter,
+    requests,
+    moves,
+    grantFullscreen: () => {
+      outcome = "granted";
+    },
+  };
 }
 
-function press(window, key, target = window.document) {
+function press(window, key, target = window.document, init = {}) {
   target.dispatchEvent(
-    new window.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true })
+    new window.KeyboardEvent("keydown", {
+      key,
+      bubbles: true,
+      cancelable: true,
+      ...init,
+    })
   );
 }
 
@@ -175,12 +193,71 @@ describe("scripture presenter controller", () => {
 
     await presenter.attemptAutoFullscreen();
 
-    assert.equal(document.getElementById("fullscreenStart").hidden, false);
+    const start = document.getElementById("fullscreenStart");
+    assert.equal(start.hidden, false);
     assert.equal(
       document.getElementById("fullscreenMessage").textContent,
       "이 브라우저에서는 전체화면을 지원하지 않습니다"
     );
     assert.equal(document.getElementById("fullscreenStartBtn").hidden, true);
+    assert.ok(
+      start.classList.contains("is-unsupported"),
+      "the F hint must be suppressible when fullscreen cannot work"
+    );
+    assert.ok(start.querySelector(".fullscreen-hint"));
+    presenter.destroy();
+  });
+
+  it("starts fullscreen from the fallback button and keeps its rich CTA", async () => {
+    const { document, presenter, grantFullscreen } = createFixture({
+      fullscreen: "denied",
+    });
+
+    await presenter.attemptAutoFullscreen();
+
+    const start = document.getElementById("fullscreenStart");
+    const startBtn = document.getElementById("fullscreenStartBtn");
+    assert.equal(
+      startBtn.querySelector(".start-cta").textContent,
+      "전체화면으로 시작"
+    );
+    assert.ok(start.querySelector(".fullscreen-hint"));
+    assert.equal(start.classList.contains("is-unsupported"), false);
+
+    grantFullscreen();
+    startBtn.click();
+    await sleep(0);
+
+    assert.ok(document.body.classList.contains("is-presenting"));
+    assert.equal(start.hidden, true);
+    assert.equal(
+      startBtn.querySelector(".start-cta").textContent,
+      "전체화면으로 시작"
+    );
+    presenter.destroy();
+  });
+
+  it("routes F and B even while a presenter control has focus", async () => {
+    const { window, document, presenter, requests, moves } = createFixture();
+    const fullscreenBtn = document.getElementById("fullscreenBtn");
+    const blackoutBtn = document.getElementById("blackoutBtn");
+
+    fullscreenBtn.focus();
+    press(window, "f", fullscreenBtn);
+    await sleep(0);
+
+    assert.equal(requests.length, 1);
+    assert.ok(document.body.classList.contains("is-presenting"));
+
+    press(window, "B", blackoutBtn);
+    assert.ok(document.body.classList.contains("is-blackout"));
+
+    press(window, " ", fullscreenBtn);
+    assert.deepEqual(moves, [], "Space on a control must stay a button press");
+
+    press(window, "f", fullscreenBtn, { ctrlKey: true });
+    await sleep(0);
+    assert.equal(requests.length, 1, "browser shortcuts must pass through");
     presenter.destroy();
   });
 
@@ -259,6 +336,51 @@ describe("scripture presenter controller", () => {
     presenter.destroy();
   });
 
+  it("completes swipes that end outside the stage and drops cancelled ones", () => {
+    const { window, document, presenter, moves } = createFixture();
+    const stage = document.getElementById("stageViewport");
+
+    pointer(window, stage, "pointerdown", 900);
+    pointer(window, document.body, "pointerup", 200, 320);
+
+    assert.deepEqual(moves, ["next"], "a swipe may finish outside the stage");
+
+    pointer(window, stage, "pointerdown", 200);
+    pointer(window, document.body, "pointercancel", 900, 320);
+    pointer(window, document.body, "pointerup", 900, 320);
+
+    assert.deepEqual(moves, ["next"], "a cancelled pointer must not navigate");
+
+    pointer(window, stage, "click", 100);
+
+    assert.deepEqual(
+      moves,
+      ["next", "previous"],
+      "a cancelled swipe must not leave stale state behind"
+    );
+    presenter.destroy();
+  });
+
+  it("keeps controls visible while focus stays inside them", async () => {
+    const { document, presenter } = createFixture();
+    const controls = document.getElementById("presenterControls");
+    const fullscreenBtn = document.getElementById("fullscreenBtn");
+
+    fullscreenBtn.focus();
+    presenter.showControls();
+
+    await sleep(HIDE_DELAY * 4);
+    assert.ok(
+      controls.classList.contains("controls-visible"),
+      "focused controls must stay visible"
+    );
+
+    fullscreenBtn.blur();
+    await sleep(HIDE_DELAY * 4);
+    assert.equal(controls.classList.contains("controls-visible"), false);
+    presenter.destroy();
+  });
+
   it("removes listeners and the hide timer on destroy", async () => {
     const { window, document, presenter, moves } = createFixture();
     const controls = document.getElementById("presenterControls");
@@ -273,7 +395,10 @@ describe("scripture presenter controller", () => {
     );
 
     press(window, "ArrowRight");
+    press(window, "f");
     pointer(window, document.getElementById("stageViewport"), "click", 900);
+    pointer(window, document.getElementById("stageViewport"), "pointerdown", 900);
+    pointer(window, document.body, "pointerup", 200, 320);
     document.getElementById("blackoutBtn").click();
 
     assert.deepEqual(moves, []);
