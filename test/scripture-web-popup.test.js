@@ -23,6 +23,7 @@ function createPopup() {
 describe("scripture web popup", () => {
   it("warns clearly and does not create a session when popup opening is blocked", async () => {
     let fetchCalls = 0;
+    let payloadCalls = 0;
     const alerts = [];
     const handleOpenWebView = compileAsyncFunction(
       app,
@@ -33,7 +34,10 @@ describe("scripture web popup", () => {
         fetch: async () => {
           fetchCalls += 1;
         },
-        buildPptxPayload: async () => ({}),
+        buildPptxPayload: async () => {
+          payloadCalls += 1;
+          return {};
+        },
         alert: (message) => alerts.push(message),
         encodeURIComponent,
       }
@@ -42,6 +46,7 @@ describe("scripture web popup", () => {
     await handleOpenWebView();
 
     assert.equal(fetchCalls, 0);
+    assert.equal(payloadCalls, 0);
     assert.deepEqual(alerts, [
       "팝업이 차단되었습니다. 주소창의 팝업 허용을 켠 뒤 다시 시도하세요.",
     ]);

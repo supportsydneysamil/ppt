@@ -8,6 +8,7 @@ const ENTER_FULLSCREEN_LABEL = "전체화면";
 const EXIT_FULLSCREEN_LABEL = "전체화면 종료";
 const START_FULLSCREEN_MESSAGE = "전체화면으로 시작";
 const UNSUPPORTED_MESSAGE = "이 브라우저에서는 전체화면을 지원하지 않습니다";
+const TOP_CONTROL_REVEAL_HEIGHT = 96;
 
 export function navigationFromKey(event) {
   if (event.target?.closest?.(INTERACTIVE_SELECTOR)) {
@@ -52,12 +53,17 @@ export function createScripturePresenter({
   document,
   window,
   onNavigate,
+  onFullscreenChange,
+  onBlackoutChange,
   hideDelay = CONTROL_HIDE_DELAY,
 }) {
   const controls = document.getElementById("presenterControls");
   const fullscreenBtn = document.getElementById("fullscreenBtn");
   const fullscreenStart = document.getElementById("fullscreenStart");
   const fullscreenStartBtn = document.getElementById("fullscreenStartBtn");
+  const fullscreenContinueBtn = document.getElementById(
+    "fullscreenContinueBtn"
+  );
   const fullscreenMessage = document.getElementById("fullscreenMessage");
   const blackoutBtn = document.getElementById("blackoutBtn");
   const blackoutLayer = document.getElementById("blackoutLayer");
@@ -69,6 +75,8 @@ export function createScripturePresenter({
   let blackout = false;
   let swipeStart = null;
   let swipeNavigated = false;
+  let swipeGuardTimer = null;
+  let lastFullscreenState = false;
 
   function on(target, type, handler) {
     target.addEventListener(type, handler);
@@ -76,23 +84,31 @@ export function createScripturePresenter({
   }
 
   function isFullscreen() {
-    return Boolean(document.fullscreenElement);
+    return Boolean(
+      document.fullscreenElement || document.webkitFullscreenElement
+    );
   }
 
   function supportsFullscreen() {
-    return typeof document.documentElement.requestFullscreen === "function";
+    return Boolean(
+      document.documentElement.requestFullscreen ||
+        document.documentElement.webkitRequestFullscreen
+    );
   }
 
   // 안내 문구와 버튼 표시만 바꾸고 안내 영역의 나머지 마크업은 그대로 둔다.
   function showFallback(message, canRetry) {
     fullscreenMessage.textContent = message;
     fullscreenStartBtn.hidden = !canRetry;
+    fullscreenContinueBtn.hidden = false;
     fullscreenStart.classList.toggle("is-unsupported", !canRetry);
     fullscreenStart.hidden = false;
+    const focusTarget = canRetry ? fullscreenStartBtn : fullscreenContinueBtn;
+    focusTarget.focus?.();
   }
 
   function navigate(direction) {
-    if (direction) {
+    if (direction && !blackout) {
       onNavigate?.(direction);
     }
   }
@@ -122,8 +138,11 @@ export function createScripturePresenter({
   }
 
   async function enterFullscreen() {
+    const request =
+      document.documentElement.requestFullscreen ||
+      document.documentElement.webkitRequestFullscreen;
     try {
-      await document.documentElement.requestFullscreen({
+      await request.call(document.documentElement, {
         navigationUI: "hide",
       });
       return true;
@@ -147,8 +166,9 @@ export function createScripturePresenter({
       return false;
     }
     if (isFullscreen()) {
+      const exit = document.exitFullscreen || document.webkitExitFullscreen;
       try {
-        await document.exitFullscreen?.();
+        await exit?.call(document);
       } catch {
         // 브라우저가 종료를 거절해도 fullscreenchange 상태를 그대로 따른다.
       }
@@ -162,6 +182,14 @@ export function createScripturePresenter({
     document.body.classList.toggle("is-blackout", blackout);
     blackoutLayer.hidden = !blackout;
     blackoutBtn.setAttribute("aria-pressed", blackout ? "true" : "false");
+    if (blackout) {
+      stageViewport.setAttribute("aria-hidden", "true");
+      stageViewport.inert = true;
+    } else {
+      stageViewport.removeAttribute("aria-hidden");
+      stageViewport.inert = false;
+    }
+    onBlackoutChange?.(blackout);
     return blackout;
   }
 
@@ -175,6 +203,10 @@ export function createScripturePresenter({
     controls.classList.remove("controls-visible");
     if (fullscreen) {
       fullscreenStart.hidden = true;
+    }
+    if (fullscreen !== lastFullscreenState) {
+      lastFullscreenState = fullscreen;
+      onFullscreenChange?.(fullscreen);
     }
   }
 
@@ -201,13 +233,31 @@ export function createScripturePresenter({
   }
 
   function handlePointerDown(event) {
+    clearSwipeGuard();
+    if (
+      isFullscreen() &&
+      event.clientY - stageViewport.getBoundingClientRect().top <=
+        TOP_CONTROL_REVEAL_HEIGHT
+    ) {
+      showControls();
+      swipeStart = null;
+      return;
+    }
     swipeStart = { x: event.clientX, y: event.clientY };
+    swipeNavigated = false;
+  }
+
+  function clearSwipeGuard() {
+    if (swipeGuardTimer !== null) {
+      window.clearTimeout(swipeGuardTimer);
+      swipeGuardTimer = null;
+    }
     swipeNavigated = false;
   }
 
   function handlePointerCancel() {
     swipeStart = null;
-    swipeNavigated = false;
+    clearSwipeGuard();
   }
 
   function handlePointerUp(event) {
@@ -222,18 +272,26 @@ export function createScripturePresenter({
     if (direction) {
       swipeNavigated = true;
       navigate(direction);
+      swipeGuardTimer = window.setTimeout(clearSwipeGuard, 0);
     }
   }
 
   function handleStageClick(event) {
     if (swipeNavigated) {
-      swipeNavigated = false;
+      clearSwipeGuard();
       return;
     }
     if (event.target?.closest?.(INTERACTIVE_SELECTOR)) {
       return;
     }
     const rect = stageViewport.getBoundingClientRect();
+    if (
+      isFullscreen() &&
+      event.clientY - rect.top <= TOP_CONTROL_REVEAL_HEIGHT
+    ) {
+      showControls();
+      return;
+    }
     const width = rect.width || window.innerWidth;
     navigate(navigationFromTap(event.clientX - rect.left, width));
   }
@@ -254,6 +312,7 @@ export function createScripturePresenter({
   }
 
   on(document, "fullscreenchange", handleFullscreenChange);
+  on(document, "webkitfullscreenchange", handleFullscreenChange);
   on(document, "keydown", handleKeydown);
   on(document, "pointermove", handlePointerMove);
   on(stageViewport, "pointerdown", handlePointerDown);
@@ -263,12 +322,17 @@ export function createScripturePresenter({
   on(stageViewport, "click", handleStageClick);
   on(controls, "pointerenter", handleControlsEnter);
   on(controls, "pointerleave", handleControlsLeave);
+  on(controls, "focusin", showControls);
   on(fullscreenBtn, "click", requestFullscreen);
   on(fullscreenStartBtn, "click", requestFullscreen);
+  on(fullscreenContinueBtn, "click", () => {
+    fullscreenStart.hidden = true;
+  });
   on(blackoutBtn, "click", toggleBlackout);
 
   function destroy() {
     clearHideTimer();
+    clearSwipeGuard();
     for (const [target, type, handler] of listeners) {
       target.removeEventListener(type, handler);
     }

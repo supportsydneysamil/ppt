@@ -59,3 +59,81 @@ Additional check: `npm test` was run and remains non-zero because the pre-existi
 - Reset scripture testament and book remain empty across a type round trip.
 - Browser coverage exercises the distinctive hymn defaults.
 - No main-checkout files or unrelated feature files were changed.
+
+---
+
+# Scripture Web Presenter Final Review Fix Wave
+
+## Status
+
+All requested final-review findings were implemented on
+`feat/scripture-web-presenter`, limited to scripture presenter source, markup,
+styles, and focused tests. No server API, dependency, title-slide, or
+popup-opening behavior was changed.
+
+## RED evidence
+
+- Initial focused run:
+  `node --test test/scripture-web-presenter.test.js test/scripture-web-popup.test.js test/scripture-web-view.test.js test/browser-module-graph.test.js`
+  exited 1 with 15 failures out of 35 tests. Expected failures covered the
+  missing window-mode continuation action, touch-action rule, fullscreen state
+  callback, WebKit fullscreen API, fallback focus, blackout accessibility,
+  stale off-stage swipe guard, top-edge/focus control reveal, and the missing
+  testable web-view controller.
+- A second RED cycle for direct navigation during blackout ran
+  `node --test test/scripture-web-view.test.js` and exited 1 with 1/4 failing:
+  `onBlackoutChange` was absent, proving that view-level previous/next commands
+  were not yet frozen during blackout.
+
+## GREEN evidence
+
+- Required focused command plus the new focused view suite:
+  `node --test test/scripture-web-presenter.test.js test/scripture-web-popup.test.js test/scripture-web-view.test.js test/browser-module-graph.test.js`
+  exited 0 with exactly 35 tests passed, 0 failed.
+- `npm run build` exited 0; Vite transformed 2,538 modules and completed the
+  production build.
+- `git diff --check` exited 0.
+- IDE diagnostics reported no errors in the touched presenter files and tests.
+- `npm test` was intentionally not run, per the task instruction regarding the
+  known fresh-install dependency failure.
+
+## Fixes delivered
+
+- Added a focusable `창 모드로 계속` fallback action so denied or unsupported
+  fullscreen does not permanently block window-mode presenting.
+- Added standard and WebKit request, exit, element, and change-event support,
+  routed through one fullscreen state handler and callback.
+- Rescaled the stage directly on fullscreen state changes, independent of
+  resize events.
+- Cleared completed-swipe suppression after the synthetic-click window, with an
+  off-stage swipe followed by a later real tap regression.
+- Revealed controls from the presenting top edge and from control focus without
+  navigating, while retaining the 2.5-second hide behavior.
+- Scoped `touch-action: none` to the presenting stage.
+- Made blackout hide/inert the stage for assistive technology and freeze both
+  presenter-routed and direct view navigation until the same slide is restored.
+- Rendered session/load failures with a `창 닫기` action wired to
+  `window.close()`.
+- Covered first/last and previous/next boundaries, stable DOM at boundaries,
+  payload/theme rendering, post-render auto-fullscreen ordering, and
+  fullscreen-triggered scaling.
+- Strengthened popup tests to prove blocked popup paths do not build payloads
+  and failure paths close the already-opened popup.
+
+## Changed files
+
+- `public/scripture-web-presenter.js`
+- `public/scripture-web-view.js`
+- `public/scripture-web-view.html`
+- `public/scripture-web-view.css`
+- `test/scripture-web-presenter.test.js`
+- `test/scripture-web-popup.test.js`
+- `test/scripture-web-view.test.js` (new)
+- `.superpowers/sdd/final-fix-report.md`
+
+## Concerns
+
+- The production build retains Vite's pre-existing large-chunk advisory; it is
+  informational and unrelated to this presenter-only change.
+- Fullscreen behavior is covered with standard-only and WebKit-prefixed-only DOM
+  mocks. No real-device Safari run was requested or performed.
