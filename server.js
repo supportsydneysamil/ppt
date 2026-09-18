@@ -1332,34 +1332,6 @@ app.post("/api/scripture/generate-slide", async (req, res) => {
   }
 });
 
-app.post("/api/scripture/export-slide", async (req, res) => {
-  try {
-    const requestedName = (req.body?.slideName || "").trim();
-    if (!requestedName) {
-      return res.status(400).json({ error: "슬라이드 제목이 필요합니다." });
-    }
-
-    const savedSlides = JSON.parse((await fs.readFile(slidesPath, "utf-8")) || "[]");
-    const finalSlideName = buildUniqueSlideName(requestedName, savedSlides);
-    const file = await writeScripturePptxFile(req.body, finalSlideName);
-    const slideRecord = buildUploadSlideRecord({
-      slideName: finalSlideName,
-      serverFilename: path.basename(file.path),
-      originalFilename: file.originalName,
-      thumbnail: file.thumbnail,
-    });
-
-    savedSlides.push(slideRecord);
-    await fs.writeFile(slidesPath, JSON.stringify(savedSlides, null, 2));
-
-    return res.json({ success: true, slide: slideRecord });
-  } catch (err) {
-    return res.status(err.statusCode || 502).json({
-      error: err.message || "PPT 생성기 export 중 오류가 발생했습니다.",
-    });
-  }
-});
-
 function buildUrl(
   language,
   testamentEntry,
@@ -1636,49 +1608,6 @@ function buildScriptureReferenceText(meta, input) {
   const suffix = verseRange ? `${meta.chapterNum}:${verseRange}` : `${meta.chapterNum}`;
 
   return `${meta.bookEntry.name} (${buildEnglishBookName(meta.bookEntry)}) ${suffix}`;
-}
-
-function buildUniqueSlideName(name, existingSlides) {
-  const baseName = (name || "").trim() || "성경말씀";
-  const existingNames = new Set(
-    (existingSlides || []).map((slide) => (slide?.name || "").trim()).filter(Boolean)
-  );
-
-  if (!existingNames.has(baseName)) {
-    return baseName;
-  }
-
-  let counter = 2;
-  while (existingNames.has(`${baseName} (${counter})`)) {
-    counter += 1;
-  }
-  return `${baseName} (${counter})`;
-}
-
-function buildUploadSlideRecord({
-  slideName,
-  serverFilename,
-  originalFilename,
-  thumbnail,
-}) {
-  return {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    name: slideName,
-    type: "simple",
-    sourceType: "upload",
-    content: "",
-    font: "Malgun Gothic",
-    fontSize: "40",
-    bg: "black",
-    align: "center",
-    file: null,
-    fileData: null,
-    fileName: originalFilename,
-    fileSaved: true,
-    saved: true,
-    serverFilePath: `/uploads/${serverFilename}`,
-    thumbnail,
-  };
 }
 
 export function buildPptx(payload, theme, options = {}) {

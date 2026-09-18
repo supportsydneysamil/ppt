@@ -75,9 +75,6 @@ const source = document.getElementById("source");
 const downloadBtn = document.getElementById("downloadBtn");
 const downloadPptxBtn = document.getElementById("downloadPptxBtn");
 const webViewBtn = document.getElementById("webViewBtn");
-const exportToPptGeneratorBtn = document.getElementById(
-  "exportToPptGeneratorBtn"
-);
 const resetBtn = document.getElementById("resetBtn");
 const koVersionSelect = document.getElementById("koVersionSelect");
 const enVersionSelect = document.getElementById("enVersionSelect");
@@ -93,19 +90,6 @@ const appSettingsModal = document.getElementById("appSettingsModal");
 const appSettingsCloseBtn = document.getElementById("appSettingsCloseBtn");
 const currentAppThemeLabel = document.getElementById("currentAppThemeLabel");
 const appThemeOptionButtons = document.querySelectorAll("[data-theme-value]");
-const scriptureExportModal = document.getElementById("scriptureExportModal");
-const scriptureExportForm = document.getElementById("scriptureExportForm");
-const scriptureExportCloseBtn = document.getElementById(
-  "scriptureExportCloseBtn"
-);
-const scriptureExportConfirmBtn = document.getElementById(
-  "scriptureExportConfirmBtn"
-);
-const exportSlideNameInput = document.getElementById("exportSlideName");
-const exportIncludeTitleSlideInput = document.getElementById(
-  "exportIncludeTitleSlide"
-);
-const titleSlideTypeGroup = document.getElementById("titleSlideTypeGroup");
 
 let dataCache = null;
 let lastVersePayload = null;
@@ -422,7 +406,6 @@ form.addEventListener("submit", handleSubmit);
 downloadBtn.addEventListener("click", handleDownload);
 downloadPptxBtn.addEventListener("click", handlePptxDownload);
 webViewBtn.addEventListener("click", handleOpenWebView);
-exportToPptGeneratorBtn.addEventListener("click", openScriptureExportModal);
 resetBtn.addEventListener("click", handleReset);
 pptxImageInput.addEventListener("change", handleImageFileChange);
 pptxImageClearBtn.addEventListener("click", clearImageSelection);
@@ -434,11 +417,6 @@ appSettingsCloseBtn.addEventListener("click", closeAppSettingsModal);
 appSettingsModal.addEventListener("click", handleAppSettingsBackdropClick);
 appThemeOptionButtons.forEach((button) => {
   button.addEventListener("click", handleAppThemeOptionClick);
-});
-scriptureExportForm.addEventListener("submit", handleExportToPptGenerator);
-scriptureExportCloseBtn.addEventListener("click", closeScriptureExportModal);
-exportIncludeTitleSlideInput.addEventListener("change", () => {
-  titleSlideTypeGroup.classList.toggle("hidden", !exportIncludeTitleSlideInput.checked);
 });
 stepperButtons.forEach((button) => {
   button.addEventListener("click", handleStepperButtonClick);
@@ -589,7 +567,6 @@ function setDownloadState(enabled) {
   downloadBtn.disabled = !enabled;
   downloadPptxBtn.disabled = !enabled;
   webViewBtn.disabled = !enabled;
-  exportToPptGeneratorBtn.disabled = !enabled;
 }
 
 function initTheme() {
@@ -707,31 +684,6 @@ async function buildPptxPayload() {
   return payload;
 }
 
-function openScriptureExportModal() {
-  if (!lastVerseRequest) {
-    alert("먼저 성경 텍스트를 불러오세요.");
-    return;
-  }
-
-  exportSlideNameInput.value = buildFilename("pptx").replace(/\.pptx$/i, "");
-  exportIncludeTitleSlideInput.checked = true;
-  titleSlideTypeGroup.classList.remove("hidden");
-
-  if (typeof scriptureExportModal.showModal === "function") {
-    scriptureExportModal.showModal();
-  } else {
-    scriptureExportModal.setAttribute("open", "open");
-  }
-}
-
-function closeScriptureExportModal() {
-  if (typeof scriptureExportModal.close === "function") {
-    scriptureExportModal.close();
-  } else {
-    scriptureExportModal.removeAttribute("open");
-  }
-}
-
 async function handleOpenWebView() {
   let popup = null;
 
@@ -768,63 +720,6 @@ async function handleOpenWebView() {
       popup.close();
     }
     alert(err?.message || "웹 뷰를 여는 중 오류가 발생했습니다.");
-  }
-}
-
-async function handleExportToPptGenerator(event) {
-  event.preventDefault();
-
-  const requestedName = exportSlideNameInput.value.trim();
-  if (!requestedName) {
-    alert("슬라이드 제목을 입력하세요.");
-    exportSlideNameInput.focus();
-    return;
-  }
-
-  // This flow jumps into the PPT workspace and resets it, so pending slide or
-  // template work has to be settled before the export starts. Cancelling here
-  // aborts the export instead of silently zeroing that work later.
-  if (!(await ensureNoPendingChanges())) {
-    return;
-  }
-
-  scriptureExportConfirmBtn.disabled = true;
-  scriptureExportConfirmBtn.textContent = "보내는 중...";
-
-  try {
-    const payload = await buildPptxPayload();
-    payload.slideName = requestedName;
-    payload.includeTitleSlide = exportIncludeTitleSlideInput.checked;
-    const selectedType = document.querySelector('input[name="titleSlideType"]:checked');
-    payload.titleSlideType = selectedType ? selectedType.value : "말씀";
-
-    const resp = await fetch("/api/scripture/export-slide", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const responsePayload = await resp.json();
-
-    if (!resp.ok) {
-      throw new Error(responsePayload.error || "슬라이드를 보내지 못했습니다.");
-    }
-
-    mainSlides.push(cloneSlide(responsePayload.slide));
-    closeScriptureExportModal();
-    // The preflight guard already settled every pending change and the slide
-    // is stored on the server, so the jump uses the unguarded helpers.
-    applyViewChange("ppt");
-    pptTab = "slides";
-    activeTemplateId = null;
-    loadWorkspaceSlides(mainSlides);
-    renderPptScreen();
-    applySlideSelection(responsePayload.slide.id);
-    showToast(`슬라이드가 추가되었습니다: ${responsePayload.slide.name}`);
-  } catch (err) {
-    alert(err?.message || "슬라이드를 보내는 중 오류가 발생했습니다.");
-  } finally {
-    scriptureExportConfirmBtn.disabled = false;
-    scriptureExportConfirmBtn.textContent = "보내기";
   }
 }
 

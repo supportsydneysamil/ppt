@@ -215,14 +215,6 @@
               <button type="button" id="webViewBtn" class="ghost" disabled>
                 웹 뷰
               </button>
-              <button
-                type="button"
-                id="exportToPptGeneratorBtn"
-                class="ghost"
-                disabled
-              >
-                PPT 생성기로 보내기
-              </button>
               <span id="source" class="source"></span>
             </div>
           </div>
@@ -1452,56 +1444,6 @@
         </div>
       </section>
     </div>
-
-    <dialog id="scriptureExportModal" class="modal-dialog">
-      <form id="scriptureExportForm" class="modal-card">
-        <div class="modal-header">
-          <div>
-            <h3>PPT 생성기로 보내기</h3>
-            <p>현재 불러온 성경 본문을 업로드형 PPTX 슬라이드로 저장합니다.</p>
-          </div>
-        </div>
-
-        <label class="field">
-          <span>슬라이드 제목</span>
-          <input
-            id="exportSlideName"
-            type="text"
-            placeholder="목록에 저장될 슬라이드 제목"
-          />
-        </label>
-
-        <label class="checkbox-row">
-          <input id="exportIncludeTitleSlide" type="checkbox" checked />
-          <span>제목 슬라이드를 맨 앞에 추가</span>
-        </label>
-
-        <div id="titleSlideTypeGroup" class="title-slide-type-group">
-          <label class="radio-row">
-            <input type="radio" name="titleSlideType" value="말씀" checked />
-            <span>성경 말씀</span>
-          </label>
-          <label class="radio-row">
-            <input type="radio" name="titleSlideType" value="봉독" />
-            <span>성경 봉독</span>
-          </label>
-        </div>
-
-        <p class="hint modal-hint">
-          제목 슬라이드를 추가하면 첨부 예시 포맷으로 성구 레퍼런스 표지가
-          먼저 생성됩니다.
-        </p>
-
-        <div class="modal-actions">
-          <button type="button" id="scriptureExportCloseBtn" class="ghost">
-            취소
-          </button>
-          <button type="submit" id="scriptureExportConfirmBtn" class="cta">
-            보내기
-          </button>
-        </div>
-      </form>
-    </dialog>
 
     <dialog id="appSettingsModal" class="modal-dialog">
       <div class="modal-card">
