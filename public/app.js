@@ -737,8 +737,10 @@ async function handleOpenWebView() {
 
   try {
     popup = window.open("", "_blank", "width=1440,height=900");
-    if (!popup) {
-      throw new Error("새 창을 열 수 없습니다. 팝업 차단을 확인하세요.");
+    if (!popup || popup.closed) {
+      throw new Error(
+        "팝업이 차단되었습니다. 주소창의 팝업 허용을 켠 뒤 다시 시도하세요."
+      );
     }
 
     popup.document.write(

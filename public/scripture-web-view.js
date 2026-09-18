@@ -1,187 +1,280 @@
+import { createScripturePresenter } from "./scripture-web-presenter.js";
+
 const BASE_WIDTH = 1333;
 const BASE_HEIGHT = 750;
 
-const deckTitle = document.getElementById("deckTitle");
-const slideCounter = document.getElementById("slideCounter");
-const prevBtn = document.getElementById("prevBtn");
-const nextBtn = document.getElementById("nextBtn");
-const stageViewport = document.getElementById("stageViewport");
-const stageCanvas = document.getElementById("stageCanvas");
-const singleSlideTemplate = document.getElementById("singleSlideTemplate");
-const bilingualSlideTemplate = document.getElementById("bilingualSlideTemplate");
+export function createScriptureWebView({
+  document,
+  window,
+  fetch: fetchImpl = (...args) => window.fetch(...args),
+  createPresenter: presenterFactory = createScripturePresenter,
+}) {
+  const deckTitle = document.getElementById("deckTitle");
+  const slideCounter = document.getElementById("slideCounter");
+  const prevBtn = document.getElementById("prevBtn");
+  const nextBtn = document.getElementById("nextBtn");
+  const stageViewport = document.getElementById("stageViewport");
+  const stageCanvas = document.getElementById("stageCanvas");
+  const singleSlideTemplate = document.getElementById("singleSlideTemplate");
+  const bilingualSlideTemplate = document.getElementById(
+    "bilingualSlideTemplate",
+  );
 
-let deckData = null;
-let currentIndex = 0;
+  let deckData = null;
+  let currentIndex = 0;
+  let blackout = false;
 
-function normalizeColor(value, fallback) {
-  if (!value) {
-    return fallback;
-  }
-  return value.startsWith("#") ? value : `#${value}`;
-}
-
-function ptToPx(value) {
-  return Math.round(Number(value || 0) * 1.333);
-}
-
-function setMessage(text) {
-  stageCanvas.innerHTML = "";
-  const message = document.createElement("div");
-  message.className = "state-message";
-  message.textContent = text;
-  stageCanvas.appendChild(message);
-}
-
-function applyScale() {
-  const rect = stageViewport.getBoundingClientRect();
-  const scale = Math.min(rect.width / BASE_WIDTH, rect.height / BASE_HEIGHT);
-  stageCanvas.style.transform = `scale(${Math.max(scale, 0.1)})`;
-}
-
-function applyBackground(frame, theme) {
-  const bg = frame.querySelector(".slide-bg");
-  const overlay = frame.querySelector(".slide-overlay");
-  const backgroundColor = normalizeColor(theme.bgColor, "#000000");
-
-  bg.style.backgroundColor = backgroundColor;
-  bg.style.backgroundImage = theme.bgImageData ? `url(${theme.bgImageData})` : "none";
-
-  if (theme.overlayColor && typeof theme.overlayTransparency === "number") {
-    const opacity = Math.max(0, Math.min(1, (100 - theme.overlayTransparency) / 100));
-    overlay.style.backgroundColor = normalizeColor(theme.overlayColor, "#000000");
-    overlay.style.opacity = `${opacity}`;
-  } else {
-    overlay.style.backgroundColor = "transparent";
-    overlay.style.opacity = "0";
-  }
-}
-
-function renderSingleSlide(slide, theme) {
-  const node = singleSlideTemplate.content.firstElementChild.cloneNode(true);
-  const label = node.querySelector(".slide-label");
-  const text = node.querySelector(".slide-text-single");
-
-  applyBackground(node, theme);
-  label.textContent = slide.labelText || "";
-  label.style.color = normalizeColor(theme.labelColor, "#f3f0ea");
-  label.style.fontSize = "26px";
-
-  text.textContent = slide.text || "";
-  text.style.color = normalizeColor(theme.textColor, "#ffffff");
-  text.style.fontFamily = slide.lang === "en" ? "Calibri, Arial, sans-serif" : "\"Malgun Gothic\", sans-serif";
-  text.style.fontSize = `${ptToPx(slide.fontSize)}px`;
-
-  return node;
-}
-
-function renderBilingualSlide(slide, theme) {
-  const node = bilingualSlideTemplate.content.firstElementChild.cloneNode(true);
-  const label = node.querySelector(".slide-label");
-  const koText = node.querySelector(".slide-text-ko");
-  const enText = node.querySelector(".slide-text-en");
-
-  applyBackground(node, theme);
-  label.textContent = slide.labelText || "";
-  label.style.color = normalizeColor(theme.labelColor, "#f3f0ea");
-  label.style.fontSize = "26px";
-
-  koText.textContent = slide.koText || "";
-  koText.style.color = normalizeColor(theme.textColor, "#ffffff");
-  koText.style.fontFamily = "\"Malgun Gothic\", sans-serif";
-  koText.style.fontSize = `${ptToPx(slide.koFontSize)}px`;
-
-  enText.textContent = slide.enText || "";
-  enText.style.color = normalizeColor(theme.textColor, "#ffffff");
-  enText.style.fontFamily = "Calibri, Arial, sans-serif";
-  enText.style.fontSize = `${ptToPx(slide.enFontSize)}px`;
-
-  return node;
-}
-
-function updateControls() {
-  if (!deckData) {
-    slideCounter.textContent = "0 / 0";
-    prevBtn.disabled = true;
-    nextBtn.disabled = true;
-    return;
+  function normalizeColor(value, fallback) {
+    if (!value) {
+      return fallback;
+    }
+    return value.startsWith("#") ? value : `#${value}`;
   }
 
-  slideCounter.textContent = `${currentIndex + 1} / ${deckData.slideCount}`;
-  prevBtn.disabled = currentIndex <= 0;
-  nextBtn.disabled = currentIndex >= deckData.slideCount - 1;
-}
-
-function renderSlide() {
-  if (!deckData || !deckData.slides.length) {
-    setMessage("표시할 슬라이드가 없습니다.");
-    updateControls();
-    return;
+  function ptToPx(value) {
+    return Math.round(Number(value || 0) * 1.333);
   }
 
-  stageCanvas.innerHTML = "";
-  const slide = deckData.slides[currentIndex];
-  const node =
-    slide.kind === "bilingual"
-      ? renderBilingualSlide(slide, deckData.theme)
-      : renderSingleSlide(slide, deckData.theme);
-
-  stageCanvas.appendChild(node);
-  updateControls();
-}
-
-function moveSlide(offset) {
-  if (!deckData) {
-    return;
+  function setMessage(text, { closeable = false } = {}) {
+    stageCanvas.innerHTML = "";
+    const message = document.createElement("div");
+    message.className = "state-message";
+    if (closeable) {
+      message.classList.add("is-error");
+      const label = document.createElement("span");
+      label.textContent = text;
+      const closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.className = "state-close-button";
+      closeButton.textContent = "창 닫기";
+      closeButton.addEventListener("click", () => window.close());
+      message.append(label, closeButton);
+    } else {
+      message.textContent = text;
+    }
+    stageCanvas.appendChild(message);
   }
 
-  const nextIndex = currentIndex + offset;
-  if (nextIndex < 0 || nextIndex >= deckData.slides.length) {
-    return;
+  function applyScale() {
+    const rect = stageViewport.getBoundingClientRect();
+    const scale = Math.min(rect.width / BASE_WIDTH, rect.height / BASE_HEIGHT);
+    stageCanvas.style.transform = `scale(${Math.max(scale, 0.1)})`;
   }
 
-  currentIndex = nextIndex;
-  renderSlide();
-}
+  let resizeObserver = null;
+  let pendingFrame = null;
 
-async function loadSession() {
-  const url = new URL(window.location.href);
-  const sessionId = url.searchParams.get("session");
-
-  if (!sessionId) {
-    setMessage("웹 뷰 세션 정보가 없습니다.");
-    return;
+  function cancelPendingFrame() {
+    if (pendingFrame !== null) {
+      window.cancelAnimationFrame(pendingFrame);
+      pendingFrame = null;
+    }
   }
 
-  setMessage("슬라이드를 불러오는 중...");
+  // Safari can fire fullscreenchange before the viewport box settles and may
+  // never follow up with resize, so rescale again once layout has caught up.
+  function scheduleRescale() {
+    if (resizeObserver || typeof window.requestAnimationFrame !== "function") {
+      return;
+    }
+    cancelPendingFrame();
+    pendingFrame = window.requestAnimationFrame(() => {
+      pendingFrame = window.requestAnimationFrame(() => {
+        pendingFrame = null;
+        applyScale();
+      });
+    });
+  }
 
-  try {
-    const resp = await fetch(`/api/scripture/web-view-session/${encodeURIComponent(sessionId)}`);
-    const payload = await resp.json();
+  if (typeof window.ResizeObserver === "function") {
+    resizeObserver = new window.ResizeObserver(() => applyScale());
+    resizeObserver.observe(stageViewport);
+  }
 
-    if (!resp.ok) {
-      throw new Error(payload.error || "웹 뷰 데이터를 불러오지 못했습니다.");
+  function handleFullscreenChange() {
+    applyScale();
+    scheduleRescale();
+  }
+
+  function applyBackground(frame, theme) {
+    const bg = frame.querySelector(".slide-bg");
+    const overlay = frame.querySelector(".slide-overlay");
+    const backgroundColor = normalizeColor(theme.bgColor, "#000000");
+
+    bg.style.backgroundColor = backgroundColor;
+    bg.style.backgroundImage = theme.bgImageData
+      ? `url(${theme.bgImageData})`
+      : "none";
+
+    if (theme.overlayColor && typeof theme.overlayTransparency === "number") {
+      const opacity = Math.max(
+        0,
+        Math.min(1, (100 - theme.overlayTransparency) / 100),
+      );
+      overlay.style.backgroundColor = normalizeColor(
+        theme.overlayColor,
+        "#000000",
+      );
+      overlay.style.opacity = `${opacity}`;
+    } else {
+      overlay.style.backgroundColor = "transparent";
+      overlay.style.opacity = "0";
+    }
+  }
+
+  function renderSingleSlide(slide, theme) {
+    const node = singleSlideTemplate.content.firstElementChild.cloneNode(true);
+    const label = node.querySelector(".slide-label");
+    const text = node.querySelector(".slide-text-single");
+
+    applyBackground(node, theme);
+    label.textContent = slide.labelText || "";
+    label.style.color = normalizeColor(theme.labelColor, "#f3f0ea");
+    label.style.fontSize = "26px";
+
+    text.textContent = slide.text || "";
+    text.style.color = normalizeColor(theme.textColor, "#ffffff");
+    text.style.fontFamily =
+      slide.lang === "en"
+        ? "Calibri, Arial, sans-serif"
+        : '"Malgun Gothic", sans-serif';
+    text.style.fontSize = `${ptToPx(slide.fontSize)}px`;
+
+    return node;
+  }
+
+  function renderBilingualSlide(slide, theme) {
+    const node =
+      bilingualSlideTemplate.content.firstElementChild.cloneNode(true);
+    const label = node.querySelector(".slide-label");
+    const koText = node.querySelector(".slide-text-ko");
+    const enText = node.querySelector(".slide-text-en");
+
+    applyBackground(node, theme);
+    label.textContent = slide.labelText || "";
+    label.style.color = normalizeColor(theme.labelColor, "#f3f0ea");
+    label.style.fontSize = "26px";
+
+    koText.textContent = slide.koText || "";
+    koText.style.color = normalizeColor(theme.textColor, "#ffffff");
+    koText.style.fontFamily = '"Malgun Gothic", sans-serif';
+    koText.style.fontSize = `${ptToPx(slide.koFontSize)}px`;
+
+    enText.textContent = slide.enText || "";
+    enText.style.color = normalizeColor(theme.textColor, "#ffffff");
+    enText.style.fontFamily = "Calibri, Arial, sans-serif";
+    enText.style.fontSize = `${ptToPx(slide.enFontSize)}px`;
+
+    return node;
+  }
+
+  function updateControls() {
+    if (!deckData) {
+      slideCounter.textContent = "0 / 0";
+      prevBtn.disabled = true;
+      nextBtn.disabled = true;
+      return;
     }
 
-    deckData = payload;
-    deckTitle.textContent = payload.title || "성경말씀";
-    currentIndex = 0;
-    renderSlide();
-    applyScale();
-  } catch (err) {
-    setMessage(err?.message || "웹 뷰를 불러오는 중 오류가 발생했습니다.");
+    slideCounter.textContent = `${currentIndex + 1} / ${deckData.slideCount}`;
+    prevBtn.disabled = currentIndex <= 0;
+    nextBtn.disabled = currentIndex >= deckData.slideCount - 1;
   }
+
+  function renderSlide() {
+    if (!deckData || !deckData.slides.length) {
+      setMessage("표시할 슬라이드가 없습니다.");
+      updateControls();
+      return;
+    }
+
+    stageCanvas.innerHTML = "";
+    const slide = deckData.slides[currentIndex];
+    const node =
+      slide.kind === "bilingual"
+        ? renderBilingualSlide(slide, deckData.theme)
+        : renderSingleSlide(slide, deckData.theme);
+
+    stageCanvas.appendChild(node);
+    updateControls();
+  }
+
+  function navigate(command) {
+    if (blackout || !deckData?.slides.length) return;
+    let nextIndex = currentIndex;
+    if (command === "first") nextIndex = 0;
+    if (command === "last") nextIndex = deckData.slides.length - 1;
+    if (command === "next")
+      nextIndex = Math.min(currentIndex + 1, deckData.slides.length - 1);
+    if (command === "previous") nextIndex = Math.max(currentIndex - 1, 0);
+    if (nextIndex === currentIndex) return;
+    currentIndex = nextIndex;
+    renderSlide();
+  }
+
+  const presenter = presenterFactory({
+    document,
+    window,
+    onNavigate: navigate,
+    onFullscreenChange: handleFullscreenChange,
+    onBlackoutChange: (active) => {
+      blackout = active;
+    },
+  });
+
+  async function loadSession() {
+    const url = new URL(window.location.href);
+    const sessionId = url.searchParams.get("session");
+
+    if (!sessionId) {
+      setMessage("웹 뷰 세션 정보가 없습니다.", { closeable: true });
+      return;
+    }
+
+    setMessage("슬라이드를 불러오는 중...");
+
+    try {
+      const resp = await fetchImpl(
+        `/api/scripture/web-view-session/${encodeURIComponent(sessionId)}`,
+      );
+      const payload = await resp.json();
+
+      if (!resp.ok) {
+        throw new Error(payload.error || "웹 뷰 데이터를 불러오지 못했습니다.");
+      }
+
+      deckData = payload;
+      deckTitle.textContent = payload.title || "성경말씀";
+      currentIndex = 0;
+      renderSlide();
+      applyScale();
+      await presenter.attemptAutoFullscreen();
+    } catch (err) {
+      setMessage(err?.message || "웹 뷰를 불러오는 중 오류가 발생했습니다.", {
+        closeable: true,
+      });
+    }
+  }
+
+  prevBtn.addEventListener("click", () => navigate("previous"));
+  nextBtn.addEventListener("click", () => navigate("next"));
+  window.addEventListener("resize", applyScale);
+
+  function destroy() {
+    cancelPendingFrame();
+    resizeObserver?.disconnect();
+    resizeObserver = null;
+    window.removeEventListener("resize", applyScale);
+  }
+
+  return {
+    applyScale,
+    destroy,
+    loadSession,
+    navigate,
+  };
 }
 
-prevBtn.addEventListener("click", () => moveSlide(-1));
-nextBtn.addEventListener("click", () => moveSlide(1));
-window.addEventListener("resize", applyScale);
-window.addEventListener("keydown", (event) => {
-  if (event.key === "ArrowLeft") {
-    moveSlide(-1);
-  } else if (event.key === "ArrowRight" || event.key === " ") {
-    event.preventDefault();
-    moveSlide(1);
-  }
-});
-
-loadSession();
+if (typeof document !== "undefined" && typeof window !== "undefined") {
+  createScriptureWebView({ document, window }).loadSession();
+}
