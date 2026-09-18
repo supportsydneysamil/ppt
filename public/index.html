@@ -474,7 +474,7 @@
 
           <form id="slideForm" class="editor-form">
             <div class="inspector-header">
-              <h4>상세 설정</h4>
+              <h4>속성</h4>
               <button
                 id="inspectorPanelCollapseBtn"
                 type="button"
@@ -746,27 +746,32 @@
               </div>
 
               <div id="uploadSettingsMode" hidden>
-                <div class="settings-section">
-                  <label class="editor-row">
-                    <span class="field-label">파일</span>
-                    <input type="file" id="userPptxFile" accept=".ppt,.pptx" />
-                  </label>
-                  <p class="hint">사용자가 제작한 PPTX를 그대로 사용합니다.</p>
+                <div class="rte-panel">
+                  <div class="rte-panel-label">파일</div>
+                  <div class="rte-panel-body">
+                    <div class="rte-panel-row rte-panel-row--content">
+                      <input type="file" id="userPptxFile" accept=".ppt,.pptx" class="rte-file-input" />
+                    </div>
+                    <p class="hint rte-hint">사용자가 제작한 PPTX를 그대로 사용합니다.</p>
+                  </div>
                 </div>
               </div>
             </div>
 
             <!-- Hymn Settings -->
             <div id="hymnSlideSettings" class="settings-group" hidden>
-              <div class="settings-section">
-                <div class="editor-row">
-                  <span class="field-label">찬송가 장수</span>
-                  <div class="field-inline">
-                    <input id="hymnNumber" type="number" placeholder="예: 1" class="field-inline-input">
-                    <button id="hymnLoadBtn" type="button" class="ghost field-inline-action">로드</button>
+              <div class="rte-panel">
+                <div class="rte-panel-label">내용</div>
+                <div class="rte-panel-body">
+                  <div class="rte-panel-row">
+                    <label class="rte-row-label" for="hymnNumber">찬송가 장수</label>
+                    <div class="rte-row-main">
+                      <input id="hymnNumber" type="number" placeholder="예: 1" class="rte-url-input">
+                      <button id="hymnLoadBtn" type="button" class="ghost field-inline-action">로드</button>
+                    </div>
                   </div>
+                  <p class="hint rte-hint">RickC.online에서 한영 찬송가(PPT)를 다운로드합니다.</p>
                 </div>
-                <p class="hint">RickC.online에서 한영 찬송가(PPT)를 다운로드합니다.</p>
               </div>
 
               <div class="rte-panel">
@@ -776,15 +781,15 @@
                     <input type="checkbox" id="hymnIncludeTitle">
                     <span>맨 앞에 제목 슬라이드 추가</span>
                   </label>
-                  <div id="hymnTitleFields" class="settings-section" hidden>
-                    <label class="editor-row">
-                      <span class="field-label">한국어 제목</span>
-                      <input id="hymnKorTitle" type="text" placeholder="예: 찬양하라 복되신 구세주 예수">
-                    </label>
-                    <label class="editor-row">
-                      <span class="field-label">영어 제목</span>
-                      <input id="hymnEngTitle" type="text" placeholder="예: Praise Him, Praise Him">
-                    </label>
+                  <div id="hymnTitleFields" hidden>
+                    <div class="rte-panel-row">
+                      <label class="rte-row-label" for="hymnKorTitle">한국어 제목</label>
+                      <input id="hymnKorTitle" type="text" class="rte-url-input" placeholder="예: 찬양하라 복되신 구세주 예수">
+                    </div>
+                    <div class="rte-panel-row">
+                      <label class="rte-row-label" for="hymnEngTitle">영어 제목</label>
+                      <input id="hymnEngTitle" type="text" class="rte-url-input" placeholder="예: Praise Him, Praise Him">
+                    </div>
                     <div class="theme-option-grid cover-theme-grid" id="hymnTitleThemeGrid" role="group" aria-label="찬송 제목 슬라이드 테마 목록" hidden>
                       <button type="button" class="theme-option-card is-active" data-title-theme="original" aria-label="오리지널 제목 테마" aria-pressed="true">
                         <span class="title-design-preview title-preview-original"><span>찬 송</span></span>
@@ -828,7 +833,9 @@
             </div>
 
             <div id="scriptureSlideSettings" class="settings-group" hidden>
-              <div class="settings-section">
+              <div class="rte-panel">
+                <div class="rte-panel-label">내용</div>
+                <div class="rte-panel-body">
                 <label class="editor-row">
                   <span class="field-label">구분</span>
                   <select id="scriptureTestament"></select>
@@ -935,51 +942,7 @@
                     </div>
                   </label>
                 </div>
-
-                <details class="settings" id="scriptureSettingsAccordion">
-                  <summary class="settings-summary">
-                    <span>상세 설정</span>
-                    <span class="chevron">▾</span>
-                  </summary>
-                  <div class="settings-body">
-                    <label class="editor-row">
-                      <span class="field-label">테마</span>
-                      <select id="scripturePptxTheme">
-                        <option value="dark" selected>다크 (시그니처)</option>
-                        <option value="light">라이트 (시그니처)</option>
-                        <option value="navy">네이비 스테인드 글로우</option>
-                        <option value="forest">포레스트 채플</option>
-                        <option value="burgundy">버건디 이브</option>
-                        <option value="navy-solid">네이비 & 골드</option>
-                        <option value="forest-solid">포레스트 & 크림</option>
-                        <option value="burgundy-solid">버건디 & 아이보리</option>
-                      </select>
-                    </label>
-
-                    <div class="field">
-                      <div class="field-label-row">
-                        <span class="field-label">배경 이미지</span>
-                        <button
-                          type="button"
-                          class="info-badge"
-                          aria-label="배경 이미지 도움말"
-                        >
-                          !
-                          <span class="info-tooltip">
-                            선택한 이미지는 어둡게 보정되고 투명 오버레이가 적용되어 본문 가독성을 우선합니다.
-                          </span>
-                        </button>
-                      </div>
-                      <div class="file-picker-row">
-                        <input id="scripturePptxImage" type="file" accept="image/*" />
-                        <button type="button" id="scripturePptxImageClear" class="ghost ghost-subtle" hidden>
-                          제거
-                        </button>
-                      </div>
-                      <p id="scripturePptxImageStatus" class="field-meta">선택한 이미지 없음</p>
-                    </div>
-                  </div>
-                </details>
+                </div>
               </div>
 
               <div class="rte-panel">
@@ -1038,6 +1001,51 @@
                   </div>
                 </div>
               </div>
+
+              <details class="settings" id="scriptureSettingsAccordion">
+                <summary class="settings-summary">
+                  <span>테마와 배경</span>
+                  <span class="chevron">▾</span>
+                </summary>
+                <div class="settings-body">
+                  <label class="editor-row">
+                    <span class="field-label">테마</span>
+                    <select id="scripturePptxTheme">
+                      <option value="dark" selected>다크 (시그니처)</option>
+                      <option value="light">라이트 (시그니처)</option>
+                      <option value="navy">네이비 스테인드 글로우</option>
+                      <option value="forest">포레스트 채플</option>
+                      <option value="burgundy">버건디 이브</option>
+                      <option value="navy-solid">네이비 & 골드</option>
+                      <option value="forest-solid">포레스트 & 크림</option>
+                      <option value="burgundy-solid">버건디 & 아이보리</option>
+                    </select>
+                  </label>
+
+                  <div class="field">
+                    <div class="field-label-row">
+                      <span class="field-label">배경 이미지</span>
+                      <button
+                        type="button"
+                        class="info-badge"
+                        aria-label="배경 이미지 도움말"
+                      >
+                        !
+                        <span class="info-tooltip">
+                          선택한 이미지는 어둡게 보정되고 투명 오버레이가 적용되어 본문 가독성을 우선합니다.
+                        </span>
+                      </button>
+                    </div>
+                    <div class="file-picker-row">
+                      <input id="scripturePptxImage" type="file" accept="image/*" />
+                      <button type="button" id="scripturePptxImageClear" class="ghost ghost-subtle" hidden>
+                        제거
+                      </button>
+                    </div>
+                    <p id="scripturePptxImageStatus" class="field-meta">선택한 이미지 없음</p>
+                  </div>
+                </div>
+              </details>
 
               <div class="settings-section">
                 <div class="field">
@@ -1435,7 +1443,7 @@
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="m15 18-6-6 6-6"></path>
             </svg>
-            <span class="panel-rail-label">상세 설정</span>
+            <span class="panel-rail-label">속성</span>
           </button>
         </div>
 

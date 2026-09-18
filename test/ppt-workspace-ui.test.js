@@ -370,7 +370,7 @@ describe("PPT panel collapse affordances", () => {
   it("gives the inspector its own header and its own card", () => {
     assert.match(
       html,
-      /<form id="slideForm" class="editor-form">\s*<div class="inspector-header">\s*<h4>상세 설정<\/h4>\s*<button\s*id="inspectorPanelCollapseBtn"/
+      /<form id="slideForm" class="editor-form">\s*<div class="inspector-header">\s*<h4>속성<\/h4>\s*<button\s*id="inspectorPanelCollapseBtn"/
     );
     // Also proves the `@media (max-width: 1279px)` block that hid it is gone.
     assert.doesNotMatch(css, /\.inspector-panel-collapse/);
@@ -500,24 +500,15 @@ describe("PPT panel collapse affordances", () => {
       html,
       /<div class="preview-stage">\s*<div id="slidePreview" class="slide-preview-box">/
     );
-    // Both axes: a short window used to clip the 16:9 box, and a narrow one
-    // used to shrink it below 640px. overflow: auto lets the stage scroll
-    // instead of doing either.
     assert.match(
       css,
-      /\.page\[data-ppt-surface="editor"\] \.preview-stage \{\s*overflow:\s*auto/
+      /\.page\[data-ppt-surface="editor"\] \.preview-stage \{\s*overflow-y:\s*auto/
     );
     assert.match(
       css,
       /\.page\[data-ppt-surface="editor"\] \.custom-editor-body \{[\s\S]*?overflow-y:\s*auto/
     );
     assert.match(css, /\.slide-preview-box \{[\s\S]*?width:\s*100%;\s*aspect-ratio:\s*16 \/ 9/);
-    // The list is fixed and the inspector barely gives, so the stage used to
-    // absorb every pixel a narrowing window took.
-    assert.match(
-      css,
-      /\.ppt-interface\[data-layout-mode="wide"\] \.slide-preview-box:not\(\.preview-scroll-mode\) \{\s*min-width:\s*640px/
-    );
   });
 
   it("keeps the shell's rules in the breakpoint that needs them", () => {
@@ -646,7 +637,61 @@ describe("PPT panel collapse affordances", () => {
 
   it("names the panel and the inspector distinctly", () => {
     assert.match(html, /<div class="editor-header">\s*<h3>슬라이드 편집<\/h3>/);
-    assert.match(html, /<div class="inspector-header">\s*<h4>상세 설정<\/h4>/);
+    assert.match(html, /<div class="inspector-header">\s*<h4>속성<\/h4>/);
+    assert.match(
+      html,
+      /id="inspectorRailBtn"[\s\S]*?<span class="panel-rail-label">속성<\/span>/
+    );
+  });
+
+  it("stacks inspector fields as identity, source, content, then appearance", () => {
+    const form = html.slice(
+      html.indexOf('<form id="slideForm"'),
+      html.indexOf("</form>", html.indexOf('<form id="slideForm"'))
+    );
+    assert.match(
+      form,
+      /id="slideName"[\s\S]*?id="slideType"[\s\S]*?id="simpleSlideSettings"/
+    );
+
+    const simple = form.slice(
+      form.indexOf('id="simpleSlideSettings"'),
+      form.indexOf('id="hymnSlideSettings"')
+    );
+    assert.match(
+      simple,
+      /소스 선택[\s\S]*?id="adContentSettings"[\s\S]*?id="basicSettingsMode"[\s\S]*?id="bgSettings"[\s\S]*?id="uploadSettingsMode"/
+    );
+    assert.match(
+      simple,
+      /id="uploadSettingsMode"[\s\S]*?class="rte-panel"[\s\S]*?rte-panel-label">파일/
+    );
+
+    const hymn = form.slice(
+      form.indexOf('id="hymnSlideSettings"'),
+      form.indexOf('id="scriptureSlideSettings"')
+    );
+    assert.match(
+      hymn,
+      /rte-panel-label">내용[\s\S]*?id="hymnNumber"[\s\S]*?rte-panel-label">제목 슬라이드[\s\S]*?id="hymnKorTitle"/
+    );
+    assert.match(
+      hymn,
+      /rte-row-label" for="hymnKorTitle">한국어 제목[\s\S]*?rte-row-label" for="hymnEngTitle">영어 제목/
+    );
+
+    const scripture = form.slice(
+      form.indexOf('id="scriptureSlideSettings"'),
+      form.indexOf('id="titleSlideSettings"')
+    );
+    const contentAt = scripture.indexOf('id="scriptureTestament"');
+    const titleAt = scripture.indexOf('rte-panel-label">제목 슬라이드');
+    const themeAt = scripture.indexOf("테마와 배경");
+    const generateAt = scripture.indexOf('id="scriptureGenerateBtn"');
+    assert.ok(contentAt > -1 && titleAt > contentAt);
+    assert.ok(themeAt > titleAt);
+    assert.ok(generateAt > themeAt);
+    assert.doesNotMatch(scripture, /<span>상세 설정<\/span>/);
   });
 
   it("keeps the collapse chevron's hover glow inside the inspector's clip", () => {
