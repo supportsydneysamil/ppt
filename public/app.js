@@ -1831,21 +1831,21 @@ function buildTemplateCard(template) {
     return item;
   };
 
-  const renameItem = buildItem("이름 변경");
+  const renameItem = buildItem("템플릿 이름 변경");
   renameItem.addEventListener("click", (event) => {
     event.stopPropagation();
     closePopupMenu();
     renameTemplateById(template.id);
   });
 
-  const duplicateItem = buildItem("복제");
+  const duplicateItem = buildItem("템플릿 복제");
   duplicateItem.addEventListener("click", (event) => {
     event.stopPropagation();
     closePopupMenu();
     duplicateTemplateById(template.id);
   });
 
-  const deleteItem = buildItem("삭제", { danger: true });
+  const deleteItem = buildItem("템플릿 삭제", { danger: true });
   deleteItem.addEventListener("click", (event) => {
     event.stopPropagation();
     closePopupMenu();
@@ -1859,9 +1859,14 @@ function buildTemplateCard(template) {
     exportTemplateSchemaById(template.id);
   });
 
+  const divider = document.createElement("div");
+  divider.className = "bulk-dropdown-divider";
+  divider.setAttribute("role", "separator");
+
   menuDropdown.appendChild(renameItem);
   menuDropdown.appendChild(duplicateItem);
   menuDropdown.appendChild(exportItem);
+  menuDropdown.appendChild(divider);
   menuDropdown.appendChild(deleteItem);
 
   menuBtn.addEventListener("click", (event) => {

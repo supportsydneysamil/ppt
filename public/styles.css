@@ -1715,6 +1715,14 @@ body {
   background: color-mix(in srgb, var(--danger) 14%, transparent);
 }
 
+/* A destructive item one pixel below a routine one is a slip waiting to
+   happen, so the seam gives the pointer somewhere safe to land. */
+.bulk-dropdown-divider {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+
 /* Template Gallery */
 .template-gallery[hidden] {
   display: none;
@@ -1837,10 +1845,11 @@ body {
   color: var(--muted);
 }
 
+/* Same corner as a slide card's menu: one affordance, one place to look. */
 .template-card-menu {
   position: absolute;
-  right: 10px;
-  bottom: 12px;
+  right: 8px;
+  top: 10px;
   z-index: 2;
 }
 
@@ -1848,8 +1857,6 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
   padding: 0;
   background: transparent;
   border: 1px solid transparent;
@@ -1868,10 +1875,9 @@ body {
   color: var(--ink);
 }
 
+/* Opening upward put the menu on top of the very card it describes. */
 .template-card-menu-dropdown {
-  top: auto;
-  bottom: calc(100% + 6px);
-  min-width: 132px;
+  min-width: 148px;
 }
 
 .template-gallery-empty {
@@ -2343,14 +2349,19 @@ body {
   position: absolute;
   top: 8px;
   right: 8px;
-  width: 28px;
-  height: 28px;
   padding: 0;
   border-radius: 7px;
   border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
   background: color-mix(in srgb, currentColor 8%, transparent);
   color: inherit;
   cursor: pointer;
+}
+
+/* The same gesture on either kind of card gets the same target. */
+.slide-card-more-btn,
+.template-card-menu-btn {
+  width: 28px;
+  height: 28px;
 }
 
 .slide-card-more-btn:focus-visible {

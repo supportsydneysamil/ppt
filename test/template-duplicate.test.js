@@ -10,10 +10,11 @@ import {
   functionBody,
 } from "./helpers/app-function.js";
 
-const [app, html, server] = await Promise.all([
+const [app, html, server, css] = await Promise.all([
   fs.readFile(new URL("../public/app.js", import.meta.url), "utf8"),
   fs.readFile(new URL("../public/index.html", import.meta.url), "utf8"),
   fs.readFile(new URL("../server.js", import.meta.url), "utf8"),
+  fs.readFile(new URL("../public/styles.css", import.meta.url), "utf8"),
 ]);
 
 function template(id, name, slides) {
@@ -88,9 +89,9 @@ describe("duplicateTemplate", () => {
 });
 
 describe("template card duplicate menu", () => {
-  it("puts 복제 between rename and schema export", () => {
+  it("puts 템플릿 복제 between rename and schema export", () => {
     const body = functionBody(app, "buildTemplateCard");
-    assert.match(body, /buildItem\("복제"\)/);
+    assert.match(body, /buildItem\("템플릿 복제"\)/);
     assert.match(
       body,
       /appendChild\(renameItem\)[\s\S]*appendChild\(duplicateItem\)[\s\S]*appendChild\(exportItem\)[\s\S]*appendChild\(deleteItem\)/
@@ -121,7 +122,26 @@ describe("template card duplicate menu", () => {
     const items = [...card.querySelectorAll(".bulk-dropdown-item")].map(
       (item) => item.textContent
     );
-    assert.deepEqual(items, ["이름 변경", "복제", "스키마 내보내기", "삭제"]);
+    assert.deepEqual(items, [
+      "템플릿 이름 변경",
+      "템플릿 복제",
+      "스키마 내보내기",
+      "템플릿 삭제",
+    ]);
+    assert.equal(card.querySelectorAll(".bulk-dropdown-divider").length, 1);
+  });
+
+  // The menu used to open upward over its own card, hiding the template the
+  // user was about to act on.
+  it("opens the card menu below its trigger, in the card's top corner", () => {
+    assert.match(css, /\.template-card-menu\s*\{[^}]*top:\s*10px/);
+    assert.doesNotMatch(css, /\.template-card-menu\s*\{[^}]*bottom:\s*12px/);
+    assert.doesNotMatch(
+      css,
+      /\.template-card-menu-dropdown\s*\{[^}]*bottom:\s*calc\(100% \+ 6px\)/
+    );
+    // Both card types carry the same affordance, so it is the same size.
+    assert.match(css, /\.slide-card-more-btn,\s*\.template-card-menu-btn/);
   });
 });
 
@@ -211,14 +231,31 @@ describe("template duplicate route", () => {
 });
 
 describe("template workspace menu", () => {
-  it("keeps rename on the title and puts clone, export, and delete in ⋯", () => {
+  // The template menu and the slide menu sit one above the other in the same
+  // corner, so a bare 복제 or 삭제 on the template one reads as the slide's.
+  it("names every template action after the template", () => {
     assert.match(html, /id="templateNameDisplay"/);
-    assert.match(html, /id="templateWorkspaceMenuBtn"/);
     assert.match(
       html,
-      /id="templateDuplicateBtn"[^>]*>\s*복제\s*<\/button>[\s\S]*id="templateSchemaExportBtn"[^>]*>\s*스키마 내보내기\s*<\/button>[\s\S]*id="templateDeleteBtn"[^>]*>\s*삭제\s*<\/button>/
+      /id="templateRenameBtn"[^>]*>\s*템플릿 이름 변경\s*<\/button>[\s\S]*id="templateDuplicateBtn"[^>]*>\s*템플릿 복제\s*<\/button>[\s\S]*id="templateSchemaExportBtn"[^>]*>\s*스키마 내보내기\s*<\/button>[\s\S]*id="templateDeleteBtn"[^>]*>\s*템플릿 삭제\s*<\/button>/
     );
-    assert.doesNotMatch(html, /템플릿 삭제/);
+  });
+
+  // Two identical ⋯ glyphs 83px apart meant the same gesture did different
+  // things depending on which one the pointer landed on.
+  it("labels the workspace trigger so it cannot read as the slide menu", () => {
+    assert.match(
+      html,
+      /id="templateWorkspaceMenuBtn"[\s\S]{0,400}?>\s*템플릿\s*<span class="dropdown-caret"/
+    );
+  });
+
+  it("separates the destructive item from the rest", () => {
+    assert.match(
+      html,
+      /id="templateSchemaExportBtn"[\s\S]*?class="bulk-dropdown-divider"[\s\S]*?id="templateDeleteBtn"/
+    );
+    assert.match(css, /\.bulk-dropdown-divider\s*\{/);
   });
 
   it("wires the workspace items to the same helpers as the gallery", () => {
