@@ -1722,9 +1722,15 @@ await runScenario("only one popup menu stays open at a time", async (page) => {
     true
   );
 
-  // Selecting slides lights up the bulk menu in the same list, not the tab bar.
+  // Selecting slides lights up the bulk menu in the same list, not the tab bar,
+  // and the count rides on the button that acts on the selection.
+  assert.equal(await page.locator("#selectedCountBadge").isVisible(), false);
   await page.locator("#slideListContainer .slide-card-select").first().check();
   await page.locator("#bulkActionMenuBtn:not([disabled])").waitFor();
+  assert.equal(await page.locator("#selectedCountBadge").textContent(), "1");
+  await page.locator("#slideListContainer .slide-card-select").nth(1).check();
+  assert.equal(await page.locator("#selectedCountBadge").textContent(), "2");
+
   await page.locator("#bulkActionMenuBtn").click();
   await page.locator("#bulkActionDropdown").waitFor({ state: "visible" });
   await page.keyboard.press("Escape");
@@ -1732,6 +1738,15 @@ await runScenario("only one popup menu stays open at a time", async (page) => {
   assert.equal(
     await page.evaluate(() => document.activeElement?.id),
     "bulkActionMenuBtn"
+  );
+
+  await page.locator("#bulkActionMenuBtn").click();
+  await page.locator("#bulkClearSelectionBtn").click();
+  await page.locator("#bulkActionMenuBtn[disabled]").waitFor();
+  assert.equal(await page.locator("#selectedCountBadge").isVisible(), false);
+  assert.equal(
+    await page.locator("#slideListContainer .slide-card-select:checked").count(),
+    0
   );
 });
 

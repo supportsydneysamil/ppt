@@ -323,7 +323,31 @@ describe("PPT workspace controls", () => {
     );
     assert.match(
       toolbar,
-      /id="selectAllSlidesCheckbox"[\s\S]*id="clearSelectionBtn"[\s\S]*id="bulkActionMenuBtn"[\s\S]*id="bulkActionDropdown"/
+      /id="selectAllSlidesCheckbox"[\s\S]*id="bulkActionMenuBtn"[\s\S]*id="bulkActionDropdown"/
+    );
+  });
+
+  // The list scrolls, so how many slides are selected cannot be read off the
+  // cards. The number belongs on the button that acts on them rather than in a
+  // badge that is secretly also the clear button.
+  it("carries the selection count on the action button", () => {
+    assert.doesNotMatch(html, /selection-clear-pill/);
+    assert.doesNotMatch(html, /id="clearSelectionBtn"/);
+    assert.match(
+      html,
+      /id="bulkActionMenuBtn"[\s\S]*?id="selectedCountBadge"/
+    );
+    assert.match(
+      html,
+      /id="bulkClearSelectionBtn"[^>]*role="menuitem"[^>]*>선택 해제</
+    );
+    assert.match(
+      appSource,
+      /selectedCountBadge\.textContent = String\(selectedCount\)/
+    );
+    assert.match(
+      appSource,
+      /bulkClearSelectionBtn\.addEventListener\([\s\S]*?clearSlideSelection/
     );
   });
 

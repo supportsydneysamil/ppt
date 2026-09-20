@@ -2218,22 +2218,6 @@ body {
   cursor: pointer;
 }
 
-.selection-clear-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: var(--brand-tint);
-  border: 1px solid var(--brand-edge);
-  color: var(--brand);
-  font-size: 12px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
-  margin-left: auto;
-  white-space: nowrap;
-}
-
 /* Acting on a selection belongs beside the selection, so the menu anchors to
    the same row as the count rather than to a bar at the top of the page. */
 .bulk-action-menu {
@@ -2246,15 +2230,25 @@ body {
   white-space: nowrap;
 }
 
-.selection-clear-pill:hover {
+/* Reads as a count, not as a control: the button around it is the control. */
+.selection-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  margin-left: 2px;
+  padding: 0 5px;
+  border-radius: 999px;
   background: var(--brand-tint-strong);
-  border-color: var(--brand);
+  color: var(--brand);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
 }
 
-.clear-x {
-  font-size: 11px;
-  opacity: 0.7;
-  line-height: 1;
+.selection-count[hidden] {
+  display: none;
 }
 
 .slide-cards {

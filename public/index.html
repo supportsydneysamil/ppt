@@ -403,10 +403,6 @@
               <input type="checkbox" id="selectAllSlidesCheckbox" />
               <span>전체 선택</span>
             </label>
-            <button id="clearSelectionBtn" type="button" class="selection-clear-pill" hidden>
-              <span id="selectedCountBadge">0개 선택</span>
-              <span class="clear-x">✕</span>
-            </button>
             <div class="bulk-action-menu">
               <button
                 id="bulkActionMenuBtn"
@@ -416,12 +412,15 @@
                 aria-expanded="false"
                 disabled
               >
-                선택 작업 <span class="dropdown-caret" aria-hidden="true">▾</span>
+                선택 작업
+                <span id="selectedCountBadge" class="selection-count" hidden>0</span>
+                <span class="dropdown-caret" aria-hidden="true">▾</span>
               </button>
               <div id="bulkActionDropdown" class="bulk-dropdown" hidden role="menu">
                 <button id="bulkDeleteBtn" type="button" class="bulk-dropdown-item danger" role="menuitem">삭제</button>
                 <button id="bulkTemplateBtn" type="button" class="bulk-dropdown-item" role="menuitem">템플릿 만들기</button>
                 <button id="bulkDownloadBtn" type="button" class="bulk-dropdown-item" role="menuitem">묶음 다운로드</button>
+                <button id="bulkClearSelectionBtn" type="button" class="bulk-dropdown-item" role="menuitem">선택 해제</button>
               </div>
             </div>
           </div>

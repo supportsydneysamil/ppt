@@ -731,7 +731,6 @@ const viewPpt = document.getElementById("view-ppt");
 
 const slideListContainer = document.getElementById("slideListContainer");
 const selectAllSlidesCheckbox = document.getElementById("selectAllSlidesCheckbox");
-const clearSelectionBtn = document.getElementById("clearSelectionBtn");
 const selectedCountBadge = document.getElementById("selectedCountBadge");
 const tabSlidesBtn = document.getElementById("tabSlidesBtn");
 const tabTemplatesBtn = document.getElementById("tabTemplatesBtn");
@@ -763,6 +762,7 @@ const bulkActionDropdown = document.getElementById("bulkActionDropdown");
 const bulkDeleteBtn = document.getElementById("bulkDeleteBtn");
 const bulkTemplateBtn = document.getElementById("bulkTemplateBtn");
 const bulkDownloadBtn = document.getElementById("bulkDownloadBtn");
+const bulkClearSelectionBtn = document.getElementById("bulkClearSelectionBtn");
 const templateDeleteBtn = document.getElementById("templateDeleteBtn");
 const templateRenameBtn = document.getElementById("templateRenameBtn");
 const templateDuplicateBtn = document.getElementById("templateDuplicateBtn");
@@ -2851,15 +2851,18 @@ function updateSlideListControls() {
     selectAllSlidesCheckbox.disabled = total === 0;
   }
 
+  // The list scrolls, so the count is the only place the size of a selection
+  // can be read. It rides on the button that acts on it.
   if (selectedCountBadge) {
-    selectedCountBadge.textContent = `${selectedCount}개 선택`;
-  }
-
-  if (clearSelectionBtn) {
-    clearSelectionBtn.hidden = !hasSelection;
+    selectedCountBadge.textContent = String(selectedCount);
+    selectedCountBadge.hidden = !hasSelection;
   }
 
   if (bulkActionMenuBtn) {
+    bulkActionMenuBtn.setAttribute(
+      "aria-label",
+      hasSelection ? `선택 작업, ${selectedCount}개 선택됨` : "선택 작업"
+    );
     if (hasSelection) {
       bulkActionMenuBtn.removeAttribute("disabled");
     } else {
@@ -3455,6 +3458,10 @@ function renderPreview(slideOverride) {
     pptxContainer.className = "pptx-deck";
 
     let fileUrl = null;
+    // Only set when the picked file is itself viewable: a .ppt is readable just
+    // as the .pptx the server converted it into, so the viewer has to fetch that
+    // instead of the bytes sitting in the file input.
+    let localFile = null;
 
     if (data.file) {
       // If local file is .ppt (unsupported by viewer) but we have converted .pptx server file, use server file
@@ -3464,6 +3471,7 @@ function renderPreview(slideOverride) {
         data.serverFilePath.toLowerCase().endsWith('.pptx')) {
         fileUrl = data.serverFilePath;
       } else {
+        localFile = data.file;
         fileUrl = URL.createObjectURL(data.file);
       }
     } else if (data.serverFilePath) {
@@ -3567,7 +3575,7 @@ function renderPreview(slideOverride) {
 
           // A locally picked file goes straight in as a Blob; only a server path
           // needs fetching.
-          const source = data.file || (await fetch(fileUrl).then((resp) => resp.blob()));
+          const source = localFile || (await fetch(fileUrl).then((resp) => resp.blob()));
           if (slidePreview.__pptxPreviewState !== previewState) return;
 
           const viewer = await PptxViewer.open(source, pptxContainer, {
@@ -7344,7 +7352,10 @@ editorDownloadBtn.addEventListener("click", downloadSlide);
 selectAllSlidesCheckbox.addEventListener("change", () => {
   setAllSlidesSelected(selectAllSlidesCheckbox.checked);
 });
-clearSelectionBtn.addEventListener("click", clearSlideSelection);
+bulkClearSelectionBtn.addEventListener("click", () => {
+  closePopupMenu();
+  clearSlideSelection();
+});
 
 bulkActionMenuBtn.addEventListener("click", (e) => {
   e.stopPropagation();
