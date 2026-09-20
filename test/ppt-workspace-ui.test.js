@@ -372,6 +372,20 @@ describe("PPT workspace controls", () => {
     }
   });
 
+  // One name per action. The header reverts the whole slide, the ribbon steps
+  // the canvas back; calling both 되돌리기 made them read as one control.
+  it("names each action the same way everywhere", () => {
+    assert.doesNotMatch(html, /되돌리기/);
+    assert.match(html, /data-editor-action="undo"[^>]*>실행 취소</);
+    assert.match(html, /id="editorCancelBtn"[^>]*>변경 취소</);
+    assert.match(html, /id="editorDuplicateBtn"[^>]*>슬라이드 복제</);
+    assert.match(html, /id="editorDeleteBtn"[^>]*>슬라이드 삭제</);
+    // Inside the selection menu the count beside it already says what is
+    // affected, so the items do not repeat it.
+    assert.match(html, /id="bulkDeleteBtn"[^>]*>삭제</);
+    assert.match(html, /id="bulkDownloadBtn"[^>]*>묶음 다운로드</);
+  });
+
   it("gives every popup menu the same semantics and Escape behaviour", () => {
     for (const trigger of [
       "addSlideMenuBtn",

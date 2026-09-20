@@ -2191,7 +2191,11 @@ body {
 .slide-list-toolbar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  /* The rail is narrow, so the selection menu drops to its own line rather
+     than squeezing the labels beside it into two-line stacks. */
+  flex-wrap: wrap;
+  row-gap: 8px;
   margin-bottom: 12px;
 }
 
@@ -2203,6 +2207,7 @@ body {
   font-size: 13px;
   cursor: pointer;
   user-select: none;
+  white-space: nowrap;
 }
 
 .selection-toggle input[type="checkbox"] {
@@ -2226,6 +2231,7 @@ body {
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
   margin-left: auto;
+  white-space: nowrap;
 }
 
 /* Acting on a selection belongs beside the selection, so the menu anchors to
@@ -2236,8 +2242,8 @@ body {
   margin-left: auto;
 }
 
-.selection-clear-pill + .bulk-action-menu {
-  margin-left: 0;
+.bulk-action-menu > .ghost {
+  white-space: nowrap;
 }
 
 .selection-clear-pill:hover {
