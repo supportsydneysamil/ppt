@@ -1466,6 +1466,42 @@ await runScenario("save buttons across saved types and main success", async (pag
   assert.equal(state.counts.slidePost, 1);
 });
 
+await runScenario("save state never shifts the editor command bar", async (page) => {
+  const gate = createGate();
+  await setup(page, {
+    onSlidePost: async () => {
+      await gate.promise;
+      return { status: 200, json: { success: true } };
+    },
+  });
+  await selectMainSlide(page, 0);
+
+  const commandLefts = () =>
+    page
+      .locator(
+        "#editorCancelBtn, #editorDownloadBtn, #editorSaveBtn, #editorMoreBtn"
+      )
+      .evaluateAll((nodes) =>
+        nodes.map((node) => Math.round(node.getBoundingClientRect().left))
+      );
+
+  const cleanPositions = await commandLefts();
+  await fillName(page, "레이아웃 고정");
+  assert.deepEqual(await commandLefts(), cleanPositions);
+
+  await page.locator("#editorSaveBtn").click();
+  await page.locator("#editorSaveBtn[aria-busy='true']").waitFor();
+  assert.equal(
+    await page.locator("#editorSaveBtn .save-label").textContent(),
+    "저장"
+  );
+  assert.deepEqual(await commandLefts(), cleanPositions);
+
+  gate.release();
+  await expectToastOnce(page, "슬라이드가 저장되었습니다");
+  assert.deepEqual(await commandLefts(), cleanPositions);
+});
+
 await runScenario("a template slide save writes that slide only", async (page) => {
   const state = await setup(page);
   await openTemplate(page);
@@ -1836,7 +1872,7 @@ await runScenario(
       "a refused save has to stay retryable"
     );
     assert.equal(
-      await page.locator("#editorSaveBtn").textContent(),
+      await page.locator("#editorSaveBtn .save-label").textContent(),
       "저장",
       "the progress label must be restored after a failure"
     );

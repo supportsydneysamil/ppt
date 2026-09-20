@@ -778,6 +778,7 @@ const addSlideBeforeBtn = document.getElementById("addSlideBeforeBtn");
 const addSlideEndBtn = document.getElementById("addSlideEndBtn");
 const duplicateSlideBtn = document.getElementById("duplicateSlideBtn");
 const editorSaveBtn = document.getElementById("editorSaveBtn");
+const editorSaveStatus = document.getElementById("editorSaveStatus");
 const editorResetBtn = document.getElementById("editorResetBtn");
 const editorCancelBtn = document.getElementById("editorCancelBtn");
 const slideResetModal = document.getElementById("slideResetModal");
@@ -1294,9 +1295,6 @@ function refreshSaveState() {
   });
   if (editorSaveBtn) {
     editorSaveBtn.disabled = state.slideDisabled;
-    // Unsaved work is easy to miss on the canvas, where there is no form to
-    // look at, so the button carries a dot as well as its enabled state.
-    editorSaveBtn.classList.toggle("is-dirty", Boolean(slideDirty));
   }
   if (duplicateSlideBtn) {
     duplicateSlideBtn.disabled =
@@ -5924,9 +5922,7 @@ async function uploadFile(file) {
   return await resp.json();
 }
 
-// Save buttons are disabled while a save runs, so the progress label is the
-// only thing that tells the user which step is in flight. Returns the restore
-// callback, and tolerates a missing button.
+// Some non-save controls still report progress in their own label.
 function showSaveButtonProgress(button, label) {
   if (!button) {
     return () => {};
@@ -5936,6 +5932,20 @@ function showSaveButtonProgress(button, label) {
   return () => {
     button.textContent = original;
   };
+}
+
+// Keep the visible save label and command positions stable while reporting
+// detailed progress to assistive technology.
+function setSaveProgress(label = "") {
+  if (!editorSaveBtn) return;
+  if (label) {
+    editorSaveBtn.setAttribute("aria-busy", "true");
+  } else {
+    editorSaveBtn.removeAttribute("aria-busy");
+  }
+  if (editorSaveStatus) {
+    editorSaveStatus.textContent = label;
+  }
 }
 
 function rememberSlideRuntimeAssets(candidate, keys) {
@@ -6039,6 +6049,7 @@ async function saveCurrentSlide({ silent = false } = {}) {
   }
 
   slideSaving = true;
+  setSaveProgress("저장 중");
   refreshSaveState();
   try {
     if (slide.type === 'custom') {
@@ -6061,9 +6072,7 @@ async function saveCurrentSlide({ silent = false } = {}) {
       // Explicitly check if we need to download (if number changed or no file)
       // slide.hymnNumber tracks what's currently loaded/saved. 
       if (!slide.serverFilePath || slide.hymnNumber != number) {
-        const saveBtnMsg = document.getElementById('editorSaveBtn');
-        const originalText = saveBtnMsg ? saveBtnMsg.textContent : "저장";
-        if (saveBtnMsg) saveBtnMsg.textContent = "다운로드 중...";
+        setSaveProgress("다운로드 중");
 
         try {
           const res = await fetch('/api/hymn/download', {
@@ -6088,10 +6097,9 @@ async function saveCurrentSlide({ silent = false } = {}) {
           ]);
         } catch (e) {
           reportSaveFailure("자동 다운로드 실패: " + e.message);
-          if (saveBtnMsg) saveBtnMsg.textContent = originalText;
           return false; // Stop save if download fails
         } finally {
-          if (saveBtnMsg) saveBtnMsg.textContent = originalText;
+          setSaveProgress("저장 중");
         }
       } else {
         // Ensure it is synced
@@ -6109,12 +6117,9 @@ async function saveCurrentSlide({ silent = false } = {}) {
         return false;
       }
 
-      const generated = await ensureScriptureSlideFile(
-        slide,
-        name,
-        document.getElementById("editorSaveBtn"),
-        "생성 중..."
-      );
+      setSaveProgress("생성 중");
+      const generated = await ensureScriptureSlideFile(slide, name, null, "");
+      setSaveProgress("저장 중");
       if (!generated) {
         return false;
       }
@@ -6156,9 +6161,7 @@ async function saveCurrentSlide({ silent = false } = {}) {
             "adBgImagePath"
           )
         ) {
-          const saveBtnMsg = document.getElementById('editorSaveBtn');
-          const originalText = saveBtnMsg ? saveBtnMsg.textContent : "저장";
-          if (saveBtnMsg) saveBtnMsg.textContent = "업로드 중...";
+          setSaveProgress("업로드 중");
 
           try {
             const uploadResult = await uploadFile(backgroundFile);
@@ -6172,10 +6175,9 @@ async function saveCurrentSlide({ silent = false } = {}) {
             ]);
           } catch (e) {
             reportSaveFailure("배경 이미지 업로드 실패: " + e.message);
-            if (saveBtnMsg) saveBtnMsg.textContent = originalText;
             return false;
           } finally {
-            if (saveBtnMsg) saveBtnMsg.textContent = originalText;
+            setSaveProgress("저장 중");
           }
         }
       } else if (bgSource === 'url') {
@@ -6206,9 +6208,7 @@ async function saveCurrentSlide({ silent = false } = {}) {
             "serverFilePath"
           )
         ) {
-          const saveBtnMsg = document.getElementById('editorSaveBtn');
-          const originalText = saveBtnMsg ? saveBtnMsg.textContent : "저장";
-          if (saveBtnMsg) saveBtnMsg.textContent = "업로드 중...";
+          setSaveProgress("업로드 중");
 
           try {
             const uploadResult = await uploadFile(file);
@@ -6224,10 +6224,9 @@ async function saveCurrentSlide({ silent = false } = {}) {
             ]);
           } catch (e) {
             reportSaveFailure("파일 업로드 실패: " + e.message);
-            if (saveBtnMsg) saveBtnMsg.textContent = originalText;
             return false;
           } finally {
-            if (saveBtnMsg) saveBtnMsg.textContent = originalText;
+            setSaveProgress("저장 중");
           }
         }
       }
@@ -6288,9 +6287,7 @@ async function saveCurrentSlide({ silent = false } = {}) {
             "adBgImagePath"
           )
         ) {
-          const saveBtnMsg = document.getElementById('editorSaveBtn');
-          const originalText = saveBtnMsg ? saveBtnMsg.textContent : "저장";
-          if (saveBtnMsg) saveBtnMsg.textContent = "업로드 중...";
+          setSaveProgress("업로드 중");
           try {
             const uploadResult = await uploadFile(backgroundFile);
             slide.adBgImagePath = uploadResult.path;
@@ -6303,10 +6300,9 @@ async function saveCurrentSlide({ silent = false } = {}) {
             ]);
           } catch (e) {
             reportSaveFailure("배경 이미지 업로드 실패: " + e.message);
-            if (saveBtnMsg) saveBtnMsg.textContent = originalText;
             return false;
           } finally {
-            if (saveBtnMsg) saveBtnMsg.textContent = originalText;
+            setSaveProgress("저장 중");
           }
         }
       } else if (bgSrc === 'url') {
@@ -6331,6 +6327,7 @@ async function saveCurrentSlide({ silent = false } = {}) {
             )
           ) {
             // Upload to server
+            setSaveProgress("업로드 중");
             try {
               const result = await uploadFile(file);
               // Update slide with server file info
@@ -6354,6 +6351,8 @@ async function saveCurrentSlide({ silent = false } = {}) {
               console.error("Upload Error:", err);
               reportSaveFailure("파일 업로드 실패: " + (err?.message || err));
               return false;
+            } finally {
+              setSaveProgress("저장 중");
             }
           }
         } else if (!slide.fileName && !slide.serverFilePath) {
@@ -6363,13 +6362,7 @@ async function saveCurrentSlide({ silent = false } = {}) {
       }
     }
 
-    const restoreSaveLabel = showSaveButtonProgress(editorSaveBtn, "저장 중...");
-    let committed = false;
-    try {
-      committed = await commitSlideCandidate(slide);
-    } finally {
-      restoreSaveLabel();
-    }
+    const committed = await commitSlideCandidate(slide);
     if (!committed) {
       reportSaveFailure(
         "슬라이드 목록에서 대상을 찾을 수 없어 저장하지 못했습니다."
@@ -6405,6 +6398,7 @@ async function saveCurrentSlide({ silent = false } = {}) {
     return false;
   } finally {
     slideSaving = false;
+    setSaveProgress("");
     refreshSaveState();
   }
 }

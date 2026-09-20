@@ -803,7 +803,7 @@ describe("PPT panel collapse affordances", () => {
     assert.match(view, /id="customEditorPopoutBtn"/);
 
     const doc = header.slice(docGroup);
-    assert.match(doc, /id="editorCancelBtn"[^>]*>되돌리기</);
+    assert.match(doc, /id="editorCancelBtn"[^>]*>변경 취소</);
     assert.match(
       doc,
       /id="editorDownloadBtn"[\s\S]*?id="editorSaveBtn"[\s\S]*?id="editorMoreBtn"/
@@ -821,6 +821,28 @@ describe("PPT panel collapse affordances", () => {
     assert.doesNotMatch(appSource, /editorDeleteBtn\.style\.display/);
     assert.doesNotMatch(appSource, /editorCancelBtn\.style\.display/);
     assert.match(appSource, /editorDownloadBtn\.disabled = unsaved/);
+  });
+
+  it("keeps save feedback inside a stable button shell", () => {
+    assert.match(
+      html,
+      /id="editorSaveBtn"[\s\S]*?class="save-progress-slot"[\s\S]*?class="save-label">저장/
+    );
+    assert.match(
+      html,
+      /id="editorSaveStatus"[^>]*class="visually-hidden"[^>]*aria-live="polite"/
+    );
+    assert.doesNotMatch(css, /#editorSaveBtn\.is-dirty::after/);
+    assert.doesNotMatch(
+      appSource,
+      /editorSaveBtn\.classList\.toggle\("is-dirty"/
+    );
+    assert.doesNotMatch(appSource, /editorSaveBtn\.textContent\s*=/);
+    assert.match(
+      appSource,
+      /editorSaveBtn\.setAttribute\("aria-busy", "true"\)/
+    );
+    assert.match(appSource, /editorSaveBtn\.removeAttribute\("aria-busy"\)/);
   });
 
   it("puts reset and delete behind the editor overflow menu", () => {

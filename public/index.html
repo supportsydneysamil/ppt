@@ -435,14 +435,18 @@
                 role="group"
                 aria-label="슬라이드 작업"
               >
-                <button id="editorCancelBtn" type="button" class="ghost small">되돌리기</button>
+                <button id="editorCancelBtn" type="button" class="ghost small">변경 취소</button>
                 <button id="editorDownloadBtn" type="button" class="ghost small icon-btn" title="PPTX 다운로드" aria-label="PPTX 다운로드">
                   <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M12 3a1 1 0 0 1 1 1v9.17l2.59-2.58a1 1 0 1 1 1.41 1.42l-4.3 4.29a1 1 0 0 1-1.4 0l-4.3-4.29a1 1 0 1 1 1.41-1.42L11 13.17V4a1 1 0 0 1 1-1z"></path>
                     <path d="M5 20a1 1 0 0 1-1-1v-2a1 1 0 1 1 2 0v1h12v-1a1 1 0 1 1 2 0v2a1 1 0 0 1-1 1H5z"></path>
                   </svg>
                 </button>
-                <button id="editorSaveBtn" type="button" class="cta small">저장</button>
+                <button id="editorSaveBtn" type="button" class="cta small">
+                  <span class="save-progress-slot" aria-hidden="true"></span>
+                  <span class="save-label">저장</span>
+                </button>
+                <span id="editorSaveStatus" class="visually-hidden" aria-live="polite"></span>
                 <div class="editor-more-menu">
                   <button
                     id="editorMoreBtn"
