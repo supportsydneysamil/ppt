@@ -473,6 +473,15 @@ async function setup(page, options = {}) {
     });
   }
 
+  await page.route(`${baseURL}/fixtures/**`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType:
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      body: validPptxBuffer,
+    })
+  );
+
   await page.route(`${baseURL}/api/**`, async (route) => {
     const request = route.request();
     const url = new URL(request.url());
