@@ -1679,6 +1679,62 @@ await runScenario(
   }
 );
 
+await runScenario("only one popup menu stays open at a time", async (page) => {
+  await setup(page);
+  await selectMainSlide(page, 0);
+
+  const addMenu = page.locator("#addSlideDropdown");
+  const editorMenu = page.locator("#editorMoreMenu");
+  const cardMenu = page
+    .locator('#slideListContainer .slide-card[data-slide-id="main-2"]')
+    .locator(".slide-card-menu");
+
+  await page.locator("#addSlideMenuBtn").click();
+  await addMenu.waitFor({ state: "visible" });
+  assert.equal(
+    await page.locator("#addSlideMenuBtn").getAttribute("aria-expanded"),
+    "true"
+  );
+
+  // Opening a second menu has to retire the first one without being told.
+  await page.locator("#editorMoreBtn").click();
+  await editorMenu.waitFor({ state: "visible" });
+  assert.equal(await addMenu.isVisible(), false);
+  assert.equal(
+    await page.locator("#addSlideMenuBtn").getAttribute("aria-expanded"),
+    "false"
+  );
+
+  await page
+    .locator('#slideListContainer .slide-card[data-slide-id="main-2"]')
+    .locator(".slide-card-more-btn")
+    .click();
+  await cardMenu.waitFor({ state: "visible" });
+  assert.equal(await editorMenu.isVisible(), false);
+
+  // Escape closes whichever menu is open and hands focus back to its button.
+  await page.keyboard.press("Escape");
+  assert.equal(await cardMenu.isVisible(), false);
+  assert.equal(
+    await page.evaluate(() =>
+      document.activeElement?.classList.contains("slide-card-more-btn")
+    ),
+    true
+  );
+
+  // Selecting slides lights up the bulk menu in the same list, not the tab bar.
+  await page.locator("#slideListContainer .slide-card-select").first().check();
+  await page.locator("#bulkActionMenuBtn:not([disabled])").waitFor();
+  await page.locator("#bulkActionMenuBtn").click();
+  await page.locator("#bulkActionDropdown").waitFor({ state: "visible" });
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator("#bulkActionDropdown").isVisible(), false);
+  assert.equal(
+    await page.evaluate(() => document.activeElement?.id),
+    "bulkActionMenuBtn"
+  );
+});
+
 await runScenario(
   "renaming a template writes the name only",
   async (page) => {

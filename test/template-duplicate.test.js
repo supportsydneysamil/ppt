@@ -90,7 +90,7 @@ describe("duplicateTemplate", () => {
 describe("template card duplicate menu", () => {
   it("puts 복제 between rename and schema export", () => {
     const body = functionBody(app, "buildTemplateCard");
-    assert.match(body, /textContent = "복제"/);
+    assert.match(body, /buildItem\("복제"\)/);
     assert.match(
       body,
       /appendChild\(renameItem\)[\s\S]*appendChild\(duplicateItem\)[\s\S]*appendChild\(exportItem\)[\s\S]*appendChild\(deleteItem\)/
@@ -108,7 +108,8 @@ describe("template card duplicate menu", () => {
         document: window.document,
         buildTemplateThumbStrip: () => window.document.createElement("div"),
         formatTemplateGalleryMeta: () => "1장",
-        closeTemplateCardMenus: () => {},
+        closePopupMenu: () => {},
+        openPopupMenu: () => {},
         renameTemplateById: () => {},
         duplicateTemplateById: () => {},
         deleteTemplateById: () => {},

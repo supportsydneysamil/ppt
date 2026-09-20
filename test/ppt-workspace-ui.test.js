@@ -346,6 +346,64 @@ describe("PPT workspace controls", () => {
     assert.match(html, /id="editorDuplicateBtn"/);
   });
 
+  // Six near-identical open/close pairs each had to remember to close the
+  // other five, so every new menu was a chance to leave one open.
+  it("runs every popup menu through one controller", () => {
+    assert.match(appSource, /let activePopupMenu = null/);
+    assert.match(appSource, /function openPopupMenu\(/);
+    assert.match(appSource, /function closePopupMenu\(/);
+
+    for (const gone of [
+      "closeBulkDropdown",
+      "closeAddSlideDropdown",
+      "openAddSlideDropdown",
+      "closeEditorMoreMenu",
+      "closeSlideCardMenu",
+      "closeTemplateWorkspaceMenu",
+      "closeTemplateCardMenus",
+      "toggleEditorMoreMenu",
+      "toggleTemplateWorkspaceMenu",
+    ]) {
+      assert.doesNotMatch(
+        appSource,
+        new RegExp(`function ${gone}\\(`),
+        `${gone} should be replaced by the shared popup controller`
+      );
+    }
+  });
+
+  it("gives every popup menu the same semantics and Escape behaviour", () => {
+    for (const trigger of [
+      "addSlideMenuBtn",
+      "bulkActionMenuBtn",
+      "editorMoreBtn",
+      "templateWorkspaceMenuBtn",
+    ]) {
+      const markup = html.slice(
+        html.indexOf(`id="${trigger}"`),
+        html.indexOf(`id="${trigger}"`) + 400
+      );
+      assert.match(markup, /aria-haspopup="menu"/, `${trigger} aria-haspopup`);
+      assert.match(markup, /aria-expanded="false"/, `${trigger} aria-expanded`);
+    }
+    for (const menu of [
+      "addSlideDropdown",
+      "bulkActionDropdown",
+      "editorMoreMenu",
+      "templateWorkspaceMenu",
+    ]) {
+      const markup = html.slice(
+        html.indexOf(`id="${menu}"`),
+        html.indexOf(`id="${menu}"`) + 300
+      );
+      assert.match(markup, /role="menu"/, `${menu} role`);
+    }
+    // Card menus are built at render time, so their semantics live in code.
+    assert.match(appSource, /menuBtn\.setAttribute\("aria-haspopup", "menu"\)/);
+    assert.match(appSource, /moreBtn\.setAttribute\("aria-haspopup", "menu"\)/);
+    assert.match(appSource, /closePopupMenu\(\{ restoreFocus: true \}\)/);
+  });
+
   it("persists UI state and forces stage reflow without changing slide data", () => {
     assert.match(appSource, /samil-ppt-workspace-ui-v1/);
     assert.match(appSource, /function applyPptWorkspaceUi\(/);
@@ -897,8 +955,10 @@ describe("PPT panel collapse affordances", () => {
       appSource,
       /editorDuplicateBtn\.addEventListener\("click",[\s\S]*?duplicateCurrentSlide/
     );
-    assert.match(appSource, /function closeEditorMoreMenu\(/);
-    assert.match(appSource, /function toggleEditorMoreMenu\(/);
+    assert.match(
+      appSource,
+      /openPopupMenu\(editorMoreBtn, editorMoreMenu\)/
+    );
   });
 
   it("reverts only to a saved record and discards new slides through delete", () => {
@@ -943,12 +1003,18 @@ describe("PPT panel collapse affordances", () => {
   });
 
   it("closes card menus on outside click and Escape", () => {
-    assert.match(appSource, /function closeSlideCardMenu\(/);
-    assert.match(appSource, /if \(openSlideCardMenu\)[\s\S]*closeSlideCardMenu/);
+    assert.match(appSource, /openPopupMenu\(moreBtn, cardMenu/);
     assert.match(
       appSource,
-      /if \(e\.key !== "Escape"\) return;[\s\S]*closeSlideCardMenu/
+      /if \(!activePopupMenu\) return;[\s\S]*?closePopupMenu\(\)/
     );
+    assert.match(
+      appSource,
+      /if \(e\.key !== "Escape"\) return;\s*closePopupMenu\(\{ restoreFocus: true \}\)/
+    );
+    // A card that stays draggable while its menu is open drags the two apart.
+    assert.match(appSource, /onOpen: \(\) => \{\s*card\.draggable = false/);
+    assert.match(appSource, /onClose: \(\) => \{\s*card\.draggable = true/);
   });
 
   it("keeps the ribbon in one column in compact and mobile layouts", () => {

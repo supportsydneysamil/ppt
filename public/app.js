@@ -764,6 +764,7 @@ const bulkDeleteBtn = document.getElementById("bulkDeleteBtn");
 const bulkTemplateBtn = document.getElementById("bulkTemplateBtn");
 const bulkDownloadBtn = document.getElementById("bulkDownloadBtn");
 const templateDeleteBtn = document.getElementById("templateDeleteBtn");
+const templateRenameBtn = document.getElementById("templateRenameBtn");
 const templateDuplicateBtn = document.getElementById("templateDuplicateBtn");
 const templateSchemaExportBtn = document.getElementById("templateSchemaExportBtn");
 const templateWorkspaceMenuBtn = document.getElementById("templateWorkspaceMenuBtn");
@@ -918,7 +919,7 @@ let duplicateInProgress = false;
 let guardedTransitionDepth = 0;
 let selectedSlideIds = new Set();
 let draggedSlideId = null;
-let openSlideCardMenu = null;
+let activePopupMenu = null;
 let workspaceReflow = null;
 let pptWorkspaceResizeFrame = null;
 const PPT_WORKSPACE_UI_STORAGE_KEY = "samil-ppt-workspace-ui-v1";
@@ -1720,47 +1721,6 @@ function formatTemplateGalleryMeta(template) {
   return date ? `${slideCount}개 슬라이드 · ${date}` : `${slideCount}개 슬라이드`;
 }
 
-function closeTemplateCardMenus() {
-  if (!templateGalleryGrid) {
-    return;
-  }
-  templateGalleryGrid
-    .querySelectorAll(".template-card-menu-dropdown:not([hidden])")
-    .forEach((menu) => {
-      menu.hidden = true;
-    });
-  templateGalleryGrid
-    .querySelectorAll(".template-card-menu-btn.open")
-    .forEach((button) => {
-      button.classList.remove("open");
-    });
-}
-
-function closeTemplateWorkspaceMenu() {
-  if (!templateWorkspaceMenu || templateWorkspaceMenu.hidden) {
-    return;
-  }
-  templateWorkspaceMenu.hidden = true;
-  templateWorkspaceMenuBtn?.classList.remove("open");
-  templateWorkspaceMenuBtn?.setAttribute("aria-expanded", "false");
-}
-
-function toggleTemplateWorkspaceMenu() {
-  if (!templateWorkspaceMenu || !templateWorkspaceMenuBtn) {
-    return;
-  }
-  const wasOpen = !templateWorkspaceMenu.hidden;
-  closeTemplateCardMenus();
-  closeBulkDropdown();
-  if (wasOpen) {
-    closeTemplateWorkspaceMenu();
-    return;
-  }
-  templateWorkspaceMenu.hidden = false;
-  templateWorkspaceMenuBtn.classList.add("open");
-  templateWorkspaceMenuBtn.setAttribute("aria-expanded", "true");
-}
-
 function duplicateActiveTemplate() {
   return duplicateTemplateById(activeTemplateId);
 }
@@ -1853,49 +1813,49 @@ function buildTemplateCard(template) {
   menuBtn.type = "button";
   menuBtn.className = "template-card-menu-btn";
   menuBtn.setAttribute("aria-label", `${template.name} 템플릿 메뉴`);
+  menuBtn.setAttribute("aria-haspopup", "menu");
+  menuBtn.setAttribute("aria-expanded", "false");
   menuBtn.textContent = "⋯";
 
   const menuDropdown = document.createElement("div");
   menuDropdown.className = "bulk-dropdown template-card-menu-dropdown";
   menuDropdown.hidden = true;
+  menuDropdown.setAttribute("role", "menu");
 
-  const renameItem = document.createElement("button");
-  renameItem.type = "button";
-  renameItem.className = "bulk-dropdown-item";
-  renameItem.textContent = "이름 변경";
+  const buildItem = (label, { danger = false } = {}) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = `bulk-dropdown-item${danger ? " danger" : ""}`;
+    item.setAttribute("role", "menuitem");
+    item.textContent = label;
+    return item;
+  };
+
+  const renameItem = buildItem("이름 변경");
   renameItem.addEventListener("click", (event) => {
     event.stopPropagation();
-    closeTemplateCardMenus();
+    closePopupMenu();
     renameTemplateById(template.id);
   });
 
-  const duplicateItem = document.createElement("button");
-  duplicateItem.type = "button";
-  duplicateItem.className = "bulk-dropdown-item";
-  duplicateItem.textContent = "복제";
+  const duplicateItem = buildItem("복제");
   duplicateItem.addEventListener("click", (event) => {
     event.stopPropagation();
-    closeTemplateCardMenus();
+    closePopupMenu();
     duplicateTemplateById(template.id);
   });
 
-  const deleteItem = document.createElement("button");
-  deleteItem.type = "button";
-  deleteItem.className = "bulk-dropdown-item danger";
-  deleteItem.textContent = "삭제";
+  const deleteItem = buildItem("삭제", { danger: true });
   deleteItem.addEventListener("click", (event) => {
     event.stopPropagation();
-    closeTemplateCardMenus();
+    closePopupMenu();
     deleteTemplateById(template.id);
   });
 
-  const exportItem = document.createElement("button");
-  exportItem.type = "button";
-  exportItem.className = "bulk-dropdown-item";
-  exportItem.textContent = "스키마 내보내기";
+  const exportItem = buildItem("스키마 내보내기");
   exportItem.addEventListener("click", (event) => {
     event.stopPropagation();
-    closeTemplateCardMenus();
+    closePopupMenu();
     exportTemplateSchemaById(template.id);
   });
 
@@ -1906,12 +1866,7 @@ function buildTemplateCard(template) {
 
   menuBtn.addEventListener("click", (event) => {
     event.stopPropagation();
-    const wasOpen = !menuDropdown.hidden;
-    closeTemplateCardMenus();
-    if (!wasOpen) {
-      menuDropdown.hidden = false;
-      menuBtn.classList.add("open");
-    }
+    openPopupMenu(menuBtn, menuDropdown);
   });
 
   menuWrap.appendChild(menuBtn);
@@ -1930,7 +1885,7 @@ function renderTemplateGallery() {
     return;
   }
 
-  closeTemplateCardMenus();
+  closePopupMenu();
   templateGalleryGrid.innerHTML = "";
 
   templates.forEach((template) => {
@@ -2613,11 +2568,11 @@ window.addEventListener("resize", () => {
 });
 applyPptWorkspaceUi();
 tabSlidesBtn.addEventListener("click", () => {
-  closeBulkDropdown();
+  closePopupMenu();
   setPptTab("slides");
 });
 tabTemplatesBtn.addEventListener("click", () => {
-  closeBulkDropdown();
+  closePopupMenu();
   setPptTab("templates");
 });
 templateGalleryGoSlidesBtn.addEventListener("click", () => setPptTab("slides"));
@@ -2634,21 +2589,24 @@ templateSchemaFileInput?.addEventListener("change", async () => {
   await importTemplateSchemaFile(file);
 });
 templateBackBtn.addEventListener("click", () => {
-  closeBulkDropdown();
-  closeTemplateWorkspaceMenu();
+  closePopupMenu();
   closeTemplateWorkspace();
 });
 templateNameDisplay.addEventListener("click", renameActiveTemplate);
 templateWorkspaceMenuBtn?.addEventListener("click", (event) => {
   event.stopPropagation();
-  toggleTemplateWorkspaceMenu();
+  openPopupMenu(templateWorkspaceMenuBtn, templateWorkspaceMenu);
+});
+templateRenameBtn?.addEventListener("click", () => {
+  closePopupMenu();
+  renameActiveTemplate();
 });
 templateDuplicateBtn?.addEventListener("click", () => {
-  closeTemplateWorkspaceMenu();
+  closePopupMenu();
   duplicateActiveTemplate();
 });
 templateSchemaExportBtn?.addEventListener("click", () => {
-  closeTemplateWorkspaceMenu();
+  closePopupMenu();
   exportActiveTemplateSchema();
 });
 
@@ -2906,65 +2864,42 @@ function updateSlideListControls() {
       bulkActionMenuBtn.removeAttribute("disabled");
     } else {
       bulkActionMenuBtn.setAttribute("disabled", "");
-      closeBulkDropdown();
+      if (isPopupMenuOpen(bulkActionMenuBtn)) closePopupMenu();
     }
   }
 }
 
-function closeBulkDropdown() {
-  if (bulkActionDropdown) bulkActionDropdown.hidden = true;
-  if (bulkActionMenuBtn) bulkActionMenuBtn.classList.remove("open");
-}
-
-// Reset and delete are rare and hard to undo, so they sit behind the overflow
-// button rather than next to save.
-function closeEditorMoreMenu() {
-  if (!editorMoreMenu || editorMoreMenu.hidden) {
-    return;
-  }
-  editorMoreMenu.hidden = true;
-  editorMoreBtn?.classList.remove("open");
-  editorMoreBtn?.setAttribute("aria-expanded", "false");
-}
-
-function closeSlideCardMenu({ restoreFocus = false } = {}) {
-  if (!openSlideCardMenu) return;
-  const { button, menu, card } = openSlideCardMenu;
+// Every popup menu in the workspace behaves the same way, so they share one
+// controller: at most one is open, Escape closes it and hands focus back, and
+// a menu cannot forget to close the one before it.
+function closePopupMenu({ restoreFocus = false } = {}) {
+  if (!activePopupMenu) return;
+  const { button, menu, onClose } = activePopupMenu;
+  activePopupMenu = null;
   menu.hidden = true;
+  button.classList.remove("open");
   button.setAttribute("aria-expanded", "false");
-  card.draggable = true;
-  openSlideCardMenu = null;
+  onClose?.();
   if (restoreFocus && button.isConnected) {
     button.focus();
   }
 }
 
-function toggleEditorMoreMenu() {
-  if (!editorMoreMenu || !editorMoreBtn) {
-    return;
-  }
-  const wasOpen = !editorMoreMenu.hidden;
-  closeBulkDropdown();
-  closeAddSlideDropdown();
-  if (wasOpen) {
-    closeEditorMoreMenu();
-    return;
-  }
-  editorMoreMenu.hidden = false;
-  editorMoreBtn.classList.add("open");
-  editorMoreBtn.setAttribute("aria-expanded", "true");
+function openPopupMenu(button, menu, { onOpen, onClose } = {}) {
+  if (!button || !menu) return;
+  const wasOpen = activePopupMenu?.button === button;
+  closePopupMenu();
+  if (wasOpen) return;
+
+  menu.hidden = false;
+  button.classList.add("open");
+  button.setAttribute("aria-expanded", "true");
+  activePopupMenu = { button, menu, onClose };
+  onOpen?.();
 }
 
-function openAddSlideDropdown() {
-  if (!addSlideDropdown) return;
-  addSlideDropdown.hidden = false;
-  addSlideMenuBtn.setAttribute("aria-expanded", "true");
-}
-
-function closeAddSlideDropdown() {
-  if (!addSlideDropdown) return;
-  addSlideDropdown.hidden = true;
-  addSlideMenuBtn.setAttribute("aria-expanded", "false");
+function isPopupMenuOpen(button) {
+  return activePopupMenu?.button === button;
 }
 
 // Relative placement needs a slide to anchor to; without one only the
@@ -5792,7 +5727,7 @@ function updateButtonsState(slide) {
 function renderSlideList() {
   syncSelectedSlideIds();
   updateTemplateManagementUi();
-  closeSlideCardMenu();
+  closePopupMenu();
   slideListContainer.innerHTML = "";
   slides.forEach((slide, index) => {
     const card = document.createElement("div");
@@ -5911,24 +5846,26 @@ function renderSlideList() {
     });
     moreBtn.addEventListener("click", (event) => {
       event.stopPropagation();
-      const wasOpen = openSlideCardMenu?.button === moreBtn;
-      closeSlideCardMenu();
-      if (wasOpen) return;
-      cardMenu.hidden = false;
-      moreBtn.setAttribute("aria-expanded", "true");
-      card.draggable = false;
-      openSlideCardMenu = { button: moreBtn, menu: cardMenu, card };
-      duplicateBtn.focus();
+      openPopupMenu(moreBtn, cardMenu, {
+        // Dragging a card whose menu is open would tear the two apart.
+        onOpen: () => {
+          card.draggable = false;
+          duplicateBtn.focus();
+        },
+        onClose: () => {
+          card.draggable = true;
+        },
+      });
     });
     cardMenu.addEventListener("click", (event) => event.stopPropagation());
     duplicateBtn.addEventListener("click", async (event) => {
       event.stopPropagation();
-      closeSlideCardMenu();
+      closePopupMenu();
       await duplicateSlideById(slide.id, { selectDuplicate: false });
     });
     deleteBtn.addEventListener("click", async (event) => {
       event.stopPropagation();
-      closeSlideCardMenu();
+      closePopupMenu();
       await deleteSlideById(slide.id);
     });
 
@@ -7255,37 +7192,32 @@ async function downloadSelectedSlidesBundle() {
 addSlideBtn.addEventListener("click", () => createSlide());
 addSlideMenuBtn.addEventListener("click", (e) => {
   e.stopPropagation();
-  if (addSlideDropdown.hidden) {
-    closeBulkDropdown();
-    openAddSlideDropdown();
-  } else {
-    closeAddSlideDropdown();
-  }
+  openPopupMenu(addSlideMenuBtn, addSlideDropdown);
 });
 addSlideAfterBtn.addEventListener("click", () => {
-  closeAddSlideDropdown();
+  closePopupMenu();
   createSlide("after");
 });
 addSlideBeforeBtn.addEventListener("click", () => {
-  closeAddSlideDropdown();
+  closePopupMenu();
   createSlide("before");
 });
 addSlideEndBtn.addEventListener("click", () => {
-  closeAddSlideDropdown();
+  closePopupMenu();
   createSlide("end");
 });
 
 editorSaveBtn.addEventListener("click", () => saveCurrentSlide());
 editorMoreBtn?.addEventListener("click", (event) => {
   event.stopPropagation();
-  toggleEditorMoreMenu();
+  openPopupMenu(editorMoreBtn, editorMoreMenu);
 });
 editorDuplicateBtn.addEventListener("click", () => {
-  closeEditorMoreMenu();
+  closePopupMenu();
   duplicateCurrentSlide();
 });
 editorResetBtn.addEventListener("click", () => {
-  closeEditorMoreMenu();
+  closePopupMenu();
   resetCurrentSlide();
 });
 editorCancelBtn.addEventListener("click", cancelEdit);
@@ -7405,7 +7337,7 @@ function cancelEdit() {
 }
 
 editorDeleteBtn.addEventListener("click", () => {
-  closeEditorMoreMenu();
+  closePopupMenu();
   deleteCurrentSlide();
 });
 editorDownloadBtn.addEventListener("click", downloadSlide);
@@ -7416,82 +7348,27 @@ clearSelectionBtn.addEventListener("click", clearSlideSelection);
 
 bulkActionMenuBtn.addEventListener("click", (e) => {
   e.stopPropagation();
-  const isOpen = !bulkActionDropdown.hidden;
-  if (isOpen) {
-    closeBulkDropdown();
-  } else {
-    closeBulkDropdown();
-    closeAddSlideDropdown();
-    bulkActionDropdown.hidden = false;
-    bulkActionMenuBtn.classList.add("open");
-  }
+  openPopupMenu(bulkActionMenuBtn, bulkActionDropdown);
 });
 
 document.addEventListener("click", (e) => {
-  if (openSlideCardMenu) {
-    const { button, menu } = openSlideCardMenu;
-    if (!button.contains(e.target) && !menu.contains(e.target)) {
-      closeSlideCardMenu();
-    }
-  }
-  if (bulkActionDropdown && !bulkActionDropdown.hidden) {
-    if (!bulkActionMenuBtn.contains(e.target) && !bulkActionDropdown.contains(e.target)) {
-      closeBulkDropdown();
-    }
-  }
-  if (addSlideDropdown && !addSlideDropdown.hidden) {
-    if (!addSlideMenuBtn.contains(e.target) && !addSlideDropdown.contains(e.target)) {
-      closeAddSlideDropdown();
-    }
-  }
-  if (
-    templateWorkspaceMenu &&
-    !templateWorkspaceMenu.hidden &&
-    !templateWorkspaceMenu.contains(e.target) &&
-    !templateWorkspaceMenuBtn?.contains(e.target)
-  ) {
-    closeTemplateWorkspaceMenu();
-  }
-  if (
-    editorMoreMenu &&
-    !editorMoreMenu.hidden &&
-    !editorMoreMenu.contains(e.target) &&
-    !editorMoreBtn?.contains(e.target)
-  ) {
-    closeEditorMoreMenu();
-  }
-  if (templateGalleryGrid && !templateGalleryGrid.contains(e.target)) {
-    closeTemplateCardMenus();
+  if (!activePopupMenu) return;
+  const { button, menu } = activePopupMenu;
+  if (!button.contains(e.target) && !menu.contains(e.target)) {
+    closePopupMenu();
   }
 });
 
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
-  if (openSlideCardMenu) {
-    closeSlideCardMenu({ restoreFocus: true });
-  }
-  if (editorMoreMenu && !editorMoreMenu.hidden) {
-    closeEditorMoreMenu();
-    editorMoreBtn?.focus();
-  }
-  if (addSlideDropdown && !addSlideDropdown.hidden) {
-    closeAddSlideDropdown();
-    addSlideMenuBtn.focus();
-  }
-  if (bulkActionDropdown && !bulkActionDropdown.hidden) {
-    closeBulkDropdown();
-  }
-  if (templateWorkspaceMenu && !templateWorkspaceMenu.hidden) {
-    closeTemplateWorkspaceMenu();
-    templateWorkspaceMenuBtn?.focus();
-  }
+  closePopupMenu({ restoreFocus: true });
 });
 
-bulkDeleteBtn.addEventListener("click", () => { closeBulkDropdown(); deleteSelectedSlides(); });
-bulkTemplateBtn.addEventListener("click", () => { closeBulkDropdown(); createTemplateFromSelection(); });
-bulkDownloadBtn.addEventListener("click", () => { closeBulkDropdown(); downloadSelectedSlidesBundle(); });
+bulkDeleteBtn.addEventListener("click", () => { closePopupMenu(); deleteSelectedSlides(); });
+bulkTemplateBtn.addEventListener("click", () => { closePopupMenu(); createTemplateFromSelection(); });
+bulkDownloadBtn.addEventListener("click", () => { closePopupMenu(); downloadSelectedSlidesBundle(); });
 templateDeleteBtn.addEventListener("click", () => {
-  closeTemplateWorkspaceMenu();
+  closePopupMenu();
   deleteActiveTemplate();
 });
 
