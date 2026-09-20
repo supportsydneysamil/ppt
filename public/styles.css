@@ -2253,6 +2253,7 @@ body {
 }
 
 .slide-card {
+  position: relative;
   background: var(--panel-soft);
   padding: 12px;
   border-radius: 12px;
@@ -2295,6 +2296,7 @@ body {
   grid-template-columns: auto minmax(0, 1fr);
   align-items: flex-start;
   gap: 10px;
+  padding-right: 28px;
 }
 
 .slide-card-select {
@@ -2327,6 +2329,32 @@ body {
   align-items: center;
   gap: 2px;
   margin-left: auto;
+}
+
+.slide-card-more-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 7px;
+  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  color: inherit;
+  cursor: pointer;
+}
+
+.slide-card-more-btn:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.slide-card-menu {
+  top: 38px;
+  right: 8px;
+  min-width: 120px;
+  z-index: 8;
 }
 
 .slide-move-btn {
@@ -2364,6 +2392,17 @@ body {
 }
 
 @media (hover: hover) {
+  .slide-card-more-btn {
+    opacity: 0.62;
+    transition: opacity 140ms ease;
+  }
+
+  .slide-card:hover .slide-card-more-btn,
+  .slide-card:focus-within .slide-card-more-btn,
+  .slide-card-more-btn[aria-expanded="true"] {
+    opacity: 1;
+  }
+
   .slide-card-actions {
     opacity: 0.62;
     transition: opacity 140ms ease;

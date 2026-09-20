@@ -1610,6 +1610,67 @@ await runScenario("template delete and duplicate write membership", async (page)
 });
 
 await runScenario(
+  "card actions preserve selection while duplicating and deleting their target",
+  async (page) => {
+    const state = await setup(page);
+    await selectMainSlide(page, 0);
+    const activeId = "main-1";
+    const secondMenuButton = page
+      .locator('#slideListContainer .slide-card[data-slide-id="main-2"]')
+      .locator(".slide-card-more-btn");
+
+    await secondMenuButton.click();
+    assert.equal(
+      await page.locator(".slide-card.active").getAttribute("data-slide-id"),
+      activeId
+    );
+    await page.keyboard.press("Escape");
+    assert.equal(
+      await secondMenuButton.evaluate((node) => document.activeElement === node),
+      true
+    );
+
+    await secondMenuButton.click();
+    await page
+      .locator('#slideListContainer .slide-card[data-slide-id="main-2"]')
+      .locator(".slide-card-menu")
+      .getByRole("menuitem", { name: "복제" })
+      .click();
+    await page.waitForFunction(
+      () => document.querySelectorAll("#slideListContainer .slide-card").length === 3
+    );
+    assert.equal(state.counts.slidePost, 1);
+    assert.equal(
+      await page.locator(".slide-card.active").getAttribute("data-slide-id"),
+      activeId
+    );
+    assert.equal(
+      await page
+        .locator("#slideListContainer .slide-card")
+        .nth(2)
+        .locator("h4")
+        .textContent(),
+      "둘째 슬라이드 복사"
+    );
+
+    const copyCard = page.locator("#slideListContainer .slide-card").nth(2);
+    await copyCard.locator(".slide-card-more-btn").click();
+    await copyCard
+      .locator(".slide-card-menu")
+      .getByRole("menuitem", { name: "삭제" })
+      .click();
+    await page.waitForFunction(
+      () => document.querySelectorAll("#slideListContainer .slide-card").length === 2
+    );
+    assert.equal(state.counts.slideDelete, 1);
+    assert.equal(
+      await page.locator(".slide-card.active").getAttribute("data-slide-id"),
+      activeId
+    );
+  }
+);
+
+await runScenario(
   "renaming a template writes the name only",
   async (page) => {
   const state = await setup(page);

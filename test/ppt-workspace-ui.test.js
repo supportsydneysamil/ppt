@@ -887,6 +887,27 @@ describe("PPT panel collapse affordances", () => {
     );
   });
 
+  it("renders an accessible per-card duplicate and delete menu", () => {
+    assert.match(appSource, /function renderSlideList\(\)[\s\S]*slide-card-more-btn/);
+    assert.match(appSource, /`\$\{slide\.name\} 작업 메뉴`/);
+    assert.match(
+      appSource,
+      /duplicateSlideById\(slide\.id,\s*\{\s*selectDuplicate:\s*false\s*\}\)/
+    );
+    assert.match(appSource, /deleteSlideById\(slide\.id\)/);
+    assert.match(appSource, /card\.draggable = false/);
+    assert.match(css, /\.slide-card-menu\s*\{/);
+  });
+
+  it("closes card menus on outside click and Escape", () => {
+    assert.match(appSource, /function closeSlideCardMenu\(/);
+    assert.match(appSource, /if \(openSlideCardMenu\)[\s\S]*closeSlideCardMenu/);
+    assert.match(
+      appSource,
+      /if \(e\.key !== "Escape"\) return;[\s\S]*closeSlideCardMenu/
+    );
+  });
+
   it("keeps the ribbon in one column in compact and mobile layouts", () => {
     const compactRule =
       /@media\s*\(min-width:\s*900px\)\s*and\s*\(max-width:\s*1279px\)[\s\S]*?\.slide-editor-panel\[data-slide-type="custom"\][\s\S]*?grid-template-areas:\s*"ribbon"\s*"stage"\s*"status"/;

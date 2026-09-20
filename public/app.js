@@ -919,6 +919,7 @@ let duplicateInProgress = false;
 let guardedTransitionDepth = 0;
 let selectedSlideIds = new Set();
 let draggedSlideId = null;
+let openSlideCardMenu = null;
 let workspaceReflow = null;
 let pptWorkspaceResizeFrame = null;
 const PPT_WORKSPACE_UI_STORAGE_KEY = "samil-ppt-workspace-ui-v1";
@@ -2925,6 +2926,18 @@ function closeEditorMoreMenu() {
   editorMoreMenu.hidden = true;
   editorMoreBtn?.classList.remove("open");
   editorMoreBtn?.setAttribute("aria-expanded", "false");
+}
+
+function closeSlideCardMenu({ restoreFocus = false } = {}) {
+  if (!openSlideCardMenu) return;
+  const { button, menu, card } = openSlideCardMenu;
+  menu.hidden = true;
+  button.setAttribute("aria-expanded", "false");
+  card.draggable = true;
+  openSlideCardMenu = null;
+  if (restoreFocus && button.isConnected) {
+    button.focus();
+  }
 }
 
 function toggleEditorMoreMenu() {
@@ -5780,6 +5793,7 @@ function updateButtonsState(slide) {
 function renderSlideList() {
   syncSelectedSlideIds();
   updateTemplateManagementUi();
+  closeSlideCardMenu();
   slideListContainer.innerHTML = "";
   slides.forEach((slide, index) => {
     const card = document.createElement("div");
@@ -5865,6 +5879,60 @@ function renderSlideList() {
     main.appendChild(title);
     main.appendChild(desc);
 
+    const moreBtn = document.createElement("button");
+    moreBtn.type = "button";
+    moreBtn.className = "slide-card-more-btn";
+    moreBtn.setAttribute("aria-label", `${slide.name} 작업 메뉴`);
+    moreBtn.setAttribute("aria-haspopup", "menu");
+    moreBtn.setAttribute("aria-expanded", "false");
+    moreBtn.textContent = "⋯";
+
+    const cardMenu = document.createElement("div");
+    cardMenu.className = "slide-card-menu bulk-dropdown";
+    cardMenu.hidden = true;
+    cardMenu.setAttribute("role", "menu");
+
+    const duplicateBtn = document.createElement("button");
+    duplicateBtn.type = "button";
+    duplicateBtn.className = "bulk-dropdown-item";
+    duplicateBtn.setAttribute("role", "menuitem");
+    duplicateBtn.textContent = "복제";
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.className = "bulk-dropdown-item danger";
+    deleteBtn.setAttribute("role", "menuitem");
+    deleteBtn.textContent = "삭제";
+
+    cardMenu.appendChild(duplicateBtn);
+    cardMenu.appendChild(deleteBtn);
+
+    moreBtn.addEventListener("pointerdown", (event) => {
+      event.stopPropagation();
+    });
+    moreBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const wasOpen = openSlideCardMenu?.button === moreBtn;
+      closeSlideCardMenu();
+      if (wasOpen) return;
+      cardMenu.hidden = false;
+      moreBtn.setAttribute("aria-expanded", "true");
+      card.draggable = false;
+      openSlideCardMenu = { button: moreBtn, menu: cardMenu, card };
+      duplicateBtn.focus();
+    });
+    cardMenu.addEventListener("click", (event) => event.stopPropagation());
+    duplicateBtn.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      closeSlideCardMenu();
+      await duplicateSlideById(slide.id, { selectDuplicate: false });
+    });
+    deleteBtn.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      closeSlideCardMenu();
+      await deleteSlideById(slide.id);
+    });
+
     const actions = document.createElement("div");
     actions.className = "slide-card-actions";
 
@@ -5917,6 +5985,8 @@ function renderSlideList() {
 
     card.appendChild(header);
     card.appendChild(meta);
+    card.appendChild(moreBtn);
+    card.appendChild(cardMenu);
     slideListContainer.appendChild(card);
   });
   updateSlideListControls();
@@ -7360,6 +7430,12 @@ bulkActionMenuBtn.addEventListener("click", (e) => {
 });
 
 document.addEventListener("click", (e) => {
+  if (openSlideCardMenu) {
+    const { button, menu } = openSlideCardMenu;
+    if (!button.contains(e.target) && !menu.contains(e.target)) {
+      closeSlideCardMenu();
+    }
+  }
   if (bulkActionDropdown && !bulkActionDropdown.hidden) {
     if (!bulkActionMenuBtn.contains(e.target) && !bulkActionDropdown.contains(e.target)) {
       closeBulkDropdown();
@@ -7393,6 +7469,9 @@ document.addEventListener("click", (e) => {
 
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
+  if (openSlideCardMenu) {
+    closeSlideCardMenu({ restoreFocus: true });
+  }
   if (editorMoreMenu && !editorMoreMenu.hidden) {
     closeEditorMoreMenu();
     editorMoreBtn?.focus();
