@@ -2155,10 +2155,6 @@ body {
   flex: 1 1 auto;
 }
 
-.slide-list-actions > #duplicateSlideBtn {
-  flex: 0 0 auto;
-}
-
 .split-btn > .ghost:first-child {
   border-top-right-radius: 0;
   border-bottom-right-radius: 0;
@@ -2230,6 +2226,18 @@ body {
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
   margin-left: auto;
+}
+
+/* Acting on a selection belongs beside the selection, so the menu anchors to
+   the same row as the count rather than to a bar at the top of the page. */
+.bulk-action-menu {
+  position: relative;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.selection-clear-pill + .bulk-action-menu {
+  margin-left: 0;
 }
 
 .selection-clear-pill:hover {

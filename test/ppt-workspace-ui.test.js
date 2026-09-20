@@ -300,6 +300,52 @@ describe("PPT workspace controls", () => {
     assert.match(chromeSource, /id="customSlideInspector"/);
   });
 
+  // One bar, one scope. The tab bar owns what the workspace shows; the slide
+  // list owns the list and its selection; the editor header owns the open
+  // slide. A command placed a level away from its target reads as a different
+  // command.
+  it("gathers every view toggle in the tab bar", () => {
+    const actions = html.slice(
+      html.indexOf('id="pptTabbarActions"'),
+      html.indexOf('<section id="templateGallery"')
+    );
+    assert.match(actions, /id="pptSlidesPaneBtn"/);
+    assert.match(actions, /id="pptInspectorPaneBtn"/);
+    assert.match(actions, /id="pptFocusModeBtn"/);
+    assert.match(actions, /id="customEditorPopoutBtn"/);
+    assert.doesNotMatch(actions, /id="bulkActionMenuBtn"/);
+  });
+
+  it("keeps selection actions beside the selection they act on", () => {
+    const toolbar = html.slice(
+      html.indexOf('<div class="slide-list-toolbar">'),
+      html.indexOf('id="slideListContainer"')
+    );
+    assert.match(
+      toolbar,
+      /id="selectAllSlidesCheckbox"[\s\S]*id="clearSelectionBtn"[\s\S]*id="bulkActionMenuBtn"[\s\S]*id="bulkActionDropdown"/
+    );
+  });
+
+  it("leaves the editor header holding slide actions only", () => {
+    const header = html.slice(
+      html.indexOf('<div class="editor-header">'),
+      html.indexOf('<form id="slideForm"')
+    );
+    assert.doesNotMatch(header, /id="pptInspectorPaneBtn"/);
+    assert.doesNotMatch(header, /id="pptFocusModeBtn"/);
+    assert.doesNotMatch(header, /id="customEditorPopoutBtn"/);
+    assert.match(header, /id="editorSaveBtn"/);
+  });
+
+  // Duplicating the open slide is a slide action, so it belongs with the other
+  // slide actions rather than in the list's own toolbar.
+  it("offers slide duplication from the card and the editor menu only", () => {
+    assert.doesNotMatch(html, /id="duplicateSlideBtn"/);
+    assert.doesNotMatch(appSource, /duplicateSlideBtn/);
+    assert.match(html, /id="editorDuplicateBtn"/);
+  });
+
   it("persists UI state and forces stage reflow without changing slide data", () => {
     assert.match(appSource, /samil-ppt-workspace-ui-v1/);
     assert.match(appSource, /function applyPptWorkspaceUi\(/);
@@ -789,18 +835,11 @@ describe("PPT panel collapse affordances", () => {
     assert.doesNotMatch(header, /custom-editor-ribbon/);
   });
 
-  it("splits the editor header into view and slide-action groups", () => {
+  it("orders the editor header as revert, download, save, then more", () => {
     const headerEnd = html.indexOf('<form id="slideForm"');
     const header = html.slice(html.indexOf('<div class="editor-header">'), headerEnd);
-    const viewGroup = header.indexOf('aria-label="보기"');
     const docGroup = header.indexOf('aria-label="슬라이드 작업"');
-    assert.ok(viewGroup > -1 && docGroup > viewGroup);
-
-    // The view controls belong to the workspace, the rest to the slide.
-    const view = header.slice(viewGroup, docGroup);
-    assert.match(view, /id="pptInspectorPaneBtn"/);
-    assert.match(view, /id="pptFocusModeBtn"/);
-    assert.match(view, /id="customEditorPopoutBtn"/);
+    assert.ok(docGroup > -1);
 
     const doc = header.slice(docGroup);
     assert.match(doc, /id="editorCancelBtn"[^>]*>변경 취소</);

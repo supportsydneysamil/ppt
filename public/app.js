@@ -776,7 +776,6 @@ const addSlideDropdown = document.getElementById("addSlideDropdown");
 const addSlideAfterBtn = document.getElementById("addSlideAfterBtn");
 const addSlideBeforeBtn = document.getElementById("addSlideBeforeBtn");
 const addSlideEndBtn = document.getElementById("addSlideEndBtn");
-const duplicateSlideBtn = document.getElementById("duplicateSlideBtn");
 const editorSaveBtn = document.getElementById("editorSaveBtn");
 const editorSaveStatus = document.getElementById("editorSaveStatus");
 const editorResetBtn = document.getElementById("editorResetBtn");
@@ -1298,10 +1297,10 @@ function refreshSaveState() {
   if (editorSaveBtn) {
     editorSaveBtn.disabled = state.slideDisabled;
   }
-  const duplicateDisabled =
-    !draft || duplicateInProgress || isSaveBusy(getSaveState());
-  if (duplicateSlideBtn) duplicateSlideBtn.disabled = duplicateDisabled;
-  if (editorDuplicateBtn) editorDuplicateBtn.disabled = duplicateDisabled;
+  if (editorDuplicateBtn) {
+    editorDuplicateBtn.disabled =
+      !draft || duplicateInProgress || isSaveBusy(getSaveState());
+  }
   if (editorCancelBtn) {
     // Revert needs a saved record to restore. A slide that never reached the
     // server has nothing behind it, so dropping it belongs to delete.
@@ -2744,7 +2743,7 @@ async function duplicateSlideById(
 
     structureSaving = true;
     refreshSaveState();
-    duplicateSlideBtn?.setAttribute("aria-busy", "true");
+    editorDuplicateBtn?.setAttribute("aria-busy", "true");
 
     // Template level: the copy needs its own files, so cloning and inserting
     // are one request. Splitting them would leave the cloned uploads behind
@@ -2803,7 +2802,7 @@ async function duplicateSlideById(
     alert(error.message || "슬라이드 복제 중 오류가 발생했습니다.");
     return false;
   } finally {
-    duplicateSlideBtn?.removeAttribute("aria-busy");
+    editorDuplicateBtn?.removeAttribute("aria-busy");
     structureSaving = false;
     duplicateInProgress = false;
     refreshSaveState();
@@ -7275,7 +7274,6 @@ addSlideEndBtn.addEventListener("click", () => {
   closeAddSlideDropdown();
   createSlide("end");
 });
-duplicateSlideBtn.addEventListener("click", duplicateCurrentSlide);
 
 editorSaveBtn.addEventListener("click", () => saveCurrentSlide());
 editorMoreBtn?.addEventListener("click", (event) => {

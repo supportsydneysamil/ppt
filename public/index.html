@@ -235,7 +235,10 @@
             템플릿 <span id="templateCountBadge" class="ppt-tab-count">0</span>
           </button>
         </nav>
-        <div class="ppt-tabbar-actions" id="pptTabbarActions">
+        <!-- View controls only. What happens to the list lives in the slide
+             list panel, and what happens to one slide lives in the editor
+             header, so no bar mixes two scopes. -->
+        <div class="ppt-tabbar-actions" id="pptTabbarActions" role="group" aria-label="보기">
           <button
             id="pptSlidesPaneBtn"
             type="button"
@@ -245,14 +248,31 @@
           >
             슬라이드
           </button>
-          <button id="bulkActionMenuBtn" class="sub-nav-action-btn" disabled>
-            선택 작업 <span class="dropdown-caret">▾</span>
+          <button
+            id="pptInspectorPaneBtn"
+            type="button"
+            class="ghost small ppt-pane-toggle"
+            aria-controls="slideForm customSlideInspector"
+            aria-expanded="true"
+          >
+            속성
           </button>
-          <div id="bulkActionDropdown" class="bulk-dropdown" hidden>
-            <button id="bulkDeleteBtn" type="button" class="bulk-dropdown-item danger">선택 삭제</button>
-            <button id="bulkTemplateBtn" type="button" class="bulk-dropdown-item">템플릿 만들기</button>
-            <button id="bulkDownloadBtn" type="button" class="bulk-dropdown-item">선택 묶음 다운로드</button>
-          </div>
+          <button
+            id="pptFocusModeBtn"
+            type="button"
+            class="ghost small"
+            aria-pressed="false"
+          >
+            집중 모드
+          </button>
+          <button
+            id="customEditorPopoutBtn"
+            type="button"
+            class="ghost small"
+            hidden
+          >
+            새 창으로 열기
+          </button>
         </div>
       </div>
 
@@ -375,9 +395,6 @@
                 </button>
               </div>
             </div>
-            <button id="duplicateSlideBtn" type="button" class="ghost small" disabled>
-              복제
-            </button>
           </div>
           <div class="slide-list-toolbar">
             <label class="selection-toggle">
@@ -388,6 +405,23 @@
               <span id="selectedCountBadge">0개 선택</span>
               <span class="clear-x">✕</span>
             </button>
+            <div class="bulk-action-menu">
+              <button
+                id="bulkActionMenuBtn"
+                type="button"
+                class="ghost small"
+                aria-haspopup="menu"
+                aria-expanded="false"
+                disabled
+              >
+                선택 작업 <span class="dropdown-caret" aria-hidden="true">▾</span>
+              </button>
+              <div id="bulkActionDropdown" class="bulk-dropdown" hidden role="menu">
+                <button id="bulkDeleteBtn" type="button" class="bulk-dropdown-item danger" role="menuitem">삭제</button>
+                <button id="bulkTemplateBtn" type="button" class="bulk-dropdown-item" role="menuitem">템플릿 만들기</button>
+                <button id="bulkDownloadBtn" type="button" class="bulk-dropdown-item" role="menuitem">묶음 다운로드</button>
+              </div>
+            </div>
           </div>
           <div id="slideListContainer" class="slide-cards">
             <!-- Cards will be injected here -->
@@ -398,38 +432,11 @@
         <div class="slide-editor-panel" id="slideEditor" style="display:none;">
           <div class="editor-header">
             <h3>슬라이드 편집</h3>
-            <!-- Two groups, fixed order: what the workspace shows, then what
-                 happens to the slide. Nothing here appears or disappears when a
-                 slide is saved; only availability changes, so the bar never
-                 reflows under the pointer. -->
+            <!-- Only what happens to the open slide. View toggles belong to
+                 the tab bar. Nothing here appears or disappears when a slide is
+                 saved; only availability changes, so the bar never reflows
+                 under the pointer. -->
             <div class="editor-actions">
-              <div class="editor-actions-group" role="group" aria-label="보기">
-                <button
-                  id="pptInspectorPaneBtn"
-                  type="button"
-                  class="ghost small ppt-pane-toggle"
-                  aria-controls="slideForm customSlideInspector"
-                  aria-expanded="true"
-                >
-                  속성
-                </button>
-                <button
-                  id="pptFocusModeBtn"
-                  type="button"
-                  class="ghost small"
-                  aria-pressed="false"
-                >
-                  집중 모드
-                </button>
-                <button
-                  id="customEditorPopoutBtn"
-                  type="button"
-                  class="ghost small"
-                  hidden
-                >
-                  새 창으로 열기
-                </button>
-              </div>
               <div
                 class="editor-actions-group editor-actions-group--doc"
                 role="group"

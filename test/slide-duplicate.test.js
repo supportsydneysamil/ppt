@@ -136,7 +136,7 @@ describe("duplicate re-entry during the preflight window", () => {
     );
     assert.match(
       functionBody(app, "refreshSaveState"),
-      /const duplicateDisabled =[\s\S]*duplicateInProgress[\s\S]*duplicateSlideBtn\.disabled = duplicateDisabled/,
+      /editorDuplicateBtn\.disabled =[\s\S]*duplicateInProgress/,
       "the duplicate control has to stay disabled through the preflight"
     );
   });
@@ -176,10 +176,13 @@ describe("duplicate re-entry during the preflight window", () => {
 });
 
 describe("current-slide duplicate control", () => {
-  it("renders a disabled ghost small button beside Add", () => {
+  // The list toolbar adds and selects slides; duplicating the open slide is a
+  // slide action, so it sits with the other slide actions instead.
+  it("lives in the editor overflow menu, not the list toolbar", () => {
     assert.match(
       html,
-      /id="addSlideBtn"[\s\S]*?id="duplicateSlideBtn"[^>]*class="ghost small"[^>]*disabled[^>]*>\s*복제\s*<\/button>/
+      /id="editorMoreMenu"[\s\S]*?id="editorDuplicateBtn"[^>]*role="menuitem"[^>]*>슬라이드 복제</
     );
+    assert.doesNotMatch(html, /id="duplicateSlideBtn"/);
   });
 });
