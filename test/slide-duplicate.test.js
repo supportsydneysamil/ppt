@@ -93,7 +93,7 @@ describe("slide list mutations while a duplicate is in flight", () => {
   });
 
   it("keeps duplicate network work out of a nested guarded transition", () => {
-    const body = functionBody(app, "duplicateCurrentSlide");
+    const body = functionBody(app, "duplicateSlideById");
 
     assert.match(body, /ensureNoPendingChanges\(\)/);
     assert.ok(
@@ -110,7 +110,7 @@ describe("slide list mutations while a duplicate is in flight", () => {
 // the earlier clone.
 describe("duplicate re-entry during the preflight window", () => {
   it("claims the re-entry lock on entry, before the first await", () => {
-    const body = functionBody(app, "duplicateCurrentSlide");
+    const body = functionBody(app, "duplicateSlideById");
     const firstAwait = body.indexOf("await");
 
     assert.match(body, /duplicateInProgress/);
@@ -142,27 +142,35 @@ describe("duplicate re-entry during the preflight window", () => {
   });
 
   it("does not activate or announce a clone that was never inserted", () => {
-    const body = functionBody(app, "duplicateCurrentSlide");
+    const body = functionBody(app, "duplicateSlideById");
     const insertionCheck = body.indexOf("nextSlides.length === slides.length");
 
     assert.notEqual(insertionCheck, -1, "a vanished source has to be detected");
     assert.ok(
-      body.lastIndexOf("announceDuplicate(") > insertionCheck,
+      body.lastIndexOf("finishDuplicate(") > insertionCheck,
       "the main list must clear the insertion check before announcing"
     );
     // The template path has no local list to check: it announces the slide the
     // server reported as inserted, and a refused request throws instead.
     assert.match(
       body.slice(body.indexOf("isTemplateMode()"), insertionCheck),
-      /announceDuplicate\(cloneSlide\(payload\.slide\)\)/,
+      /finishDuplicate\(cloneSlide\(payload\.slide\),\s*\{\s*selectDuplicate\s*\}\)/,
       "the template path may only announce what the server inserted"
     );
     // Both paths reach the success announcement through the same helper, so
     // neither can select a slide without also reporting it.
+    const finishBody = functionBody(app, "finishDuplicate");
+    assert.match(finishBody, /if \(selectDuplicate\)/);
+    assert.match(finishBody, /applySlideSelection\([\s\S]*showToast\(/);
+  });
+
+  it("addresses the source by id and makes selection explicit", () => {
+    const body = functionBody(app, "duplicateSlideById");
+    assert.match(body, /slides\.find\(\(entry\) => entry\.id === sourceId\)/);
+    assert.match(body, /selectDuplicate/);
     assert.match(
-      functionBody(app, "announceDuplicate"),
-      /applySlideSelection\([\s\S]*showToast\(/,
-      "selection and the toast belong to the shared success path"
+      functionBody(app, "duplicateCurrentSlide"),
+      /duplicateSlideById\(currentSlideId,\s*\{\s*selectDuplicate:\s*true\s*\}\)/
     );
   });
 });

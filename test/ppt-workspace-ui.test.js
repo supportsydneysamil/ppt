@@ -863,7 +863,23 @@ describe("PPT panel collapse affordances", () => {
     );
     assert.match(
       appSource,
-      /async function deleteCurrentSlide\(\)[\s\S]*?isSlideUnsaved\(slide\)\)\s*\{\s*discardUnsavedSlide/
+      /async function deleteSlideById\(slideId\)[\s\S]*?isSlideUnsaved\(slide\)/
+    );
+  });
+
+  it("addresses deletion by slide id without forcing current selection", () => {
+    assert.match(
+      appSource,
+      /async function deleteSlideById\(slideId\)[\s\S]*?slides\.find\(\(entry\) => entry\.id === slideId\)/
+    );
+    assert.match(appSource, /const deletesCurrent = slideId === currentSlideId/);
+    assert.match(
+      appSource,
+      /const neighborId = deletesCurrent\s*\?\s*resolveAdjacentSlideId/
+    );
+    assert.match(
+      appSource,
+      /function deleteCurrentSlide\(\)\s*\{\s*return deleteSlideById\(currentSlideId\)/
     );
   });
 

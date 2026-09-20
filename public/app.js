@@ -2678,10 +2678,12 @@ async function persistCurrentWorkspace(nextSlides = slides) {
   return saveSlidesToServer(nextSlides);
 }
 
-// Reached only once the copy is actually in the list, so a clone that never
-// landed is never selected or announced as a success.
-function announceDuplicate(duplicate) {
-  applySlideSelection(duplicate.id);
+function finishDuplicate(duplicate, { selectDuplicate }) {
+  if (selectDuplicate) {
+    applySlideSelection(duplicate.id);
+  } else {
+    renderSlideList();
+  }
   showToast(`슬라이드를 복제했습니다: ${duplicate.name}`);
   return true;
 }
@@ -2689,8 +2691,16 @@ function announceDuplicate(duplicate) {
 // Pending changes are settled first and the clone itself runs outside the
 // guard, so the list this request stages cannot be assigned over a mutation
 // that a nested guarded transition let through while the server was answering.
-async function duplicateCurrentSlide() {
-  if (duplicateInProgress || !currentSlideId || blockedBySaveInProgress()) {
+async function duplicateSlideById(
+  sourceId,
+  { selectDuplicate = false } = {}
+) {
+  if (duplicateInProgress || !sourceId || blockedBySaveInProgress()) {
+    return false;
+  }
+  const duplicatesCurrent = sourceId === currentSlideId;
+  if (!duplicatesCurrent && slideDirty) {
+    alert("현재 슬라이드의 변경사항을 먼저 저장하거나 변경 취소해 주세요.");
     return false;
   }
 
@@ -2699,10 +2709,9 @@ async function duplicateCurrentSlide() {
   // checks above and stage a list from the same starting point.
   duplicateInProgress = true;
   refreshSaveState();
-  let restoreDuplicateLabel = () => {};
 
   try {
-    if (!(await ensureNoPendingChanges())) {
+    if (duplicatesCurrent && !(await ensureNoPendingChanges())) {
       return false;
     }
 
@@ -2711,9 +2720,14 @@ async function duplicateCurrentSlide() {
       return false;
     }
 
-    const sourceId = currentSlideId;
-    const draft = collectCurrentSlideDraft();
-    if (!sourceId || !draft) {
+    const source = slides.find((entry) => entry.id === sourceId);
+    if (!source) {
+      return false;
+    }
+    const draft = duplicatesCurrent
+      ? collectCurrentSlideDraft()
+      : cloneSlide(source);
+    if (!draft) {
       return false;
     }
 
@@ -2728,10 +2742,7 @@ async function duplicateCurrentSlide() {
 
     structureSaving = true;
     refreshSaveState();
-    restoreDuplicateLabel = showSaveButtonProgress(
-      duplicateSlideBtn,
-      "복제 중..."
-    );
+    duplicateSlideBtn?.setAttribute("aria-busy", "true");
 
     // Template level: the copy needs its own files, so cloning and inserting
     // are one request. Splitting them would leave the cloned uploads behind
@@ -2743,8 +2754,7 @@ async function duplicateCurrentSlide() {
         { method: "POST" }
       );
       applyTemplateFromServer(payload.template);
-      renderSlideList();
-      return announceDuplicate(cloneSlide(payload.slide));
+      return finishDuplicate(cloneSlide(payload.slide), { selectDuplicate });
     }
 
     let duplicate;
@@ -2785,17 +2795,21 @@ async function duplicateCurrentSlide() {
       slides = nextSlides;
     }
 
-    return announceDuplicate(duplicate);
+    return finishDuplicate(duplicate, { selectDuplicate });
   } catch (error) {
     console.error("Failed to duplicate slide", error);
     alert(error.message || "슬라이드 복제 중 오류가 발생했습니다.");
     return false;
   } finally {
-    restoreDuplicateLabel();
+    duplicateSlideBtn?.removeAttribute("aria-busy");
     structureSaving = false;
     duplicateInProgress = false;
     refreshSaveState();
   }
+}
+
+function duplicateCurrentSlide() {
+  return duplicateSlideById(currentSlideId, { selectDuplicate: true });
 }
 
 async function loadSlidesFromServer() {
@@ -5922,18 +5936,6 @@ async function uploadFile(file) {
   return await resp.json();
 }
 
-// Some non-save controls still report progress in their own label.
-function showSaveButtonProgress(button, label) {
-  if (!button) {
-    return () => {};
-  }
-  const original = button.textContent;
-  button.textContent = label;
-  return () => {
-    button.textContent = original;
-  };
-}
-
 // Keep the visible save label and command positions stable while reporting
 // detailed progress to assistive technology.
 function setSaveProgress(label = "") {
@@ -7229,54 +7231,85 @@ slideResetModal.addEventListener("click", (event) => {
   }
 });
 
-async function deleteCurrentSlide() {
-  if (!currentSlideId) return;
-  if (blockedBySaveInProgress()) return;
-
-  const slide = slides.find((entry) => entry.id === currentSlideId);
-  if (slide && isSlideUnsaved(slide)) {
-    discardUnsavedSlide(currentSlideId);
-    return;
-  }
-
-  if (!confirm("정말 이 슬라이드를 삭제하시겠습니까?")) {
-    return;
-  }
-
-  // The confirm is a yield point, so a save may have started behind it.
-  if (blockedBySaveInProgress()) return;
-
-  // Call API
-  try {
-    if (isTemplateMode()) {
-      await removeTemplateSlideIds([currentSlideId]);
-      resetEditorSelection();
-      renderSlideList();
-      return;
-    }
-
-    await fetch(`/api/slides/${currentSlideId}`, { method: 'DELETE' });
-    await loadSlidesFromServer();
-    loadWorkspaceSlides(mainSlides);
-    renderSlideList();
-  } catch (e) {
-    alert("삭제 실패");
-    console.error(e);
-  }
-}
-
 // A slide that never reached the server leaves the working list outright;
 // there is no record to restore and nothing to delete remotely.
 function discardUnsavedSlide(slideId) {
-  const neighborId = resolveAdjacentSlideId(slides, slideId);
+  const deletesCurrent = slideId === currentSlideId;
+  const neighborId = deletesCurrent
+    ? resolveAdjacentSlideId(slides, slideId)
+    : null;
   slides = slides.filter((entry) => entry.id !== slideId);
   syncWorkingSlidesToState();
-  if (neighborId) {
+  if (!deletesCurrent) {
+    renderSlideList();
+  } else if (neighborId) {
     applySlideSelection(neighborId);
   } else {
     resetEditorSelection();
     renderSlideList();
   }
+  return true;
+}
+
+async function deleteSlideById(slideId) {
+  if (!slideId || blockedBySaveInProgress()) return false;
+
+  const slide = slides.find((entry) => entry.id === slideId);
+  if (!slide) return false;
+  const deletesCurrent = slideId === currentSlideId;
+  if (!deletesCurrent && slideDirty) {
+    alert("현재 슬라이드의 변경사항을 먼저 저장하거나 변경 취소해 주세요.");
+    return false;
+  }
+
+  const neighborId = deletesCurrent
+    ? resolveAdjacentSlideId(slides, slideId)
+    : null;
+  if (isSlideUnsaved(slide)) {
+    return discardUnsavedSlide(slideId);
+  }
+
+  if (!confirm("정말 이 슬라이드를 삭제하시겠습니까?")) {
+    return false;
+  }
+
+  // The confirm is a yield point, so a save may have started behind it.
+  if (blockedBySaveInProgress()) return false;
+
+  try {
+    if (isTemplateMode()) {
+      await removeTemplateSlideIds([slideId]);
+    } else {
+      const response = await fetch(`/api/slides/${slideId}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        throw new Error("슬라이드 삭제에 실패했습니다.");
+      }
+      slides = slides.filter((entry) => entry.id !== slideId);
+      mainSlides = slides.map(cloneSlide);
+    }
+
+    if (deletesCurrent) {
+      if (neighborId) {
+        applySlideSelection(neighborId);
+      } else {
+        resetEditorSelection();
+        renderSlideList();
+      }
+    } else {
+      renderSlideList();
+    }
+    return true;
+  } catch (error) {
+    alert(error.message || "삭제 실패");
+    console.error(error);
+    return false;
+  }
+}
+
+function deleteCurrentSlide() {
+  return deleteSlideById(currentSlideId);
 }
 
 // Revert restores the current slide in place. It is not navigation, so it

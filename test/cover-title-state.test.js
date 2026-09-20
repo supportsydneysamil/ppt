@@ -138,7 +138,7 @@ describe("cover title theme browser state", () => {
       /template\.slides\.map\(\(slide\)\s*=>\s*cloneSlide\(slide\)\)/
     );
     assert.match(
-      functionBody(app, "duplicateCurrentSlide"),
+      functionBody(app, "duplicateSlideById"),
       /slide:\s*buildSerializableSlide\(draft\)/
     );
   });
