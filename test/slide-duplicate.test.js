@@ -136,7 +136,7 @@ describe("duplicate re-entry during the preflight window", () => {
     );
     assert.match(
       functionBody(app, "refreshSaveState"),
-      /duplicateSlideBtn\.disabled =[\s\S]*duplicateInProgress/,
+      /const duplicateDisabled =[\s\S]*duplicateInProgress[\s\S]*duplicateSlideBtn\.disabled = duplicateDisabled/,
       "the duplicate control has to stay disabled through the preflight"
     );
   });

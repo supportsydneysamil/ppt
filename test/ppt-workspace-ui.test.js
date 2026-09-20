@@ -845,10 +845,14 @@ describe("PPT panel collapse affordances", () => {
     assert.match(appSource, /editorSaveBtn\.removeAttribute\("aria-busy"\)/);
   });
 
-  it("puts reset and delete behind the editor overflow menu", () => {
+  it("puts duplicate, reset, and delete in editor overflow order", () => {
     assert.match(
       html,
-      /id="editorMoreBtn"[\s\S]*?aria-haspopup="menu"[\s\S]*?id="editorMoreMenu"[\s\S]*?id="editorResetBtn"[\s\S]*?id="editorDeleteBtn"/
+      /id="editorMoreBtn"[\s\S]*?aria-haspopup="menu"[\s\S]*?id="editorMoreMenu"[\s\S]*?id="editorDuplicateBtn"[\s\S]*?id="editorResetBtn"[\s\S]*?id="editorDeleteBtn"/
+    );
+    assert.match(
+      appSource,
+      /editorDuplicateBtn\.addEventListener\("click",[\s\S]*?duplicateCurrentSlide/
     );
     assert.match(appSource, /function closeEditorMoreMenu\(/);
     assert.match(appSource, /function toggleEditorMoreMenu\(/);

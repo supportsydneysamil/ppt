@@ -780,6 +780,7 @@ const duplicateSlideBtn = document.getElementById("duplicateSlideBtn");
 const editorSaveBtn = document.getElementById("editorSaveBtn");
 const editorSaveStatus = document.getElementById("editorSaveStatus");
 const editorResetBtn = document.getElementById("editorResetBtn");
+const editorDuplicateBtn = document.getElementById("editorDuplicateBtn");
 const editorCancelBtn = document.getElementById("editorCancelBtn");
 const slideResetModal = document.getElementById("slideResetModal");
 const slideResetCard = document.getElementById("slideResetCard");
@@ -1296,10 +1297,10 @@ function refreshSaveState() {
   if (editorSaveBtn) {
     editorSaveBtn.disabled = state.slideDisabled;
   }
-  if (duplicateSlideBtn) {
-    duplicateSlideBtn.disabled =
-      !draft || duplicateInProgress || isSaveBusy(getSaveState());
-  }
+  const duplicateDisabled =
+    !draft || duplicateInProgress || isSaveBusy(getSaveState());
+  if (duplicateSlideBtn) duplicateSlideBtn.disabled = duplicateDisabled;
+  if (editorDuplicateBtn) editorDuplicateBtn.disabled = duplicateDisabled;
   if (editorCancelBtn) {
     // Revert needs a saved record to restore. A slide that never reached the
     // server has nothing behind it, so dropping it belongs to delete.
@@ -7210,6 +7211,10 @@ editorSaveBtn.addEventListener("click", () => saveCurrentSlide());
 editorMoreBtn?.addEventListener("click", (event) => {
   event.stopPropagation();
   toggleEditorMoreMenu();
+});
+editorDuplicateBtn.addEventListener("click", () => {
+  closeEditorMoreMenu();
+  duplicateCurrentSlide();
 });
 editorResetBtn.addEventListener("click", () => {
   closeEditorMoreMenu();

@@ -1594,7 +1594,7 @@ await runScenario("template delete and duplicate write membership", async (page)
   const state = await setup(page);
   await openTemplate(page);
 
-  await page.locator("#duplicateSlideBtn").click();
+  await clickEditorMenuItem(page, "#editorDuplicateBtn");
   await expectToast(page, "슬라이드를 복제했습니다");
   await waitForCount(() => state.counts.templateDuplicate, 1, "duplicate landed");
   assert.equal(state.templates[0].slides.length, 3);
