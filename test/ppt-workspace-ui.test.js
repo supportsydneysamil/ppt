@@ -875,6 +875,23 @@ describe("PPT panel collapse affordances", () => {
     );
   });
 
+  it("scrolls a newly added slide card into the list's view", () => {
+    // The list scrolls, so a card added below the fold looked like the 추가
+    // button had done nothing and invited a second press.
+    assert.match(appSource, /function revealSlideCard\(/);
+    assert.match(
+      appSource,
+      /renderSlideList\(\);\s*revealSlideCard\(newSlide\.id\)/
+    );
+    assert.match(
+      appSource,
+      /function finishDuplicate\([\s\S]*revealSlideCard\(duplicate\.id\)/
+    );
+    // "nearest" leaves an already visible card alone instead of recentering.
+    assert.match(appSource, /scrollIntoView\(\{\s*block: "nearest"/);
+    assert.match(appSource, /prefers-reduced-motion: reduce/);
+  });
+
   it("builds a Word-style ribbon with stable named categories", () => {
     assert.match(chromeSource, /role="tablist"/);
     assert.match(chromeSource, /role="tab"/);

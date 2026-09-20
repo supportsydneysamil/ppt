@@ -2643,6 +2643,7 @@ function finishDuplicate(duplicate, { selectDuplicate }) {
   } else {
     renderSlideList();
   }
+  revealSlideCard(duplicate.id);
   showToast(`슬라이드를 복제했습니다: ${duplicate.name}`);
   return true;
 }
@@ -3128,6 +3129,7 @@ function appendNewSlide(position = "end") {
   applySlideSelection(newSlide.id);
   refreshSaveState();
   renderSlideList();
+  revealSlideCard(newSlide.id);
 }
 
 // ... (selectSlide, populateEditor, toggleSettingsMode) ...
@@ -5934,6 +5936,23 @@ function renderSlideList() {
     slideListContainer.appendChild(card);
   });
   updateSlideListControls();
+}
+
+// A card added past the bottom of the scrolled list reads as nothing having
+// happened, so the list follows it. "nearest" keeps an already visible card
+// where it is instead of recentering the list under the user.
+function revealSlideCard(slideId) {
+  const card = slideListContainer.querySelector(
+    `.slide-card[data-slide-id="${slideId}"]`
+  );
+  if (!card) return;
+  const reduceMotion = window.matchMedia?.(
+    "(prefers-reduced-motion: reduce)"
+  )?.matches;
+  card.scrollIntoView({
+    block: "nearest",
+    behavior: reduceMotion ? "auto" : "smooth",
+  });
 }
 
 async function uploadFile(file) {

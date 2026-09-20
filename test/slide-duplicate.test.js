@@ -162,6 +162,8 @@ describe("duplicate re-entry during the preflight window", () => {
     const finishBody = functionBody(app, "finishDuplicate");
     assert.match(finishBody, /if \(selectDuplicate\)/);
     assert.match(finishBody, /applySlideSelection\([\s\S]*showToast\(/);
+    // A clone inserted below the fold reads as a no-op unless the list follows.
+    assert.match(finishBody, /revealSlideCard\(duplicate\.id\)/);
   });
 
   it("addresses the source by id and makes selection explicit", () => {
