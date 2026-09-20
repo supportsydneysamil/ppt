@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "ENABLE_VITE=1 node server.js",
+    "dev": "cross-env ENABLE_VITE=1 node server.js",
     "build": "vite build",
-    "start": "NODE_ENV=production node server.js",
+    "start": "cross-env NODE_ENV=production node server.js",
     "test": "node --test test/*.test.js",
     "test:browser": "node test/browser/save-flow.playwright.mjs"
   },
@@ -40,6 +40,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^6.1.1",
+    "cross-env": "^10.1.0",
     "fontkit": "^2.0.4",
     "jsdom": "^29.1.1",
     "playwright": "^1.63.0",
