@@ -826,13 +826,17 @@ describe("PPT panel collapse affordances", () => {
   it("keeps save feedback inside a stable button shell", () => {
     assert.match(
       html,
-      /id="editorSaveBtn"[\s\S]*?class="save-progress-slot"[\s\S]*?class="save-label">저장/
+      /id="editorSaveBtn"[^>]*class="cta small"[\s\S]*?class="save-label">저장/
     );
     assert.match(
       html,
       /id="editorSaveStatus"[^>]*class="visually-hidden"[^>]*aria-live="polite"/
     );
     assert.doesNotMatch(css, /#editorSaveBtn\.is-dirty::after/);
+    // Reserving room for a spinner left visible dead space beside the label,
+    // so the busy state may not claim layout the idle button does not need.
+    assert.doesNotMatch(html, /save-progress-slot/);
+    assert.doesNotMatch(css, /#editorSaveBtn\s*\{[^}]*min-width/);
     assert.doesNotMatch(
       appSource,
       /editorSaveBtn\.classList\.toggle\("is-dirty"/
