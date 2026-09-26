@@ -57,7 +57,6 @@ const directRunPath = process.argv[1]
 const __dirname = path.dirname(modulePath);
 const isDirectRun = directRunPath === modulePath;
 const app = express();
-const PORT = process.env.PORT || 3000;
 const BASE_URLS = {
   ko: "https://www.bskorea.or.kr/bible/korbibReadpage.php",
   en: "https://bible-api.com",
@@ -2750,6 +2749,48 @@ const publicDir = path.join(__dirname, "public");
 const distDir = path.join(__dirname, "dist");
 const httpServer = isDirectRun ? http.createServer(app) : null;
 
+function listenOnce(server, port, host) {
+  return new Promise((resolve, reject) => {
+    const onError = (error) => {
+      server.off("listening", onListening);
+      reject(error);
+    };
+    const onListening = () => {
+      server.off("error", onError);
+      resolve();
+    };
+    server.once("error", onError);
+    server.once("listening", onListening);
+    server.listen(port, host);
+  });
+}
+
+// Vite's default: keep the requested port when it is free, otherwise step
+// forward until one is open. Port 0 already means "any free port".
+async function listenOnAvailablePort(server, port, host) {
+  if (port === 0) {
+    await listenOnce(server, 0, host);
+    return server.address().port;
+  }
+
+  const firstPort = port;
+  for (let attempt = 0; attempt < 100 && port <= 65535; attempt += 1, port += 1) {
+    try {
+      await listenOnce(server, port, host);
+      if (port !== firstPort) {
+        console.log(`Port ${firstPort} is in use, using ${port} instead`);
+      }
+      return port;
+    } catch (error) {
+      if (error.code !== "EADDRINUSE") throw error;
+    }
+  }
+
+  const error = new Error(`No open port from ${firstPort}`);
+  error.code = "EADDRINUSE";
+  throw error;
+}
+
 async function mountFrontend() {
   if (process.env.ENABLE_VITE === "1") {
     const { createServer: createViteServer } = await import("vite");
@@ -2769,7 +2810,7 @@ async function mountFrontend() {
 
 if (isDirectRun) {
   await mountFrontend();
-  httpServer.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://0.0.0.0:${PORT}`);
-  });
+  const requestedPort = process.env.PORT ? Number(process.env.PORT) : 3000;
+  const port = await listenOnAvailablePort(httpServer, requestedPort, "0.0.0.0");
+  console.log(`Server running on http://0.0.0.0:${port}`);
 }

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import fs from "node:fs/promises";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
@@ -17,7 +18,7 @@ const execFileAsync = promisify(execFile);
 const projectRoot = fileURLToPath(new URL("..", import.meta.url));
 const serverPath = path.join(projectRoot, "server.js");
 
-function launchUntilReady(entryPath) {
+function launchUntilReady(entryPath, env = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [entryPath], {
       cwd: projectRoot,
@@ -26,6 +27,7 @@ function launchUntilReady(entryPath) {
         ENABLE_VITE: "0",
         NODE_ENV: "production",
         PORT: "0",
+        ...env,
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -151,10 +153,30 @@ describe("server cover title routing", () => {
       await fs.symlink(serverPath, symlinkPath);
       for (const entryPath of [serverPath, symlinkPath]) {
         const { stdout } = await launchUntilReady(entryPath);
-        assert.match(stdout, /Server running on http:\/\/0\.0\.0\.0:0/);
+        assert.match(stdout, /Server running on http:\/\/0\.0\.0\.0:\d+/);
       }
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("uses the next open port when the requested one is taken", async () => {
+    const blocker = net.createServer();
+    const taken = await new Promise((resolve, reject) => {
+      blocker.once("error", reject);
+      blocker.listen(0, "0.0.0.0", () => resolve(blocker.address().port));
+    });
+
+    try {
+      const { stdout } = await launchUntilReady(serverPath, { PORT: String(taken) });
+      const moved = stdout.match(/Port (\d+) is in use, using (\d+) instead/);
+      const running = stdout.match(/Server running on http:\/\/0\.0\.0\.0:(\d+)/);
+      assert.ok(moved, stdout);
+      assert.equal(Number(moved[1]), taken);
+      assert.equal(running?.[1], moved[2]);
+      assert.notEqual(Number(running[1]), taken);
+    } finally {
+      await new Promise((resolve) => blocker.close(resolve));
     }
   });
 
