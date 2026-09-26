@@ -2027,6 +2027,47 @@ await runScenario(
 );
 
 await runScenario(
+  "legacy upload renders the converted deck after a preview reflow",
+  async (page) => {
+    const uploadGate = createGate();
+    const state = await setup(page, {
+      onUpload: async () => {
+        await uploadGate.promise;
+        return {
+          status: 200,
+          json: {
+            path: "/fixtures/converted-legacy.pptx",
+            originalName: "legacy.ppt",
+            thumbnail: null,
+          },
+        };
+      },
+    });
+    await selectMainSlide(page, 0);
+    await page.locator('input[name="sourceType"][value="upload"]').check();
+
+    const selecting = page.locator("#userPptxFile").setInputFiles({
+      name: "legacy.ppt",
+      mimeType: "application/vnd.ms-powerpoint",
+      buffer: Buffer.from("legacy-ppt"),
+    });
+    await waitForCount(() => state.counts.uploadPost, 1, "legacy upload started");
+
+    // The loading panel changes the editor geometry in production. Reproduce
+    // that resize while conversion is still in flight.
+    await page.setViewportSize({ width: 1100, height: 720 });
+    await page.waitForTimeout(250);
+
+    uploadGate.release();
+    await selecting;
+    await page
+      .locator(".pptx-deck")
+      .getByText("Browser fixture")
+      .waitFor({ state: "visible", timeout: 5000 });
+  }
+);
+
+await runScenario(
   "upload failure preserves selected file draft badge and retry",
   async (page, diagnostics) => {
     const state = await setup(page, {

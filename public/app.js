@@ -3377,8 +3377,12 @@ function renderPreview(slideOverride) {
     skipRender = true;
   }
 
-  // Case 2: File object (Blob) Cache
-  if (data.file) {
+  // Case 2: File object (Blob) Cache. A legacy file is not the rendered
+  // source once conversion finishes, so its converted server path owns the
+  // cache identity instead.
+  const hasLegacyLocalFile =
+    data.file?.name?.toLowerCase().endsWith('.ppt') === true;
+  if (data.file && !hasLegacyLocalFile) {
     const fileId = data.file.name + ':' + data.file.size + ':' + data.file.lastModified;
     if (
       isPreviewCacheHit(
@@ -3396,7 +3400,11 @@ function renderPreview(slideOverride) {
   // Only use this if not overridden by a new file upload. Title slides are
   // drawn from their own fields, so a leftover file path must not freeze them.
   const isTitleType = data.type === 'title' || data.type === 'custom-title';
-  if (data.serverFilePath && !data.file && !isTitleType) {
+  if (
+    data.serverFilePath &&
+    (!data.file || hasLegacyLocalFile) &&
+    !isTitleType
+  ) {
     if (
       isPreviewCacheHit(
         slidePreview.dataset.lastRenderedPath,
@@ -5333,9 +5341,10 @@ function reflowActivePptStage() {
     return;
   }
 
-  // The mounted PPTX viewer owns its own ResizeObserver. Recreating it here
-  // would discard parsing work, zoom, scroll, and lazy-mounted slide state.
-  if (slidePreview?.__pptxPreviewState?.viewer) {
+  // The PPTX viewer owns its own ResizeObserver. Recreating a pending or
+  // mounted viewer here would discard parsing work, zoom, scroll, and
+  // lazy-mounted slide state.
+  if (slidePreview?.__pptxPreviewState) {
     return;
   }
   renderPreview();
@@ -7766,6 +7775,14 @@ userPptxFile.addEventListener('change', async () => {
     const file = userPptxFile.files[0];
     // Auto-upload and convert .ppt files
     if (file.name.toLowerCase().endsWith(".ppt")) {
+      cleanupPreviewResources();
+      // Keep workspace reflow from trying to render the unreadable local .ppt
+      // while the server is producing its .pptx replacement.
+      slidePreview.__pptxPreviewState = {
+        viewer: null,
+        objectUrl: null,
+        pendingConversion: true,
+      };
       slidePreview.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:300px;color:#666;">
                  <div style="font-size:24px;margin-bottom:10px;">⏳</div>
                  <div>PPT 변환 및 업로드 중...</div>
