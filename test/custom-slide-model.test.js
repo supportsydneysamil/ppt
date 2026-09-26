@@ -1360,6 +1360,31 @@ describe("custom slide fabric conversion", () => {
     assert.deepEqual(twice, normalized);
   });
 
+  it("does not lock a text layer just because fabric turned selectable off while editing", () => {
+    const slide = fabricObjectsToCustomSlide([
+      {
+        type: "textbox",
+        elementType: "text",
+        customElementId: "text-1",
+        originX: "center",
+        originY: "center",
+        left: 300,
+        top: 200,
+        width: 200,
+        height: 80,
+        scaleX: 1,
+        scaleY: 1,
+        angle: 0,
+        text: "본문",
+        fill: "#000000",
+        selectable: false,
+        customLocked: false,
+      },
+    ]);
+
+    assert.equal(slide.elements[0].locked, false);
+  });
+
   it("applies slide background color to fabric descriptors", () => {
     const model = normalizeCustomSlide({
       background: { color: "#445566" },

@@ -901,7 +901,7 @@ function fabricObjectToElement(object, orderIndex) {
       stroke: typeof object.stroke === "string" ? object.stroke : "#000000",
       strokeWidth: finiteNumber(object.strokeWidth, 1),
       visible: object.visible !== false && object.customVisible !== false,
-      locked: Boolean(object.customLocked) || object.selectable === false,
+      locked: Boolean(object.customLocked),
       shadow: fabricShadowToModel(object.shadow),
       ...themeRoleFields(object),
     };
@@ -923,7 +923,7 @@ function fabricObjectToElement(object, orderIndex) {
     opacity: finiteNumber(object.opacity, 1),
     zIndex: orderIndex,
     visible: object.visible !== false && object.customVisible !== false,
-    locked: Boolean(object.customLocked) || object.selectable === false,
+    locked: Boolean(object.customLocked),
     shadow: fabricShadowToModel(object.shadow),
     ...themeRoleFields(object),
   };
