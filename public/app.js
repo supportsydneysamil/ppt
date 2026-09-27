@@ -732,6 +732,10 @@ const viewPpt = document.getElementById("view-ppt");
 const slideListContainer = document.getElementById("slideListContainer");
 const selectAllSlidesCheckbox = document.getElementById("selectAllSlidesCheckbox");
 const selectedCountBadge = document.getElementById("selectedCountBadge");
+// Lives in the shared page toolbar, not inside #view-ppt, so it can share one
+// row with the main nav on wide screens; applyViewChange() shows and hides it
+// in step with the view itself.
+const pptTabbar = document.getElementById("pptTabbar");
 const tabSlidesBtn = document.getElementById("tabSlidesBtn");
 const tabTemplatesBtn = document.getElementById("tabTemplatesBtn");
 const templateCountBadge = document.getElementById("templateCountBadge");
@@ -949,9 +953,6 @@ function applyPptWorkspaceUi() {
 
   if (pptSlidesPaneBtn) {
     pptSlidesPaneBtn.setAttribute("aria-expanded", String(pptWorkspaceUi.slidesOpen));
-    pptSlidesPaneBtn.textContent = pptWorkspaceUi.slidesOpen
-      ? "슬라이드 닫기"
-      : "슬라이드 열기";
   }
   if (slidePanelCollapseBtn) {
     slidePanelCollapseBtn.setAttribute(
@@ -964,9 +965,6 @@ function applyPptWorkspaceUi() {
       "aria-expanded",
       String(pptWorkspaceUi.inspectorOpen)
     );
-    pptInspectorPaneBtn.textContent = pptWorkspaceUi.inspectorOpen
-      ? "속성 닫기"
-      : "속성 열기";
   }
   if (inspectorPanelCollapseBtn) {
     inspectorPanelCollapseBtn.setAttribute(
@@ -980,9 +978,6 @@ function applyPptWorkspaceUi() {
       "aria-pressed",
       String(pptWorkspaceUi.focusMode)
     );
-    pptFocusModeBtn.textContent = pptWorkspaceUi.focusMode
-      ? "집중 모드 종료"
-      : "집중 모드";
   }
 
   if (slideListPanel) {
@@ -2498,6 +2493,7 @@ function applyViewChange(viewName) {
   if (viewName === "extractor") {
     viewExtractor.style.display = "block";
     viewPpt.style.display = "none";
+    if (pptTabbar) pptTabbar.hidden = true;
     navExtractor.classList.add("active");
     navPpt.classList.remove("active");
   } else {
@@ -2505,6 +2501,7 @@ function applyViewChange(viewName) {
     // Column flex, not grid: the editor surface hands the workspace whatever
     // height the tab bar leaves, and the bars above it come and go.
     viewPpt.style.display = "flex";
+    if (pptTabbar) pptTabbar.hidden = false;
     navExtractor.classList.remove("active");
     navPpt.classList.add("active");
     renderSlideList();

@@ -20,6 +20,83 @@
         <button id="navExtractor" class="nav-item active">성경 텍스트</button>
         <button id="navPpt" class="nav-item">PPT 생성기</button>
       </nav>
+
+      <div class="ppt-tabbar" id="pptTabbar" hidden>
+        <nav class="ppt-tabs" role="tablist" aria-label="PPT 생성기 영역">
+          <button id="tabSlidesBtn" type="button" class="ppt-tab is-active" role="tab" aria-selected="true">
+            슬라이드
+          </button>
+          <button id="tabTemplatesBtn" type="button" class="ppt-tab" role="tab" aria-selected="false">
+            템플릿 <span id="templateCountBadge" class="ppt-tab-count">0</span>
+          </button>
+        </nav>
+        <!-- View controls only. What happens to the list lives in the slide
+             list panel, and what happens to one slide lives in the editor
+             header, so no bar mixes two scopes. -->
+        <div class="ppt-tabbar-actions" id="pptTabbarActions" role="group" aria-label="보기">
+          <button
+            id="pptSlidesPaneBtn"
+            type="button"
+            class="ppt-icon-btn ppt-pane-toggle"
+            aria-controls="slideListPanel"
+            aria-expanded="true"
+            aria-label="슬라이드 패널"
+            title="슬라이드 패널"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="4" y="5" width="16" height="2.4" rx="1.2"></rect>
+              <rect x="4" y="10.8" width="16" height="2.4" rx="1.2"></rect>
+              <rect x="4" y="16.6" width="16" height="2.4" rx="1.2"></rect>
+            </svg>
+          </button>
+          <button
+            id="pptInspectorPaneBtn"
+            type="button"
+            class="ppt-icon-btn ppt-pane-toggle"
+            aria-controls="slideForm customSlideInspector"
+            aria-expanded="true"
+            aria-label="속성 패널"
+            title="속성 패널"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="5" y="4" width="2" height="16" rx="1"></rect>
+              <circle cx="6" cy="9" r="2.6"></circle>
+              <rect x="11" y="4" width="2" height="16" rx="1"></rect>
+              <circle cx="12" cy="15" r="2.6"></circle>
+              <rect x="17" y="4" width="2" height="16" rx="1"></rect>
+              <circle cx="18" cy="7" r="2.6"></circle>
+            </svg>
+          </button>
+          <button
+            id="pptFocusModeBtn"
+            type="button"
+            class="ppt-icon-btn"
+            aria-pressed="false"
+            aria-label="집중 모드"
+            title="집중 모드"
+          >
+            <svg class="icon-outline" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M4 9V4h5M4 4l6 6M20 9V4h-5M20 4l-6 6M4 15v5h5M4 20l6-6M20 15v5h-5M20 20l-6-6"
+              ></path>
+            </svg>
+          </button>
+          <button
+            id="customEditorPopoutBtn"
+            type="button"
+            class="ppt-icon-btn"
+            hidden
+            aria-label="새 창으로 열기"
+            title="새 창으로 열기"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M14 4h6v6h-2V7.4l-7.3 7.3-1.4-1.4L16.6 6H14V4Z"></path>
+              <path d="M5 6h6v2H7v10h10v-4h2v6H5V6Z"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+
       <button
         id="appSettingsBtn"
         type="button"
@@ -226,56 +303,6 @@
     </div>
 
     <div id="view-ppt" style="display: none;">
-      <div class="ppt-tabbar">
-        <nav class="ppt-tabs" role="tablist" aria-label="PPT 생성기 영역">
-          <button id="tabSlidesBtn" type="button" class="ppt-tab is-active" role="tab" aria-selected="true">
-            슬라이드
-          </button>
-          <button id="tabTemplatesBtn" type="button" class="ppt-tab" role="tab" aria-selected="false">
-            템플릿 <span id="templateCountBadge" class="ppt-tab-count">0</span>
-          </button>
-        </nav>
-        <!-- View controls only. What happens to the list lives in the slide
-             list panel, and what happens to one slide lives in the editor
-             header, so no bar mixes two scopes. -->
-        <div class="ppt-tabbar-actions" id="pptTabbarActions" role="group" aria-label="보기">
-          <button
-            id="pptSlidesPaneBtn"
-            type="button"
-            class="ghost small ppt-pane-toggle"
-            aria-controls="slideListPanel"
-            aria-expanded="true"
-          >
-            슬라이드
-          </button>
-          <button
-            id="pptInspectorPaneBtn"
-            type="button"
-            class="ghost small ppt-pane-toggle"
-            aria-controls="slideForm customSlideInspector"
-            aria-expanded="true"
-          >
-            속성
-          </button>
-          <button
-            id="pptFocusModeBtn"
-            type="button"
-            class="ghost small"
-            aria-pressed="false"
-          >
-            집중 모드
-          </button>
-          <button
-            id="customEditorPopoutBtn"
-            type="button"
-            class="ghost small"
-            hidden
-          >
-            새 창으로 열기
-          </button>
-        </div>
-      </div>
-
       <section id="templateGallery" class="template-gallery" hidden>
         <div class="template-gallery-toolbar">
           <input

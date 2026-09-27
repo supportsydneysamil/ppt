@@ -132,16 +132,23 @@ body {
   min-width: 0;
 }
 
+/* One row holds the app switcher, the PPT sub-tabs and their view actions,
+   and the settings trigger. It used to be two full-height bars stacked on top
+   of each other — the switcher never needed a row of its own, so merging them
+   gives every screen back the height the second border and padding cost, and
+   a short window the most (see the max-height rule further down). Below
+   900px there is little width to share between the two groups and plenty of
+   height to spare from page scrolling, so the PPT tab bar drops back to its
+   own line there instead. */
 .page-toolbar {
-  display: grid;
-  grid-template-columns: var(--ctrl-h-md) minmax(0, 1fr) var(--ctrl-h-md);
-  align-items: start;
-  gap: 16px;
-}
-
-.page-toolbar::before {
-  content: "";
-  grid-column: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  /* Zero gap here, not the old bar's 16px: the active tab's underline sits at
+     `bottom: -1px` on the tab itself, so it only reaches this border when
+     nothing pads the row below the tabs. */
 }
 
 .hero {
@@ -1434,20 +1441,19 @@ body {
 
 /* Navigation */
 .main-nav {
-  grid-column: 2;
   display: flex;
-  justify-content: center;
   gap: 16px;
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 16px;
-  margin-bottom: 0;
-  flex: 1 1 auto;
-  min-width: 0;
+  flex: 0 0 auto;
+  /* Neither this nor the settings trigger sit against the shared border the
+     way the active tab's underline does, so both keep the old bar's 16px
+     clearance above it themselves instead of the row padding everyone. */
+  margin-bottom: 16px;
 }
 
 .app-settings-trigger {
-  grid-column: 3;
   flex: 0 0 auto;
+  margin-left: auto;
+  margin-bottom: 16px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1480,16 +1486,6 @@ body {
   fill: currentColor;
 }
 
-@media (max-width: 640px) {
-  .page-toolbar {
-    align-items: stretch;
-  }
-
-  .app-settings-trigger {
-    align-self: flex-end;
-  }
-}
-
 .nav-item {
   display: inline-flex;
   align-items: center;
@@ -1515,13 +1511,14 @@ body {
   color: var(--brand);
 }
 
-/* PPT Tab Bar (슬라이드 / 템플릿) */
+/* PPT Tab Bar (슬라이드 / 템플릿) — shares the page toolbar's row and border on
+   wide screens; @media (max-width: 899px) below gives it back its own line. */
 .ppt-tabbar {
   display: flex;
   align-items: flex-end;
   gap: 16px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 24px;
+  flex: 1 1 auto;
+  min-width: 0;
   /* The actions on the right belong to the slide list alone, and they stand a
      couple of pixels taller than the tabs. Letting the row shrink to the tabs
      when they go away moved the tabs, and everything under them, on every tab
@@ -1529,11 +1526,35 @@ body {
   min-height: calc(var(--ctrl-h-sm) + var(--sp-2) + 1px);
 }
 
+.ppt-tabbar[hidden] {
+  display: none;
+}
+
+@media (max-width: 899px) {
+  .ppt-tabbar {
+    flex-basis: 100%;
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+  }
+}
+
 .ppt-tabs {
   display: flex;
   gap: 4px;
   flex: 1 1 auto;
   min-width: 0;
+  /* The tabs are the only thing in this bar allowed to give up space: the
+     actions beside them (슬라이드/속성/집중 모드) must stay reachable without a
+     scroll, so this container absorbs the shortfall instead of the bar
+     clipping or wrapping. It used to kick in only under 800px, which left a
+     compact-width workspace (900-1279px) and the 800-899px window with no
+     fallback at all when the tab bar did not fit. */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.ppt-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .ppt-tab {
@@ -1613,6 +1634,62 @@ body {
 }
 
 .ppt-tabbar-actions[hidden] {
+  display: none;
+}
+
+/* Icon-only view controls (슬라이드/속성 패널, 집중 모드, 새 창으로 열기). Text
+   labels here cost width and height for no real gain — a screen reader hears
+   the aria-label either way, and everyone else gets a title tooltip.
+   `.icon-btn` already names a smaller `.ghost` modifier elsewhere, so this
+   free-standing button gets its own name instead of colliding with it. */
+.ppt-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--ctrl-h-sm);
+  height: var(--ctrl-h-sm);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.ppt-icon-btn svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+.ppt-icon-btn svg.icon-outline {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ppt-icon-btn:hover {
+  color: var(--brand);
+  border-color: var(--brand);
+}
+
+.ppt-icon-btn:focus-visible {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: var(--focus-ring);
+}
+
+.ppt-icon-btn[aria-expanded="true"],
+.ppt-icon-btn[aria-pressed="true"] {
+  color: var(--brand);
+  background: var(--brand-tint);
+  border-color: var(--brand);
+}
+
+.ppt-icon-btn[hidden] {
   display: none;
 }
 
@@ -2458,15 +2535,6 @@ body {
 @media (max-width: 800px) {
   .ppt-tabbar {
     gap: 8px;
-  }
-
-  .ppt-tabs {
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-
-  .ppt-tabs::-webkit-scrollbar {
-    display: none;
   }
 
   .ppt-tab {
@@ -4792,10 +4860,6 @@ body[data-theme="light"] .rte-textarea {
     padding-bottom: 48px;
   }
 
-  .page[data-ppt-surface="editor"] .ppt-tabbar {
-    margin-bottom: 16px;
-  }
-
   .page[data-ppt-surface="editor"] .ppt-interface {
     flex: 1 1 auto;
     min-height: 0;
@@ -4848,6 +4912,42 @@ body[data-theme="light"] .rte-textarea {
   .page[data-ppt-surface="editor"] .custom-editor-body {
     min-height: 0;
     overflow-y: auto;
+  }
+}
+
+/* The shell above gives every scrollable region the real remaining height, but
+   the chrome above those regions — the page's own top padding and the toolbar
+   row itself — never gave any of it back: it reserved the same height whether
+   the window was 1400px tall or 650px. A small laptop's browser viewport
+   lands in that second range once its own chrome is subtracted, so the
+   workspace lost the same fixed amount a roomy monitor never missed. This
+   thins the toolbar further so a short window gets that space back instead of
+   the panels below it just being squeezed further, with no floor left to
+   shrink into. */
+@media (max-height: 760px) {
+  .page {
+    padding-top: 20px;
+    gap: 16px;
+  }
+
+  .main-nav,
+  .app-settings-trigger {
+    margin-bottom: 8px;
+  }
+
+  .nav-item {
+    min-height: var(--ctrl-h-sm);
+    font-size: 15px;
+  }
+
+  .app-settings-trigger,
+  .ppt-icon-btn {
+    width: var(--ctrl-h-xs);
+    height: var(--ctrl-h-xs);
+  }
+
+  .ppt-tab {
+    padding: 6px 12px;
   }
 }
 
