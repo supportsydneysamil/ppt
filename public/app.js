@@ -401,6 +401,115 @@ function handleStepperButtonClick(event) {
   input.select();
 }
 
+// Each verse form names the fields a first/last jump button reads from.
+const VERSE_JUMP_SCOPES = [
+  {
+    testament: "testament",
+    book: "book",
+    koVersion: "koVersionSelect",
+    enVersion: "enVersionSelect",
+    chapter: "chapter",
+    start: "startVerse",
+    end: "endVerse",
+  },
+  {
+    testament: "scriptureTestament",
+    book: "scriptureBook",
+    koVersion: "scriptureKoVersion",
+    enVersion: "scriptureEnVersion",
+    chapter: "scriptureChapter",
+    start: "scriptureStartVerse",
+    end: "scriptureEndVerse",
+  },
+];
+
+function findSelectedBook(testamentId, bookSlug) {
+  return dataCache?.testaments
+    .find((testament) => testament.id === testamentId)
+    ?.books.find((book) => book.slugKo === bookSlug);
+}
+
+async function fetchChapterLastVerse(scope, chapter) {
+  const params = new URLSearchParams({
+    testament: document.getElementById(scope.testament).value,
+    book: document.getElementById(scope.book).value,
+    chapter: String(chapter),
+  });
+  const koVersion = document.getElementById(scope.koVersion).value;
+  const enVersion = document.getElementById(scope.enVersion).value;
+  if (koVersion) params.set("koVersion", koVersion);
+  if (enVersion) params.set("enVersion", enVersion);
+
+  const resp = await fetch(`/api/chapter-info?${params.toString()}`);
+  const payload = await resp.json().catch(() => ({}));
+  if (!resp.ok || !parsePositiveNumber(payload.lastVerse)) {
+    throw new Error(payload.error || "failed to load chapter info");
+  }
+  return payload.lastVerse;
+}
+
+function setJumpValue(input, value) {
+  input.value = String(value);
+  syncVerseRange(input);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+async function handleVerseJumpClick(event) {
+  event.preventDefault();
+  const button = event.currentTarget;
+  const targetId = button.dataset.jumpTarget;
+  const isLast = button.dataset.jump === "last";
+  const scope = VERSE_JUMP_SCOPES.find((entry) =>
+    [entry.chapter, entry.start, entry.end].includes(targetId)
+  );
+  const input = document.getElementById(targetId);
+  if (!scope || !(input instanceof HTMLInputElement)) {
+    return;
+  }
+
+  if (!isLast) {
+    setJumpValue(input, 1);
+    return;
+  }
+
+  if (targetId === scope.chapter) {
+    const book = findSelectedBook(
+      document.getElementById(scope.testament).value,
+      document.getElementById(scope.book).value
+    );
+    if (!book?.chapters) {
+      showToast("먼저 책을 선택하세요.");
+      return;
+    }
+    setJumpValue(input, book.chapters);
+    return;
+  }
+
+  // The last verse depends on the chapter, so an empty chapter starts at 1.
+  const chapterInputEl = document.getElementById(scope.chapter);
+  let chapter = parsePositiveNumber(chapterInputEl.value);
+  if (chapter === null) {
+    chapter = 1;
+    setJumpValue(chapterInputEl, chapter);
+  }
+
+  const label = button.textContent;
+  button.disabled = true;
+  button.textContent = "확인 중...";
+  try {
+    setJumpValue(input, await fetchChapterLastVerse(scope, chapter));
+  } catch (err) {
+    showToast("마지막 절을 불러오지 못했습니다.");
+  } finally {
+    button.disabled = false;
+    button.textContent = label;
+  }
+}
+
+document.querySelectorAll(".jump-btn").forEach((button) => {
+  button.addEventListener("click", handleVerseJumpClick);
+});
+
 testamentSelect.addEventListener("change", renderBooks);
 form.addEventListener("submit", handleSubmit);
 downloadBtn.addEventListener("click", handleDownload);

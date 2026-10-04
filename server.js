@@ -1069,6 +1069,15 @@ app.get("/api/verses", async (req, res) => {
   }
 });
 
+app.get("/api/chapter-info", async (req, res) => {
+  try {
+    const lastVerse = await getChapterLastVerse(req.query);
+    return res.json({ lastVerse });
+  } catch (err) {
+    return res.status(err.statusCode || 502).json({ error: err.message });
+  }
+});
+
 app.get("/api/pptx", async (req, res) => {
   try {
     const payload = await getVersePayload(req.query);
@@ -1412,6 +1421,70 @@ function normalizeEnVersion(value) {
   const err = new Error("invalid en translation");
   err.statusCode = 400;
   throw err;
+}
+
+// Verse counts differ between translations, so the last verse is read from the
+// same source the verses come from, once per translation and chapter.
+const chapterLastVerseCache = new Map();
+
+async function getChapterLastVerse(query) {
+  const { testament, book, chapter, koVersion, enVersion } = query;
+  const testamentEntry = booksData.testaments.find((t) => t.id === testament);
+  const bookEntry = testamentEntry?.books.find(
+    (b) => b.slugKo === book || b.slugEn === book || b.name === book
+  );
+  const chapterNum = Number.parseInt(chapter, 10);
+  if (!bookEntry || !Number.isFinite(chapterNum) || chapterNum <= 0) {
+    const err = new Error("invalid testament, book or chapter");
+    err.statusCode = 400;
+    throw err;
+  }
+  if (bookEntry.chapters && chapterNum > bookEntry.chapters) {
+    const err = new Error("chapter out of range");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  // Korean wins when both are chosen, since its numbering is what the slides show.
+  const language = koVersion || !enVersion ? "ko" : "en";
+  const url = buildUrl(
+    language,
+    testamentEntry,
+    bookEntry,
+    chapterNum,
+    language === "ko" ? normalizeKoVersion(koVersion) : null,
+    language === "en" ? normalizeEnVersion(enVersion) : null
+  );
+  if (chapterLastVerseCache.has(url)) {
+    return chapterLastVerseCache.get(url);
+  }
+
+  const resp = await fetch(url, {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (compatible; biblics-extractor/1.0)",
+    },
+  });
+  if (!resp.ok) {
+    const err = new Error("failed to fetch source");
+    err.statusCode = 502;
+    throw err;
+  }
+  const items =
+    language === "ko"
+      ? parseChapterBskorea(await resp.text())
+      : parseBibleApiChapter(await resp.json());
+  const verseNums = items
+    .filter((item) => item.type === "verse" && Number.isFinite(item.num))
+    .map((item) => item.num);
+  if (verseNums.length === 0) {
+    const err = new Error("no verses found");
+    err.statusCode = 404;
+    throw err;
+  }
+
+  const lastVerse = Math.max(...verseNums);
+  chapterLastVerseCache.set(url, lastVerse);
+  return lastVerse;
 }
 
 async function getVersePayload(query) {

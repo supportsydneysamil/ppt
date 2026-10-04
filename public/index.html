@@ -152,9 +152,10 @@
             </label>
           </div>
 
-          <label class="field">
+          <label class="field" for="chapter">
             <span class="field-label">장</span>
-            <div class="number-stepper">
+            <div class="number-stepper has-jumps">
+              <button type="button" class="jump-btn" data-jump-target="chapter" data-jump="first" aria-label="첫 장으로 이동">첫 장</button>
               <button
                 type="button"
                 class="stepper-btn"
@@ -173,14 +174,16 @@
                 aria-label="장 늘리기"
               >
                 +
-              </button>
+              </button>
+              <button type="button" class="jump-btn" data-jump-target="chapter" data-jump="last" aria-label="마지막 장으로 이동">끝 장</button>
             </div>
           </label>
 
           <div class="range">
-            <label class="field">
+            <label class="field" for="startVerse">
               <span class="field-label">시작 절</span>
-              <div class="number-stepper">
+              <div class="number-stepper has-jumps">
+                <button type="button" class="jump-btn" data-jump-target="startVerse" data-jump="first" aria-label="첫 절로 이동">첫 절</button>
                 <button
                   type="button"
                   class="stepper-btn"
@@ -199,12 +202,12 @@
                   aria-label="시작 절 늘리기"
                 >
                   +
-                </button>
+                </button>
               </div>
             </label>
-            <label class="field">
+            <label class="field" for="endVerse">
               <span class="field-label">끝 절</span>
-              <div class="number-stepper">
+              <div class="number-stepper has-jumps">
                 <button
                   type="button"
                   class="stepper-btn"
@@ -223,7 +226,8 @@
                   aria-label="끝 절 늘리기"
                 >
                   +
-                </button>
+                </button>
+                <button type="button" class="jump-btn" data-jump-target="endVerse" data-jump="last" aria-label="마지막 절로 이동">끝 절</button>
               </div>
             </label>
           </div>
@@ -901,9 +905,10 @@
                   </label>
                 </div>
 
-                <label class="editor-row">
+                <label class="field" for="scriptureChapter">
                   <span class="field-label">장</span>
-                  <div class="number-stepper">
+                  <div class="number-stepper has-jumps">
+                    <button type="button" class="jump-btn" data-jump-target="scriptureChapter" data-jump="first" aria-label="첫 장으로 이동">첫 장</button>
                     <button
                       type="button"
                       class="stepper-btn"
@@ -922,14 +927,16 @@
                       aria-label="장 늘리기"
                     >
                       +
-                    </button>
+                    </button>
+                    <button type="button" class="jump-btn" data-jump-target="scriptureChapter" data-jump="last" aria-label="마지막 장으로 이동">끝 장</button>
                   </div>
                 </label>
 
                 <div class="range">
-                  <label class="field">
+                  <label class="field" for="scriptureStartVerse">
                     <span class="field-label">시작 절</span>
-                    <div class="number-stepper">
+                    <div class="number-stepper has-jumps">
+                      <button type="button" class="jump-btn" data-jump-target="scriptureStartVerse" data-jump="first" aria-label="첫 절로 이동">첫 절</button>
                       <button
                         type="button"
                         class="stepper-btn"
@@ -948,12 +955,12 @@
                         aria-label="시작 절 늘리기"
                       >
                         +
-                      </button>
+                      </button>
                     </div>
                   </label>
-                  <label class="field">
+                  <label class="field" for="scriptureEndVerse">
                     <span class="field-label">끝 절</span>
-                    <div class="number-stepper">
+                    <div class="number-stepper has-jumps">
                       <button
                         type="button"
                         class="stepper-btn"
@@ -972,7 +979,8 @@
                         aria-label="끝 절 늘리기"
                       >
                         +
-                      </button>
+                      </button>
+                      <button type="button" class="jump-btn" data-jump-target="scriptureEndVerse" data-jump="last" aria-label="마지막 절로 이동">끝 절</button>
                     </div>
                   </label>
                 </div>
