@@ -14,6 +14,12 @@ import {
   worshipEnFontSize,
   worshipKoFontSize,
 } from "../lib/title-slide.js";
+import {
+  formatServiceDateEn,
+  formatServiceDateKo,
+  todayIsoDate,
+  upcomingSundays,
+} from "../lib/title-slide-date.js";
 
 function parse(slideXml) {
   return new DOMParser().parseFromString(slideXml, "text/xml");
@@ -146,6 +152,24 @@ describe("buildTitleContent", () => {
       ""
     );
     assert.equal(buildTitleContent({ serviceDate: "nope" }).koDate, "");
+  });
+
+  it("refreshes automatic date modes instead of trusting the stored date", () => {
+    const today = todayIsoDate();
+    assert.equal(
+      buildTitleContent({ dateMode: "next-sunday", serviceDate: "2020-01-05" })
+        .koDate,
+      formatServiceDateKo(upcomingSundays(1, today)[0])
+    );
+    assert.equal(
+      buildTitleContent({ dateMode: "today", serviceDate: "2020-01-05" }).enDate,
+      formatServiceDateEn(today)
+    );
+    assert.equal(
+      buildTitleContent({ dateMode: "custom", serviceDate: "2020-01-05" })
+        .koDate,
+      "2020년 1월 5일 주일"
+    );
   });
 });
 
