@@ -2436,6 +2436,51 @@ label:has(> .number-stepper.has-jumps) {
   padding-right: 4px;
 }
 
+/* The list's native bar is hidden (see the shared rule further down), so it
+   draws its own: a thumb in the panel's right padding, clear of the cards,
+   shown while the list scrolls. */
+.overlay-scrollbar {
+  position: absolute;
+  right: 5px;
+  z-index: 2;
+  width: 8px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 300ms ease;
+}
+
+.overlay-scrollbar.is-visible {
+  opacity: 1;
+  transition-duration: 120ms;
+}
+
+.overlay-scrollbar-thumb {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 32%, transparent);
+  transition: width 120ms ease, background-color 120ms ease;
+}
+
+.overlay-scrollbar.is-visible .overlay-scrollbar-thumb {
+  pointer-events: auto;
+}
+
+.overlay-scrollbar-thumb:hover,
+.overlay-scrollbar.is-dragging .overlay-scrollbar-thumb {
+  width: 8px;
+  background: color-mix(in srgb, var(--ink) 48%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overlay-scrollbar,
+  .overlay-scrollbar-thumb {
+    transition: none;
+  }
+}
+
 .slide-card {
   position: relative;
   background: var(--panel-soft);
@@ -2785,7 +2830,9 @@ label:has(> .number-stepper.has-jumps) {
 
    This is a deliberate trade. A hidden bar is one less cue that a region
    scrolls, and every region below leans on its own clipped content to say so
-   instead. Wheel, trackpad, touch and keyboard scrolling are untouched. */
+   instead, except the slide list, which draws an overlay thumb that takes no
+   width (`overlay-scrollbar.js`). Wheel, trackpad, touch and keyboard
+   scrolling are untouched. */
 .slide-cards,
 .editor-form,
 .custom-editor-stage,
@@ -5191,8 +5238,11 @@ body[data-theme="light"] .rte-textarea {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  /* Still positioned, because the list's overlay scrollbar is placed against
+     the panel; the list scrolls in its own box down to 801px. */
   .ppt-interface[data-layout-mode="mobile"] .slide-list-panel {
-    position: static;
+    position: relative;
+    top: auto;
     width: auto;
     max-height: none;
     padding: 16px;

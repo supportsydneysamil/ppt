@@ -49,6 +49,7 @@ import {
   createPptWorkspaceUiState,
   reducePptWorkspaceUi,
 } from "./ppt-workspace-ui.js";
+import { attachOverlayScrollbar } from "./overlay-scrollbar.js";
 import {
   clearRecovery,
   createPopoutSequence,
@@ -844,6 +845,7 @@ const viewExtractor = document.getElementById("view-extractor");
 const viewPpt = document.getElementById("view-ppt");
 
 const slideListContainer = document.getElementById("slideListContainer");
+attachOverlayScrollbar(slideListContainer);
 const selectAllSlidesCheckbox = document.getElementById("selectAllSlidesCheckbox");
 const selectedCountBadge = document.getElementById("selectedCountBadge");
 // Lives in the shared page toolbar, not inside #view-ppt, so it can share one

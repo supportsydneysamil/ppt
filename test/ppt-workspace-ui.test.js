@@ -590,6 +590,27 @@ describe("PPT panel collapse affordances", () => {
     );
   });
 
+  it("draws the slide list's own scrollbar outside the list", () => {
+    // renderSlideList() empties the list wholesale, so the track has to live in
+    // the panel or every render would take it away.
+    assert.match(
+      appSource,
+      /import \{ attachOverlayScrollbar \} from "\.\/overlay-scrollbar\.js";/
+    );
+    assert.match(appSource, /attachOverlayScrollbar\(slideListContainer\);/);
+    assert.match(css, /\.overlay-scrollbar\s*\{[^}]*position:\s*absolute/);
+    // The stacked layout still scrolls the list down to 801px, so the panel
+    // has to stay the track's containing block there too.
+    assert.match(
+      css,
+      /\[data-layout-mode="mobile"\] \.slide-list-panel \{\s*position:\s*relative;\s*top:\s*auto/
+    );
+    assert.match(
+      css,
+      /\.overlay-scrollbar-thumb\s*\{[^}]*color-mix\(in srgb, var\(--ink\) 32%, transparent\)/
+    );
+  });
+
   it("gives every view the same shell so the page never scrolls", () => {
     // A document view and a shell view disagree about the page's scrollbar, and
     // that disagreement shifted the centred layout on every view switch.
