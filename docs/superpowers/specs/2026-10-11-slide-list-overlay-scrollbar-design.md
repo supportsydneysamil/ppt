@@ -60,8 +60,10 @@ macOS 스크롤바 설정이 "자동"이고 마우스가 연결되면 브라우�
 트랙은 `.slide-list-panel`(이미 `position: relative`)의 자식이다. 목록이 다시
 그려져도 지워지지 않는다. 위치는 목록 상자에 맞춘다: `top = pane.offsetTop`,
 `height = pane.clientHeight`. `offsetTop`이 패널 기준이려면 패널이 위치 지정
-요소여야 한다. 와이드(`relative`/`sticky`)와 컴팩트(`absolute`)는 그렇고, 패널이
-`static`이 되는 모바일에서는 목록이 스크롤하지 않아 트랙이 숨어 있다.
+요소여야 한다. 와이드(`relative`/`sticky`)와 컴팩트(`absolute`)는 그렇다. 모바일
+규칙은 패널을 `static`으로 두고 있었는데, 801–899px에서는 목록이 여전히 자기
+상자 안에서 스크롤하므로 `position: relative; top: auto`로 바꾼다. `top: auto`는
+같은 구간에 걸린 sticky용 `top: 24px`이 패널을 밀어내지 않게 한다.
 
 트랙은 패널 오른쪽 안쪽 여백(16px)에 둔다. 패널 테두리에서 5px 들어온 자리에
 6px 폭 막대, 호버·드래그 중에는 8px. 카드는 패널 패딩 16px과 목록의
@@ -118,7 +120,9 @@ macOS 스크롤바 설정이 "자동"이고 마우스가 연결되면 브라우�
   스크롤되더라도 트랙과 목록이 같은 스크롤 좌표 안에 있어 함께 움직인다.
   실제 화면에서 따로 확인한다.
 - **접힘:** 기존 `.slide-list-panel > * { visibility: hidden }`이 트랙도 숨긴다.
-- **모바일(900px 미만):** 목록이 `overflow-y: visible`이라 넘침이 없고,
+- **모바일 801–899px:** 패널이 세로로 쌓이지만 목록은 `min(70vh, 960px)` 상자
+  안에서 스크롤하므로 막대가 나타난다.
+- **모바일 800px 이하:** 목록이 `overflow-y: visible`이라 넘침이 없고,
   `computeThumb`가 `null`을 돌려 트랙이 숨는다.
 
 ## 비목표
