@@ -1413,12 +1413,13 @@ function refreshSaveState() {
     editorDuplicateBtn.disabled =
       !draft || duplicateInProgress || isSaveBusy(getSaveState());
   }
+  const activeSlide = currentSlideId
+    ? slides.find((entry) => entry.id === currentSlideId)
+    : null;
+  updateButtonsState(activeSlide);
   if (editorCancelBtn) {
     // Revert needs a saved record to restore. A slide that never reached the
     // server has nothing behind it, so dropping it belongs to delete.
-    const activeSlide = currentSlideId
-      ? slides.find((entry) => entry.id === currentSlideId)
-      : null;
     const unsaved = isSlideUnsaved(activeSlide);
     editorCancelBtn.disabled = !slideDirty || unsaved;
     editorCancelBtn.title = unsaved
@@ -2985,7 +2986,9 @@ function getSelectedSlides() {
 }
 
 function hasPendingSelectionEdits() {
-  return getSelectedSlides().some((slide) => !slide.saved);
+  return getSelectedSlides().some(
+    (slide) => !slide.saved || (slide.id === currentSlideId && slideDirty)
+  );
 }
 
 function updateSlideListControls() {
@@ -5902,8 +5905,10 @@ async function confirmCurrentSlideReset() {
 // Saving must not rearrange the command bar. Download is the only action the
 // server gates, so it stays in place and says why it is unavailable instead of
 // appearing from nowhere once the slide lands.
+// Downloads render the stored record, so pending edits would be left out of
+// the file even though the preview already shows them.
 function updateButtonsState(slide) {
-  const unsaved = isSlideUnsaved(slide);
+  const unsaved = isSlideUnsaved(slide) || slideDirty;
   if (editorDownloadBtn) {
     editorDownloadBtn.disabled = unsaved;
     editorDownloadBtn.title = unsaved
@@ -6620,7 +6625,7 @@ async function saveCurrentSlide({ silent = false } = {}) {
 async function downloadSlide() {
   if (!currentSlideId) return;
   const slide = slides.find(s => s.id === currentSlideId);
-  if (!slide || !slide.saved) return;
+  if (!slide || !slide.saved || slideDirty) return;
 
   if (slide.type === 'title') {
     try {

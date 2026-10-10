@@ -3443,6 +3443,55 @@ await runScenario(
   }
 );
 
+await runScenario(
+  "an unsaved title date cannot be downloaded as the stale saved date",
+  async (page, diagnostics) => {
+    const exportRequests = [];
+    await setup(page, {
+      slides: [
+        slide("saved-title", "주일예배", "title", {
+          churchName: "테스트 교회",
+          serviceDate: "2026-10-11",
+        }),
+      ],
+      onOtherApi: ({ url }) => {
+        if (
+          url.pathname === "/api/create-title-slide-pptx" ||
+          url.pathname === "/api/slides/export-pptx"
+        ) {
+          exportRequests.push(url.pathname);
+          return { status: 200, body: validPptxBuffer };
+        }
+        return null;
+      },
+    });
+    await selectMainSlide(page, 0);
+    assert.equal(await page.locator("#editorDownloadBtn").isDisabled(), false);
+
+    await page.locator("#titleServiceDate").fill("2026-10-25");
+    assert.match(await page.locator("#slidePreview").innerText(), /10월 25일/);
+    assert.equal(
+      await page.locator("#editorDownloadBtn").isDisabled(),
+      true,
+      "the editor download must wait for the edited date to be saved"
+    );
+
+    await page.locator("#selectAllSlidesCheckbox").check();
+    await page.locator("#bulkActionMenuBtn").click();
+    await page.locator("#bulkDownloadBtn").click();
+    await page.waitForTimeout(200);
+    assert.deepEqual(exportRequests, [], "no export may send the stale record");
+    assert.match(
+      diagnostics.alerts.at(-1)?.message || "",
+      /저장되지 않은 항목/
+    );
+
+    await page.locator("#editorSaveBtn").click();
+    await expectToast(page, "슬라이드가 저장되었습니다");
+    assert.equal(await page.locator("#editorDownloadBtn").isDisabled(), false);
+  }
+);
+
 await browser.close();
 if (server) {
   server.kill();
