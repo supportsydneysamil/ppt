@@ -494,10 +494,15 @@ async function handleVerseJumpClick(event) {
   }
 
   const label = button.textContent;
+  const slideId = currentSlideId;
   button.disabled = true;
   button.textContent = "확인 중...";
   try {
-    setJumpValue(input, await fetchChapterLastVerse(scope, chapter));
+    const lastVerse = await fetchChapterLastVerse(scope, chapter);
+    // The answer is for the slide that asked, not one selected meanwhile.
+    if (currentSlideId === slideId) {
+      setJumpValue(input, lastVerse);
+    }
   } catch (err) {
     showToast("마지막 절을 불러오지 못했습니다.");
   } finally {
@@ -2083,11 +2088,7 @@ slideTypeSelect.addEventListener('change', () => {
     maybeAutoNameCustomTitleSlide();
   }
   if (slideTypeSelect.value === 'scripture') {
-    fillScriptureBookSelects(getCurrentTypeChangeSource() || {});
-    if (scriptureIncludeTitle) scriptureIncludeTitle.checked = true;
-    setScriptureTitleSlideType("말씀");
-    syncScriptureTitleTypeUi();
-    syncScriptureImageUI(current);
+    populateScriptureEditor(scriptureEditorSource(current));
   }
   updateSettingsVisibility();
   if (slideTypeSelect.value === 'custom') {
@@ -2104,6 +2105,7 @@ hymnLoadBtn.addEventListener('click', async () => {
   const number = hymnNumberInput.value;
   if (!number) return alert("찬송가 장수를 입력하세요.");
 
+  const slideId = currentSlideId;
   hymnLoadBtn.disabled = true;
   hymnLoadBtn.textContent = "다운로드 중...";
 
@@ -2116,6 +2118,9 @@ hymnLoadBtn.addEventListener('click', async () => {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Download failed");
 
+    // The editor may have moved to another slide while the download ran, and
+    // the file belongs only to the slide that asked for it.
+    if (currentSlideId !== slideId) return;
     const current = collectCurrentSlideDraft();
     if (!current) return;
     Object.assign(current, {
@@ -2133,7 +2138,7 @@ hymnLoadBtn.addEventListener('click', async () => {
       await fetchAndFillHymnTitle(number);
     }
 
-    if (current) {
+    if (currentSlideId === slideId) {
       // Sync title fields into current so renderPreview(current) has full data
       current.includeTitle = hymnIncludeTitle.checked;
       current.titleThemeId = getCoverThemePicker(hymnTitleThemeGrid);
@@ -2167,10 +2172,12 @@ hymnLoadBtn.addEventListener('click', async () => {
 
 async function fetchAndFillHymnTitle(number) {
   if (!number) return;
+  const slideId = currentSlideId;
   try {
     const res = await fetch(`/api/hymn/title/${number}`);
     if (!res.ok) return;
     const data = await res.json();
+    if (currentSlideId !== slideId) return;
     hymnKorTitleInput.value = data.kor || '';
     hymnEngTitleInput.value = data.eng || '';
     renderPreview();
@@ -2336,6 +2343,19 @@ function populateScriptureEditor(slide) {
   syncScriptureImageUI(slide);
 }
 
+// Only a scripture slide has a reference of its own. Anything else starts from
+// the scripture defaults, never from what the previous slide left in the
+// fields; the cover theme is shared with hymns, so the slide keeps its own.
+function scriptureEditorSource(slide) {
+  if (slide?.type === "scripture") {
+    return slide;
+  }
+  return {
+    ...buildResetSlideDraft({ ...slide, type: "scripture" }),
+    titleThemeId: slide?.titleThemeId,
+  };
+}
+
 function collectScriptureSlideFields() {
   return {
     testament: scriptureTestamentSelect.value,
@@ -2454,11 +2474,13 @@ async function ensureScriptureSlideFile(slide, slideName, button, busyLabel) {
     slide.fileName = generated.originalName;
     slide.thumbnail = generated.thumbnail || null;
     slide.scriptureSignature = signature;
-    if (slidePreview) {
-      slidePreview.dataset.lastRenderedUrl = "";
-      slidePreview.dataset.lastRenderedPath = "";
+    if (slide.id === currentSlideId) {
+      if (slidePreview) {
+        slidePreview.dataset.lastRenderedUrl = "";
+        slidePreview.dataset.lastRenderedPath = "";
+      }
+      renderPreview(slide);
     }
-    renderPreview(slide);
     return true;
   } catch (e) {
     reportSaveFailure("성경 말씀 슬라이드 생성 실패: " + e.message);
@@ -2489,7 +2511,8 @@ if (scriptureGenerateBtn) {
       scriptureGenerateBtn,
       "생성 중..."
     );
-    if (!generated) return;
+    // The editor may have moved on while the file was generated.
+    if (!generated || slide.id !== currentSlideId) return;
     slideRuntimeDraft = {
       ...slideRuntimeDraft,
       serverFilePath: slide.serverFilePath,
@@ -7895,8 +7918,12 @@ userPptxFile.addEventListener('change', async () => {
                  <div style="font-size:12px;color:#aaa;">(잠시만 기다려주세요)</div>
              </div>`;
 
+      const slideId = currentSlideId;
       try {
         const result = await uploadFile(file);
+        // The converted file belongs to the slide it was picked for, even if
+        // the editor moved to another slide during the conversion.
+        if (currentSlideId !== slideId) return;
         slideRuntimeDraft = {
           ...slideRuntimeDraft,
           serverFilePath: result.path,

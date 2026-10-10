@@ -730,6 +730,11 @@ async function setup(page, options = {}) {
       return route.fulfill(response);
     }
 
+    const otherResponse = await options.onOtherApi?.({ url, method, state });
+    if (otherResponse) {
+      return route.fulfill(otherResponse);
+    }
+
     return route.fulfill({
       status: 404,
       json: { error: `Unstubbed API: ${method} ${url.pathname}` },
@@ -2134,6 +2139,8 @@ await runScenario(
     await page.locator("#addSlideBtn").click();
     await fillName(page, "말씀 실패 초안");
     await page.locator("#slideType").selectOption("scripture");
+    await page.locator("#scriptureTestament").selectOption("old");
+    await page.locator("#scriptureBook").selectOption("genesis");
     await page.locator("#scriptureChapter").fill("1");
     await page.locator("#scriptureEnVersion").selectOption("");
     await page.locator("#scripturePptxImage").setInputFiles({
@@ -3073,6 +3080,258 @@ await runScenario(
       .waitFor();
     assert.equal(state.slides[0].customSlide.elements.length, 1);
     assert.equal(await page.locator("#editorSaveBtn").isDisabled(), true);
+  }
+);
+
+// --- Editor state never crosses from one slide into another ---
+
+function crossSlideScripture(id, name, extra = {}) {
+  return slide(id, name, "scripture", {
+    sourceType: "upload",
+    testament: "old",
+    book: "exodus",
+    chapter: "3",
+    start: "2",
+    end: "8",
+    koVersion: "개역한글",
+    enVersion: "kjv",
+    themeId: "light",
+    includeTitle: false,
+    titleSlideType: "봉독",
+    titleThemeId: "marquee",
+    serverFilePath: "/fixtures/scripture.pptx",
+    ...extra,
+  });
+}
+
+function crossSlideHymn(id, name, number) {
+  return slide(id, name, "hymn", {
+    sourceType: "upload",
+    hymnNumber: number,
+    includeTitle: true,
+    hymnKorTitle: `${number}장 제목`,
+    serverFilePath: "/fixtures/hymn.pptx",
+  });
+}
+
+async function leaveForSlide(page, name, { discard = true } = {}) {
+  await page.locator("#slideListContainer .slide-card", { hasText: name }).click();
+  if (discard) {
+    await page.locator("#unsavedDiscardBtn").click();
+  }
+  await page.waitForFunction(
+    (expected) => document.getElementById("slideName").value === expected,
+    name
+  );
+}
+
+await runScenario(
+  "a new scripture slide starts from scripture defaults",
+  async (page) => {
+    await setup(page, {
+      slides: [crossSlideScripture("previous-scripture", "출애굽 본문")],
+    });
+    await selectMainSlide(page, 0);
+    await page.locator("#addSlideBtn").click();
+    await page.locator("#slideType").selectOption("scripture");
+
+    assert.equal(await page.locator("#scriptureTestament").inputValue(), "");
+    assert.equal(await page.locator("#scriptureBook").inputValue(), "");
+    assert.equal(await page.locator("#scriptureChapter").inputValue(), "");
+    assert.equal(await page.locator("#scriptureStartVerse").inputValue(), "");
+    assert.equal(await page.locator("#scriptureEndVerse").inputValue(), "");
+    assert.equal(await page.locator("#scriptureKoVersion").inputValue(), "새번역");
+    assert.equal(await page.locator("#scriptureEnVersion").inputValue(), "web");
+    assert.equal(await page.locator("#scripturePptxTheme").inputValue(), "dark");
+    assert.equal(await page.locator("#scriptureIncludeTitle").isChecked(), true);
+  }
+);
+
+await runScenario(
+  "a scripture preview finished after leaving stays with its own slide",
+  async (page) => {
+    const gate = createGate();
+    const state = await setup(page, {
+      slides: [
+        crossSlideScripture("scripture-a", "본문 A"),
+        crossSlideScripture("scripture-b", "본문 B", {
+          book: "genesis",
+          chapter: "1",
+        }),
+      ],
+      onScriptureGenerate: async () => {
+        await gate.promise;
+        return {
+          status: 200,
+          json: {
+            success: true,
+            path: "/fixtures/scripture-a-preview.pptx",
+            originalName: "scripture-a.pptx",
+            thumbnail: null,
+          },
+        };
+      },
+    });
+    await selectMainSlide(page, 0);
+    await page.locator("#scriptureChapter").fill("20");
+    await page.locator("#scriptureGenerateBtn").click();
+    await leaveForSlide(page, "본문 B");
+
+    gate.release();
+    await page.locator("#scriptureGenerateBtn:not([disabled])").waitFor();
+    assert.equal(state.counts.scriptureGenerate, 1);
+    assert.equal(
+      await page.locator("#editorSaveBtn").isDisabled(),
+      true,
+      "the other slide's preview file must not become this slide's draft"
+    );
+  }
+);
+
+await runScenario(
+  "a hymn download finished after leaving stays with its own slide",
+  async (page) => {
+    const gate = createGate();
+    await setup(page, {
+      slides: [
+        crossSlideHymn("hymn-a", "찬송 A", "25"),
+        crossSlideHymn("hymn-b", "찬송 B", "40"),
+      ],
+      onOtherApi: async ({ url }) => {
+        if (url.pathname === "/api/hymn/download") {
+          await gate.promise;
+          return {
+            status: 200,
+            json: {
+              success: true,
+              path: "/fixtures/hymn-30.pptx",
+              originalName: "nhymn30.ppt",
+              originalUrl: "https://example.test/nhymn30.ppt",
+            },
+          };
+        }
+        const titleMatch = url.pathname.match(/^\/api\/hymn\/title\/(\d+)$/);
+        return titleMatch
+          ? { status: 200, json: { kor: `${titleMatch[1]}장 제목`, eng: "" } }
+          : null;
+      },
+    });
+    await selectMainSlide(page, 0);
+    await page.locator("#hymnNumber").fill("30");
+    await page.locator("#hymnLoadBtn").click();
+    await leaveForSlide(page, "찬송 B");
+
+    gate.release();
+    await page.locator("#hymnLoadBtn:not([disabled])").waitFor();
+    assert.equal(await page.locator("#hymnNumber").inputValue(), "40");
+    assert.equal(await page.locator("#hymnKorTitle").inputValue(), "40장 제목");
+    assert.equal(
+      await page.locator("#editorSaveBtn").isDisabled(),
+      true,
+      "the other slide's hymn file must not become this slide's draft"
+    );
+  }
+);
+
+await runScenario(
+  "a hymn title lookup finished after leaving stays with its own slide",
+  async (page) => {
+    const gate = createGate();
+    await setup(page, {
+      slides: [
+        crossSlideHymn("hymn-a", "찬송 A", "25"),
+        crossSlideHymn("hymn-b", "찬송 B", "40"),
+      ],
+      onOtherApi: async ({ url }) => {
+        if (url.pathname !== "/api/hymn/title/30") return null;
+        await gate.promise;
+        return { status: 200, json: { kor: "30장 제목", eng: "Hymn 30" } };
+      },
+    });
+    await selectMainSlide(page, 0);
+    await page.locator("#hymnNumber").fill("30");
+    await page.locator("#hymnNumber").press("Tab");
+    await leaveForSlide(page, "찬송 B");
+
+    const titleResponse = page.waitForResponse((response) =>
+      response.url().endsWith("/api/hymn/title/30")
+    );
+    gate.release();
+    await titleResponse;
+    await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 50)));
+    assert.equal(await page.locator("#hymnKorTitle").inputValue(), "40장 제목");
+    assert.equal(await page.locator("#hymnEngTitle").inputValue(), "");
+    assert.equal(await page.locator("#editorSaveBtn").isDisabled(), true);
+  }
+);
+
+await runScenario(
+  "a last-verse lookup finished after leaving stays with its own slide",
+  async (page) => {
+    const gate = createGate();
+    await setup(page, {
+      slides: [
+        crossSlideScripture("scripture-a", "본문 A"),
+        crossSlideScripture("scripture-b", "본문 B", { end: "5" }),
+      ],
+      onOtherApi: async ({ url }) => {
+        if (url.pathname !== "/api/chapter-info") return null;
+        await gate.promise;
+        return { status: 200, json: { lastVerse: 22 } };
+      },
+    });
+    await selectMainSlide(page, 0);
+    const lastVerseBtn = page.locator(
+      '.jump-btn[data-jump-target="scriptureEndVerse"][data-jump="last"]'
+    );
+    await lastVerseBtn.click();
+    await leaveForSlide(page, "본문 B", { discard: false });
+
+    gate.release();
+    await lastVerseBtn.filter({ hasText: "끝 절" }).waitFor();
+    assert.equal(await page.locator("#scriptureEndVerse").inputValue(), "5");
+    assert.equal(await page.locator("#editorSaveBtn").isDisabled(), true);
+  }
+);
+
+await runScenario(
+  "a .ppt conversion finished after leaving stays with its own slide",
+  async (page) => {
+    const gate = createGate();
+    const state = await setup(page, {
+      onUpload: async () => {
+        await gate.promise;
+        return {
+          status: 200,
+          json: {
+            path: "/fixtures/converted.pptx",
+            originalName: "legacy.pptx",
+            thumbnail: null,
+          },
+        };
+      },
+    });
+    await selectMainSlide(page, 0);
+    await page.locator('input[name="sourceType"][value="upload"]').check();
+    await page.locator("#userPptxFile").setInputFiles({
+      name: "legacy.ppt",
+      mimeType: "application/vnd.ms-powerpoint",
+      buffer: Buffer.from("legacy"),
+    });
+    await leaveForSlide(page, "둘째 슬라이드");
+
+    const uploadResponse = page.waitForResponse((response) =>
+      response.url().endsWith("/api/upload")
+    );
+    gate.release();
+    await uploadResponse;
+    await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 50)));
+    assert.equal(state.counts.uploadPost, 1);
+    assert.equal(
+      await page.locator("#editorSaveBtn").isDisabled(),
+      true,
+      "the other slide's converted file must not become this slide's draft"
+    );
   }
 );
 

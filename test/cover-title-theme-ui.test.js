@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import { JSDOM } from "jsdom";
 
 import { buildCoverTitleContent } from "../lib/cover-title-slide.js";
+import { buildResetSlideDraft } from "../lib/save-state.js";
 import {
   compileFunction as compileAppFunction,
   functionBody,
@@ -164,9 +165,6 @@ describe("cover title theme picker UI", () => {
     const slideTypeSelect = document.getElementById("slideType");
     const hymnGrid = document.getElementById("hymnTitleThemeGrid");
     const scriptureGrid = document.getElementById("scriptureTitleThemeGrid");
-    const scriptureIncludeTitle = document.getElementById(
-      "scriptureIncludeTitle"
-    );
     const normalize = compileFunction("normalizeCoverTitleThemeId", ["value"], {
       COVER_TITLE_THEME_IDS: themeIds,
     });
@@ -184,11 +182,12 @@ describe("cover title theme picker UI", () => {
       slideTypeSelect,
       prepareTitleSlideFields() {},
       maybeAutoNameCustomTitleSlide() {},
-      fillScriptureBookSelects() {},
-      scriptureIncludeTitle,
-      setScriptureTitleSlideType() {},
-      syncScriptureTitleTypeUi() {},
-      syncScriptureImageUI() {},
+      scriptureEditorSource: compileFunction("scriptureEditorSource", ["slide"], {
+        buildResetSlideDraft,
+      }),
+      populateScriptureEditor(source) {
+        setPicker(scriptureGrid, source.titleThemeId);
+      },
       slides: [slide],
       currentSlideId: slide.id,
       getCurrentTypeChangeSource: () => currentSource,
