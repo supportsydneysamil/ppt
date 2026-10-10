@@ -183,7 +183,11 @@ describe("cover title theme picker UI", () => {
       prepareTitleSlideFields() {},
       maybeAutoNameCustomTitleSlide() {},
       scriptureEditorSource: compileFunction("scriptureEditorSource", ["slide"], {
-        buildResetSlideDraft,
+        typeSwitchSource: compileFunction(
+          "typeSwitchSource",
+          ["slide", "type", "sharingTypes = [type]"],
+          { buildResetSlideDraft }
+        ),
       }),
       populateScriptureEditor(source) {
         setPicker(scriptureGrid, source.titleThemeId);

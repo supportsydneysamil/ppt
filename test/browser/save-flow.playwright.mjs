@@ -3335,6 +3335,114 @@ await runScenario(
   }
 );
 
+await runScenario(
+  "a new custom title slide starts empty and keeps its own name",
+  async (page) => {
+    await setup(page, {
+      slides: [
+        slide("previous-custom-title", "축복", "custom-title", {
+          customTitleKo: "축복",
+          customTitleEn: "Blessing",
+          customTitleSubtitle: "민수기 6:24",
+          customTitleDesign: "marquee",
+        }),
+      ],
+    });
+    await selectMainSlide(page, 0);
+    await page.locator("#addSlideBtn").click();
+    await page.locator("#slideType").selectOption("custom-title");
+
+    assert.equal(await page.locator("#slideName").inputValue(), "새 슬라이드");
+    assert.equal(await page.locator("#customTitleKo").inputValue(), "");
+    assert.equal(await page.locator("#customTitleEn").inputValue(), "");
+    assert.equal(await page.locator("#customTitleSubtitle").inputValue(), "");
+    assert.equal(await page.locator("#customTitleDesign").inputValue(), "aurora");
+  }
+);
+
+await runScenario(
+  "a new ad slide starts from ad defaults",
+  async (page) => {
+    await setup(page, {
+      slides: [
+        slide("previous-ad", "광고 원본", "ad", {
+          adTitle: "광고 제목",
+          adTitleSize: "large",
+          content: "광고 본문",
+          fontSize: "60",
+          align: "left",
+        }),
+      ],
+    });
+    await selectMainSlide(page, 0);
+    await page.locator("#addSlideBtn").click();
+    await page.locator("#slideType").selectOption("ad");
+
+    assert.equal(await page.locator("#adTitle").inputValue(), "");
+    assert.equal(await page.locator("#adTitleSize").inputValue(), "medium");
+    assert.equal(await page.locator("#adBodyContent").inputValue(), "");
+    assert.equal(await page.locator("#adBodyFontSize").inputValue(), "40");
+    assert.equal(await page.locator("#adBodyAlign").inputValue(), "center");
+  }
+);
+
+await runScenario(
+  "switching an ad slide to simple shows its own text",
+  async (page) => {
+    await setup(page, {
+      slides: [
+        slide("other-simple", "다른 단순", "simple", {
+          content: "다른 슬라이드 본문",
+          fontSize: "60",
+          align: "left",
+        }),
+        slide("own-ad", "광고 원본", "ad", {
+          adTitle: "광고 제목",
+          content: "광고 본문",
+        }),
+      ],
+    });
+    await selectMainSlide(page, 0);
+    await selectMainSlide(page, 1);
+    await page.locator("#slideType").selectOption("simple");
+
+    assert.equal(await page.locator("#slideContent").inputValue(), "광고 본문");
+    assert.equal(await page.locator("#slideFontSize").inputValue(), "40");
+    assert.equal(await page.locator("#slideAlign").inputValue(), "center");
+  }
+);
+
+await runScenario(
+  "moving to another custom slide closes the popout",
+  async (page) => {
+    await setup(page, {
+      slides: [
+        ...customCanvasSlides,
+        slide("second-canvas", "둘째 캔버스", "custom", {
+          customSlide: { ...customCanvasSlides[0].customSlide, elements: [] },
+        }),
+      ],
+    });
+    const loaded = page
+      .locator("#customSlideEditor [data-custom-editor='status']")
+      .first()
+      .filter({ hasText: "슬라이드를 불러왔습니다" });
+    await selectMainSlide(page, 0);
+    await loaded.waitFor();
+
+    const popupReady = page.waitForEvent("popup");
+    await page.locator("#customEditorPopoutBtn").click();
+    const popup = await popupReady;
+    await popup.getByText("주 창과 연결됨").waitFor({ timeout: 15000 });
+
+    const closed = popup.waitForEvent("close");
+    await selectMainSlide(page, 1);
+    await closed;
+    await loaded.waitFor();
+    assert.equal(await page.locator("#customSlideEditor").getAttribute("inert"), null);
+  }
+);
+
 await browser.close();
 if (server) {
   server.kill();

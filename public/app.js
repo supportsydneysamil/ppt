@@ -2085,10 +2085,18 @@ slideTypeSelect.addEventListener('change', () => {
     prepareTitleSlideFields();
   }
   if (slideTypeSelect.value === 'custom-title') {
+    populateCustomTitleEditor(typeSwitchSource(current, 'custom-title'));
     maybeAutoNameCustomTitleSlide();
   }
   if (slideTypeSelect.value === 'scripture') {
     populateScriptureEditor(scriptureEditorSource(current));
+  }
+  // Simple and ad slides store their text and background in the same fields.
+  if (slideTypeSelect.value === 'ad') {
+    populateAdEditor(typeSwitchSource(current, 'ad', SIMPLE_FAMILY_TYPES));
+  }
+  if (slideTypeSelect.value === 'simple') {
+    populateSimpleEditor(typeSwitchSource(current, 'simple', SIMPLE_FAMILY_TYPES));
   }
   updateSettingsVisibility();
   if (slideTypeSelect.value === 'custom') {
@@ -2343,15 +2351,21 @@ function populateScriptureEditor(slide) {
   syncScriptureImageUI(slide);
 }
 
-// Only a scripture slide has a reference of its own. Anything else starts from
-// the scripture defaults, never from what the previous slide left in the
-// fields; the cover theme is shared with hymns, so the slide keeps its own.
+const SIMPLE_FAMILY_TYPES = ["simple", "ad"];
+
+// What a type switch shows in the target type's fields. A slide whose type
+// already uses those fields keeps its own values; any other slide starts from
+// the target type's defaults, never from what the previous slide left there.
+function typeSwitchSource(slide, type, sharingTypes = [type]) {
+  return sharingTypes.includes(slide?.type)
+    ? slide
+    : buildResetSlideDraft({ ...slide, type });
+}
+
+// The cover theme is shared with hymns, so the slide keeps its own.
 function scriptureEditorSource(slide) {
-  if (slide?.type === "scripture") {
-    return slide;
-  }
   return {
-    ...buildResetSlideDraft({ ...slide, type: "scripture" }),
+    ...typeSwitchSource(slide, "scripture"),
     titleThemeId: slide?.titleThemeId,
   };
 }
@@ -4069,68 +4083,13 @@ function populateEditor(
           : slide.serviceDate || defaultServiceDate();
     updateTitleSeasonSuggestion();
   } else if (slide.type === 'custom-title') {
-    restoreCustomTitleDesignEditor(customTitleDesignPicker, slide);
-    customTitleKoInput.value = slide.customTitleKo || '';
-    customTitleEnInput.value = slide.customTitleEn || '';
-    customTitleSubtitleInput.value = slide.customTitleSubtitle || '';
+    populateCustomTitleEditor(slide);
   } else if (slide.type === 'hymn') {
     // Hymn fields are filled above.
   } else if (slide.type === 'ad') {
-    sourceRadios.forEach(r => {
-      r.checked = r.value === slide.sourceType;
-    });
-    toggleSettingsMode(slide.sourceType);
-
-    // Ad title panel
-    adTitleInput.value = slide.adTitle || '';
-    adTitleSizeSelect.value = slide.adTitleSize || 'medium';
-    adTitleAlignSelect.value = slide.adTitleAlign || 'center';
-    syncRteSizeBtns('adTitleSize', adTitleSizeSelect.value);
-    syncRteAlignBtns('adTitleAlign', adTitleAlignSelect.value);
-
-    // Ad body panel
-    adBodyContent.value = slide.content || '';
-    adBodyFont.value = slide.font || 'Malgun Gothic';
-    adBodyFontSize.value = slide.fontSize || '40';
-    adBodyAlign.value = slide.align || 'center';
-    syncRteAlignBtns('adBodyAlign', adBodyAlign.value);
-
-    // Ad background settings
-    adTextColor.value = slide.bg || 'black';
-    syncAdTextColorTabs(adTextColor.value);
-    adBgOpacity.value = slide.adBgOpacity ?? 30;
-    adBgOpacityValue.textContent = `${slide.adBgOpacity ?? 30}%`;
-
-    adBgSourceRadios.forEach(r => {
-      r.checked = r.value === (slide.adBgSource || 'none');
-    });
-    toggleBgMode(slide.adBgSource || 'none');
-
-    adBgImageUrl.value = slide.adBgImageUrl || '';
-    adBgImageFile.value = '';
+    populateAdEditor(slide);
   } else {
-    slideContentInput.value = slide.content;
-    slideFontSelect.value = slide.font;
-    slideFontSizeSelect.value = slide.fontSize || "40";
-    slideAlignSelect.value = slide.align;
-    syncAlignTabs(slide.align);
-
-    // bgSettings (shared with ad)
-    adTextColor.value = slide.bg || 'black';
-    syncAdTextColorTabs(adTextColor.value);
-    adBgOpacity.value = slide.adBgOpacity ?? 30;
-    adBgOpacityValue.textContent = `${slide.adBgOpacity ?? 30}%`;
-    adBgSourceRadios.forEach(r => {
-      r.checked = r.value === (slide.adBgSource || 'none');
-    });
-    toggleBgMode(slide.adBgSource || 'none');
-    adBgImageUrl.value = slide.adBgImageUrl || '';
-    adBgImageFile.value = '';
-
-    sourceRadios.forEach(r => {
-      r.checked = r.value === slide.sourceType;
-    });
-    toggleSettingsMode(slide.sourceType);
+    populateSimpleEditor(slide);
   }
 
   // Clear file input to avoid showing stale filename from previous slide
@@ -4139,6 +4098,73 @@ function populateEditor(
   // The canvas restores asynchronously and only clears its dirty flag once
   // that lands, so callers that judge the workspace clean have to wait on it.
   return customCanvasLoad;
+}
+
+function populateCustomTitleEditor(slide) {
+  restoreCustomTitleDesignEditor(customTitleDesignPicker, slide);
+  customTitleKoInput.value = slide.customTitleKo || '';
+  customTitleEnInput.value = slide.customTitleEn || '';
+  customTitleSubtitleInput.value = slide.customTitleSubtitle || '';
+}
+
+function populateAdEditor(slide) {
+  sourceRadios.forEach(r => {
+    r.checked = r.value === slide.sourceType;
+  });
+  toggleSettingsMode(slide.sourceType);
+
+  // Ad title panel
+  adTitleInput.value = slide.adTitle || '';
+  adTitleSizeSelect.value = slide.adTitleSize || 'medium';
+  adTitleAlignSelect.value = slide.adTitleAlign || 'center';
+  syncRteSizeBtns('adTitleSize', adTitleSizeSelect.value);
+  syncRteAlignBtns('adTitleAlign', adTitleAlignSelect.value);
+
+  // Ad body panel
+  adBodyContent.value = slide.content || '';
+  adBodyFont.value = slide.font || 'Malgun Gothic';
+  adBodyFontSize.value = slide.fontSize || '40';
+  adBodyAlign.value = slide.align || 'center';
+  syncRteAlignBtns('adBodyAlign', adBodyAlign.value);
+
+  // Ad background settings
+  adTextColor.value = slide.bg || 'black';
+  syncAdTextColorTabs(adTextColor.value);
+  adBgOpacity.value = slide.adBgOpacity ?? 30;
+  adBgOpacityValue.textContent = `${slide.adBgOpacity ?? 30}%`;
+
+  adBgSourceRadios.forEach(r => {
+    r.checked = r.value === (slide.adBgSource || 'none');
+  });
+  toggleBgMode(slide.adBgSource || 'none');
+
+  adBgImageUrl.value = slide.adBgImageUrl || '';
+  adBgImageFile.value = '';
+}
+
+function populateSimpleEditor(slide) {
+  slideContentInput.value = slide.content;
+  slideFontSelect.value = slide.font;
+  slideFontSizeSelect.value = slide.fontSize || "40";
+  slideAlignSelect.value = slide.align;
+  syncAlignTabs(slide.align);
+
+  // bgSettings (shared with ad)
+  adTextColor.value = slide.bg || 'black';
+  syncAdTextColorTabs(adTextColor.value);
+  adBgOpacity.value = slide.adBgOpacity ?? 30;
+  adBgOpacityValue.textContent = `${slide.adBgOpacity ?? 30}%`;
+  adBgSourceRadios.forEach(r => {
+    r.checked = r.value === (slide.adBgSource || 'none');
+  });
+  toggleBgMode(slide.adBgSource || 'none');
+  adBgImageUrl.value = slide.adBgImageUrl || '';
+  adBgImageFile.value = '';
+
+  sourceRadios.forEach(r => {
+    r.checked = r.value === slide.sourceType;
+  });
+  toggleSettingsMode(slide.sourceType);
 }
 
 function syncBgTabs(value) {
@@ -5580,6 +5606,9 @@ function handleCustomEditorChange({ slideId, model, dirty }) {
 function showCustomSlideInEditor(slide, { markSaved = Boolean(slide?.saved) } = {}) {
   if (!slide) return Promise.resolve();
 
+  // Reloading the canvas replaces what the popout was editing, and its edits
+  // already reached this canvas, so the popout session ends here.
+  closeCustomPopout();
   const slideId = slide.id;
   const model = copyCustomSlideModel(slide.customSlide) || emptyCustomSlideModel();
   customEditorModel = null;
@@ -5601,11 +5630,15 @@ function showCustomSlideInEditor(slide, { markSaved = Boolean(slide?.saved) } = 
     });
 }
 
-function releaseCustomEditorSlide() {
+function closeCustomPopout() {
   if (customPopout) {
     customPopout.popup.close();
     finishCustomPopout();
   }
+}
+
+function releaseCustomEditorSlide() {
+  closeCustomPopout();
   customEditorModel = null;
   customEditorDirty = false;
   if (customEditorSession) {
